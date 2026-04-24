@@ -1,0 +1,48 @@
+{
+  "id": "e2e-java-parallel",
+  "name": "E2E Java Parallel",
+  "steps": [
+    {
+      "id": "java-parallel-gw",
+      "name": "Parallel Gateway",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["java-branch-left", "java-branch-right"],
+      "joinStep": "java-join-gw"
+    },
+    {
+      "id": "java-branch-left",
+      "name": "Branch Left",
+      "type": "SERVICE_TASK",
+      "jobType": "java-branch-left",
+      "retryCount": 0,
+      "nextStep": "java-join-gw"
+    },
+    {
+      "id": "java-branch-right",
+      "name": "Branch Right",
+      "type": "SERVICE_TASK",
+      "jobType": "java-branch-right",
+      "retryCount": 0,
+      "nextStep": "java-join-gw"
+    },
+    {
+      "id": "java-join-gw",
+      "name": "Join Gateway",
+      "type": "JOIN_GATEWAY",
+      "nextStep": "java-merge-done"
+    },
+    {
+      "id": "java-merge-done",
+      "name": "Merge Done",
+      "type": "SERVICE_TASK",
+      "jobType": "java-merge-done",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

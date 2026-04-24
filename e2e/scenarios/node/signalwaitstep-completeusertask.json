@@ -1,0 +1,39 @@
+{
+  "id": "e2e-node-signalwaitstep-completeusertask",
+  "name": "E2E Go Signal and User Task",
+  "steps": [
+    {
+      "id": "node-start-task",
+      "name": "Start Task",
+      "type": "SERVICE_TASK",
+      "jobType": "node-signalwaitstep-completeusertask-start",
+      "retryCount": 0,
+      "nextStep": "node-wait-signal"
+    },
+    {
+      "id": "node-wait-signal",
+      "name": "Wait For Signal",
+      "type": "WAIT",
+      "nextStep": "node-user-task"
+    },
+    {
+      "id": "node-user-task",
+      "name": "User Review",
+      "type": "USER_TASK",
+      "nextStep": "node-end-task"
+    },
+    {
+      "id": "node-end-task",
+      "name": "End Task",
+      "type": "SERVICE_TASK",
+      "jobType": "node-signalwaitstep-completeusertask-end",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

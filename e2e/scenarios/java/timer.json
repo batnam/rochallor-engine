@@ -1,0 +1,41 @@
+{
+  "id": "e2e-java-timer",
+  "name": "E2E Java Timer",
+  "steps": [
+    {
+      "id": "java-before-wait",
+      "name": "Before Wait",
+      "type": "SERVICE_TASK",
+      "jobType": "java-before-wait",
+      "retryCount": 0,
+      "nextStep": "java-wait"
+    },
+    {
+      "id": "java-wait",
+      "name": "Wait",
+      "type": "WAIT",
+      "nextStep": "end",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT2S",
+          "interrupting": false,
+          "targetStepId": "java-timer-fired"
+        }
+      ]
+    },
+    {
+      "id": "java-timer-fired",
+      "name": "Timer Fired",
+      "type": "SERVICE_TASK",
+      "jobType": "java-timer-fired",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

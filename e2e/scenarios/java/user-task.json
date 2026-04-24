@@ -1,0 +1,33 @@
+{
+  "id": "e2e-java-user-task",
+  "name": "E2E Java User Task",
+  "steps": [
+    {
+      "id": "java-before-review",
+      "name": "Before Review",
+      "type": "SERVICE_TASK",
+      "jobType": "java-before-review",
+      "retryCount": 0,
+      "nextStep": "java-user-task"
+    },
+    {
+      "id": "java-user-task",
+      "name": "User Review",
+      "type": "USER_TASK",
+      "nextStep": "java-after-review"
+    },
+    {
+      "id": "java-after-review",
+      "name": "After Review",
+      "type": "SERVICE_TASK",
+      "jobType": "java-after-review",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

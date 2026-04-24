@@ -1,0 +1,33 @@
+{
+  "id": "e2e-go-user-task",
+  "name": "E2E Go User Task",
+  "steps": [
+    {
+      "id": "go-before-review",
+      "name": "Before Review",
+      "type": "SERVICE_TASK",
+      "jobType": "go-before-review",
+      "retryCount": 0,
+      "nextStep": "go-user-task"
+    },
+    {
+      "id": "go-user-task",
+      "name": "User Review",
+      "type": "USER_TASK",
+      "nextStep": "go-after-review"
+    },
+    {
+      "id": "go-after-review",
+      "name": "After Review",
+      "type": "SERVICE_TASK",
+      "jobType": "go-after-review",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

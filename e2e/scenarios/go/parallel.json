@@ -1,0 +1,48 @@
+{
+  "id": "e2e-go-parallel",
+  "name": "E2E Go Parallel",
+  "steps": [
+    {
+      "id": "go-parallel-gw",
+      "name": "Parallel Gateway",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["go-branch-left", "go-branch-right"],
+      "joinStep": "go-join-gw"
+    },
+    {
+      "id": "go-branch-left",
+      "name": "Branch Left",
+      "type": "SERVICE_TASK",
+      "jobType": "go-branch-left",
+      "retryCount": 0,
+      "nextStep": "go-join-gw"
+    },
+    {
+      "id": "go-branch-right",
+      "name": "Branch Right",
+      "type": "SERVICE_TASK",
+      "jobType": "go-branch-right",
+      "retryCount": 0,
+      "nextStep": "go-join-gw"
+    },
+    {
+      "id": "go-join-gw",
+      "name": "Join Gateway",
+      "type": "JOIN_GATEWAY",
+      "nextStep": "go-merge-done"
+    },
+    {
+      "id": "go-merge-done",
+      "name": "Merge Done",
+      "type": "SERVICE_TASK",
+      "jobType": "go-merge-done",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

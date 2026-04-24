@@ -1,0 +1,44 @@
+{
+  "id": "e2e-java-decision",
+  "name": "E2E Java Decision",
+  "steps": [
+    {
+      "id": "java-prepare",
+      "name": "Prepare",
+      "type": "SERVICE_TASK",
+      "jobType": "java-prepare",
+      "retryCount": 0,
+      "nextStep": "java-route"
+    },
+    {
+      "id": "java-route",
+      "name": "Route",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#result == 'approved'": "java-handle-approved",
+        "#result != 'approved'": "java-handle-rejected"
+      }
+    },
+    {
+      "id": "java-handle-approved",
+      "name": "Handle Approved",
+      "type": "SERVICE_TASK",
+      "jobType": "java-handle-approved",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "java-handle-rejected",
+      "name": "Handle Rejected",
+      "type": "SERVICE_TASK",
+      "jobType": "java-handle-rejected",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

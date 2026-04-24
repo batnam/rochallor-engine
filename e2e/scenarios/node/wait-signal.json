@@ -1,0 +1,25 @@
+{
+  "id": "e2e-node-wait-signal",
+  "name": "E2E Node Wait Signal",
+  "steps": [
+    {
+      "id": "node-before-wait",
+      "name": "Before Wait",
+      "type": "SERVICE_TASK",
+      "jobType": "node-before-wait",
+      "retryCount": 0,
+      "nextStep": "node-wait-signal"
+    },
+    {
+      "id": "node-wait-signal",
+      "name": "Wait For Signal",
+      "type": "WAIT",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

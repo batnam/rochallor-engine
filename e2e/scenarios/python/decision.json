@@ -1,0 +1,44 @@
+{
+  "id": "e2e-python-decision",
+  "name": "E2E Python Decision",
+  "steps": [
+    {
+      "id": "python-prepare",
+      "name": "Prepare",
+      "type": "SERVICE_TASK",
+      "jobType": "python-prepare",
+      "retryCount": 0,
+      "nextStep": "python-route"
+    },
+    {
+      "id": "python-route",
+      "name": "Route",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#result == 'approved'": "python-handle-approved",
+        "#result != 'approved'": "python-handle-rejected"
+      }
+    },
+    {
+      "id": "python-handle-approved",
+      "name": "Handle Approved",
+      "type": "SERVICE_TASK",
+      "jobType": "python-handle-approved",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "python-handle-rejected",
+      "name": "Handle Rejected",
+      "type": "SERVICE_TASK",
+      "jobType": "python-handle-rejected",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

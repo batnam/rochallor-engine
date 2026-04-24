@@ -1,0 +1,19 @@
+{
+  "id": "e2e-node-retry-fail",
+  "name": "E2E Node Retry Fail",
+  "steps": [
+    {
+      "id": "node-flaky",
+      "name": "Flaky Step",
+      "type": "SERVICE_TASK",
+      "jobType": "node-flaky",
+      "retryCount": 2,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

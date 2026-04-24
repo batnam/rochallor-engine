@@ -1,0 +1,25 @@
+{
+  "id": "e2e-python-wait-signal",
+  "name": "E2E Python Wait Signal",
+  "steps": [
+    {
+      "id": "python-before-wait",
+      "name": "Before Wait",
+      "type": "SERVICE_TASK",
+      "jobType": "python-before-wait",
+      "retryCount": 0,
+      "nextStep": "python-wait-signal"
+    },
+    {
+      "id": "python-wait-signal",
+      "name": "Wait For Signal",
+      "type": "WAIT",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

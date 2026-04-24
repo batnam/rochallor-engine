@@ -1,0 +1,25 @@
+{
+  "id": "e2e-go-wait-signal",
+  "name": "E2E Go Wait Signal",
+  "steps": [
+    {
+      "id": "go-before-wait",
+      "name": "Before Wait",
+      "type": "SERVICE_TASK",
+      "jobType": "go-before-wait",
+      "retryCount": 0,
+      "nextStep": "go-wait-signal"
+    },
+    {
+      "id": "go-wait-signal",
+      "name": "Wait For Signal",
+      "type": "WAIT",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

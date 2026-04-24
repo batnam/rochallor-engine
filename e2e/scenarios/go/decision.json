@@ -1,0 +1,44 @@
+{
+  "id": "e2e-go-decision",
+  "name": "E2E Go Decision",
+  "steps": [
+    {
+      "id": "go-prepare",
+      "name": "Prepare",
+      "type": "SERVICE_TASK",
+      "jobType": "go-prepare",
+      "retryCount": 0,
+      "nextStep": "go-route"
+    },
+    {
+      "id": "go-route",
+      "name": "Route",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#result == 'approved'": "go-handle-approved",
+        "#result != 'approved'": "go-handle-rejected"
+      }
+    },
+    {
+      "id": "go-handle-approved",
+      "name": "Handle Approved",
+      "type": "SERVICE_TASK",
+      "jobType": "go-handle-approved",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "go-handle-rejected",
+      "name": "Handle Rejected",
+      "type": "SERVICE_TASK",
+      "jobType": "go-handle-rejected",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

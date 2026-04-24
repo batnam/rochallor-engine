@@ -1,0 +1,33 @@
+{
+  "id": "e2e-python-user-task",
+  "name": "E2E Python User Task",
+  "steps": [
+    {
+      "id": "python-before-review",
+      "name": "Before Review",
+      "type": "SERVICE_TASK",
+      "jobType": "python-before-review",
+      "retryCount": 0,
+      "nextStep": "python-user-task"
+    },
+    {
+      "id": "python-user-task",
+      "name": "User Review",
+      "type": "USER_TASK",
+      "nextStep": "python-after-review"
+    },
+    {
+      "id": "python-after-review",
+      "name": "After Review",
+      "type": "SERVICE_TASK",
+      "jobType": "python-after-review",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

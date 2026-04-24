@@ -1,0 +1,35 @@
+{
+  "id": "e2e-java-linear",
+  "name": "E2E Java Linear",
+  "steps": [
+    {
+      "id": "step-a",
+      "name": "Step A",
+      "type": "SERVICE_TASK",
+      "jobType": "java-step-a",
+      "retryCount": 0,
+      "nextStep": "step-b"
+    },
+    {
+      "id": "step-b",
+      "name": "Step B",
+      "type": "SERVICE_TASK",
+      "jobType": "java-step-b",
+      "retryCount": 0,
+      "nextStep": "step-c"
+    },
+    {
+      "id": "step-c",
+      "name": "Step C",
+      "type": "SERVICE_TASK",
+      "jobType": "java-step-c",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

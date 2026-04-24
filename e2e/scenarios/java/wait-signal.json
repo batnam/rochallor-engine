@@ -1,0 +1,25 @@
+{
+  "id": "e2e-java-wait-signal",
+  "name": "E2E Java Wait Signal",
+  "steps": [
+    {
+      "id": "java-before-wait",
+      "name": "Before Wait",
+      "type": "SERVICE_TASK",
+      "jobType": "java-before-wait",
+      "retryCount": 0,
+      "nextStep": "java-wait-signal"
+    },
+    {
+      "id": "java-wait-signal",
+      "name": "Wait For Signal",
+      "type": "WAIT",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

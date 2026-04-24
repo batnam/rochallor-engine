@@ -1,0 +1,103 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: workflow
+      POSTGRES_PASSWORD: workflow
+      POSTGRES_DB: workflow
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workflow -d workflow"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+
+  engine:
+    build:
+      context: ../workflow-engine
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      WE_POSTGRES_DSN: postgres://workflow:workflow@postgres:5432/workflow?sslmode=disable
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_LOG_LEVEL: info
+    ports:
+      - "${ENGINE_REST_PORT:-18080}:8080"
+      - "${ENGINE_GRPC_PORT:-19090}:9090"
+      - "${ENGINE_METRICS_PORT:-19091}:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  worker-go:
+    build:
+      context: ..
+      dockerfile: e2e/workers/go/Dockerfile
+    restart: unless-stopped
+    environment:
+      ENGINE_REST_URL: http://engine:8080
+      ENGINE_GRPC_HOST: engine:9090
+      WORKER_ID: worker-go-1
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_LOG_LEVEL: info
+    depends_on:
+      engine:
+        condition: service_healthy
+
+  worker-python:
+    profiles: ["python"]
+    build:
+      context: ..
+      dockerfile: e2e/workers/python/Dockerfile
+    restart: unless-stopped
+    environment:
+      ENGINE_REST_URL: http://engine:8080
+      WORKER_ID: worker-python-1
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_LOG_LEVEL: info
+    depends_on:
+      engine:
+        condition: service_healthy
+
+  worker-node:
+    profiles: ["node"]
+    build:
+      context: ..
+      dockerfile: e2e/workers/node/Dockerfile
+    restart: unless-stopped
+    environment:
+      ENGINE_REST_URL: http://engine:8080
+      ENGINE_GRPC_HOST: engine:9090
+      WORKER_ID: worker-node-1
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_LOG_LEVEL: info
+    depends_on:
+      engine:
+        condition: service_healthy
+
+  worker-java:
+    profiles: ["java"]
+    build:
+      context: ..
+      dockerfile: e2e/workers/java/Dockerfile
+    restart: unless-stopped
+    environment:
+      ENGINE_REST_URL: http://engine:8080
+      ENGINE_GRPC_HOST: engine:9090
+      WORKER_ID: worker-java-1
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_LOG_LEVEL: info
+    depends_on:
+      engine:
+        condition: service_healthy
+
+networks:
+  default:
+    name: e2e-net

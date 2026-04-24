@@ -1,0 +1,39 @@
+{
+  "id": "e2e-python-signalwaitstep-completeusertask",
+  "name": "E2E Go Signal and User Task",
+  "steps": [
+    {
+      "id": "python-start-task",
+      "name": "Start Task",
+      "type": "SERVICE_TASK",
+      "jobType": "python-signalwaitstep-completeusertask-start",
+      "retryCount": 0,
+      "nextStep": "python-wait-signal"
+    },
+    {
+      "id": "python-wait-signal",
+      "name": "Wait For Signal",
+      "type": "WAIT",
+      "nextStep": "python-user-task"
+    },
+    {
+      "id": "python-user-task",
+      "name": "User Review",
+      "type": "USER_TASK",
+      "nextStep": "python-end-task"
+    },
+    {
+      "id": "python-end-task",
+      "name": "End Task",
+      "type": "SERVICE_TASK",
+      "jobType": "python-signalwaitstep-completeusertask-end",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

@@ -1,0 +1,189 @@
+services:
+  e2e-postgress:
+    image: postgres:16-alpine
+    container_name: e2e-postgress
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: workflow
+      POSTGRES_PASSWORD: workflow
+      POSTGRES_DB: workflow
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workflow -d workflow"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+
+  e2e-kafka:
+    image: confluentinc/cp-kafka:7.7.8
+    container_name: e2e-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+      KAFKA_NODE_ID: 0
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '0@e2e-kafka:29093'
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://e2e-kafka:29092,OUTSIDE://localhost:9092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,OUTSIDE:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+  e2e-kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: e2e-kafka-ui
+    restart: unless-stopped
+    ports:
+      - "28080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: 'Local-Kafka-Dev'
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: 'e2e-kafka:29092'
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    depends_on:
+      e2e-kafka:
+        condition: service_healthy
+
+  e2e-kafka-setup:
+    image: confluentinc/cp-kafka:7.7.8
+    container_name: e2e-kafka-setup
+    depends_on:
+      e2e-kafka:
+        condition: service_healthy
+    command: >
+      bash -c "
+        cub kafka-ready -b e2e-kafka:29092 1 30 &&
+        echo 'Start creating topics in parallel...' &&
+        TOPICS='workflow.jobs.go-step-a workflow.jobs.go-step-b workflow.jobs.go-step-c workflow.jobs.go-prepare workflow.jobs.go-handle-approved workflow.jobs.go-handle-rejected workflow.jobs.go-branch-left workflow.jobs.go-branch-right workflow.jobs.go-merge-done workflow.jobs.go-before-review workflow.jobs.go-after-review workflow.jobs.go-before-wait workflow.jobs.go-timer-fired workflow.jobs.go-flaky workflow.jobs.go-signalwaitstep-completeusertask-start workflow.jobs.go-signalwaitstep-completeusertask-end workflow.jobs.go-chain-start workflow.jobs.go-chain-finalize workflow.jobs.java-step-a workflow.jobs.java-step-b workflow.jobs.java-step-c workflow.jobs.java-prepare workflow.jobs.java-handle-approved workflow.jobs.java-handle-rejected workflow.jobs.java-branch-left workflow.jobs.java-branch-right workflow.jobs.java-merge-done workflow.jobs.java-before-review workflow.jobs.java-after-review workflow.jobs.java-before-wait workflow.jobs.java-timer-fired workflow.jobs.java-flaky workflow.jobs.java-signalwaitstep-completeusertask-start workflow.jobs.java-signalwaitstep-completeusertask-end workflow.jobs.java-chain-start workflow.jobs.java-chain-finalize workflow.jobs.node-step-a workflow.jobs.node-step-b workflow.jobs.node-step-c workflow.jobs.node-prepare workflow.jobs.node-handle-approved workflow.jobs.node-handle-rejected workflow.jobs.node-branch-left workflow.jobs.node-branch-right workflow.jobs.node-merge-done workflow.jobs.node-before-review workflow.jobs.node-after-review workflow.jobs.node-before-wait workflow.jobs.node-timer-fired workflow.jobs.node-flaky workflow.jobs.node-signalwaitstep-completeusertask-start workflow.jobs.node-signalwaitstep-completeusertask-end workflow.jobs.node-chain-start workflow.jobs.node-chain-finalize workflow.jobs.validate-application workflow.jobs.credit-score workflow.jobs.fraud-screen workflow.jobs.escalate-review workflow.jobs.approve-loan workflow.jobs.notify-approval-overdue workflow.jobs.prepare-disbursement workflow.jobs.transfer-funds workflow.jobs.notify-disbursement workflow.jobs.python-step-a workflow.jobs.python-step-b workflow.jobs.python-step-c workflow.jobs.python-prepare workflow.jobs.python-handle-approved workflow.jobs.python-handle-rejected workflow.jobs.python-branch-left workflow.jobs.python-branch-right workflow.jobs.python-merge-done workflow.jobs.python-before-review workflow.jobs.python-after-review workflow.jobs.python-before-wait workflow.jobs.python-timer-fired workflow.jobs.python-flaky workflow.jobs.python-signalwaitstep-completeusertask-start workflow.jobs.python-signalwaitstep-completeusertask-end workflow.jobs.python-chain-start workflow.jobs.python-chain-finalize' &&
+        for topic in $$TOPICS; do
+          kafka-topics --create --if-not-exists --bootstrap-server e2e-kafka:29092 --partitions 1 --replication-factor 1 --topic $$topic &
+        done && wait &&
+        echo 'All topics created successfully!'
+      "
+
+  e2e-engine:
+    build:
+      context: ../workflow-engine
+      dockerfile: Dockerfile
+    container_name: e2e-engine
+    restart: unless-stopped
+    environment:
+      WE_POSTGRES_DSN: postgres://workflow:workflow@e2e-postgress:5432/workflow?sslmode=disable
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_KAFKA_SEED_BROKERS: e2e-kafka:29092
+      WE_KAFKA_TRANSPORT: plaintext
+      WE_LOG_LEVEL: info
+    ports:
+      - "${ENGINE_REST_PORT:-18080}:8080"
+      - "${ENGINE_GRPC_PORT:-19090}:9090"
+      - "${ENGINE_METRICS_PORT:-19091}:9091"
+    depends_on:
+      e2e-postgress:
+        condition: service_healthy
+      e2e-kafka:
+        condition: service_healthy
+      e2e-kafka-setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  e2e-worker-go:
+    build:
+      context: ..
+      dockerfile: e2e/workers/go/Dockerfile
+    container_name: e2e-worker-go
+    restart: unless-stopped
+    environment:
+      ENGINE_REST_URL: http://e2e-engine:8080
+      ENGINE_GRPC_HOST: e2e-engine:9090
+      WORKER_ID: worker-go-1
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_KAFKA_SEED_BROKERS: e2e-kafka:29092
+      WE_KAFKA_TRANSPORT: plaintext
+      WE_LOG_LEVEL: info
+    depends_on:
+      e2e-engine:
+        condition: service_healthy
+      e2e-kafka-setup:
+        condition: service_completed_successfully
+
+  e2e-worker-python:
+    profiles: ["python"]
+    build:
+      context: ..
+      dockerfile: e2e/workers/python/Dockerfile
+    container_name: e2e-worker-python
+    restart: unless-stopped
+    environment:
+      ENGINE_REST_URL: http://e2e-engine:8080
+      WORKER_ID: worker-python-1
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_KAFKA_SEED_BROKERS: e2e-kafka:29092
+      WE_KAFKA_TRANSPORT: plaintext
+      WE_LOG_LEVEL: info
+    depends_on:
+      e2e-engine:
+        condition: service_healthy
+      e2e-kafka-setup:
+        condition: service_completed_successfully
+
+  e2e-worker-node:
+    profiles: ["node"]
+    build:
+      context: ..
+      dockerfile: e2e/workers/node/Dockerfile
+    container_name: e2e-worker-node
+    restart: unless-stopped
+    environment:
+      ENGINE_REST_URL: http://e2e-engine:8080
+      ENGINE_GRPC_HOST: e2e-engine:9090
+      WORKER_ID: worker-node-1
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_KAFKA_SEED_BROKERS: e2e-kafka:29092
+      WE_KAFKA_TRANSPORT: plaintext
+      WE_LOG_LEVEL: info
+    depends_on:
+      e2e-engine:
+        condition: service_healthy
+      e2e-kafka-setup:
+        condition: service_completed_successfully
+
+  e2e-worker-java:
+    profiles: ["java"]
+    build:
+      context: ..
+      dockerfile: e2e/workers/java/Dockerfile
+    container_name: e2e-worker-java
+    restart: unless-stopped
+    environment:
+      ENGINE_REST_URL: http://e2e-engine:8080
+      ENGINE_GRPC_HOST: e2e-engine:9090
+      WORKER_ID: worker-java-1
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_KAFKA_SEED_BROKERS: e2e-kafka:29092
+      WE_KAFKA_TRANSPORT: plaintext
+      WE_LOG_LEVEL: info
+    depends_on:
+      e2e-engine:
+        condition: service_healthy
+      e2e-kafka-setup:
+        condition: service_completed_successfully
+
+networks:
+  default:
+    name: e2e-net

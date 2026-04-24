@@ -1,0 +1,19 @@
+{
+  "id": "e2e-java-retry-fail",
+  "name": "E2E Java Retry Fail",
+  "steps": [
+    {
+      "id": "java-flaky",
+      "name": "Flaky Step",
+      "type": "SERVICE_TASK",
+      "jobType": "java-flaky",
+      "retryCount": 2,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

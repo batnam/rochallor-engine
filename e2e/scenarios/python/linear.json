@@ -1,0 +1,35 @@
+{
+  "id": "e2e-python-linear",
+  "name": "E2E Python Linear",
+  "steps": [
+    {
+      "id": "step-a",
+      "name": "Step A",
+      "type": "SERVICE_TASK",
+      "jobType": "python-step-a",
+      "retryCount": 0,
+      "nextStep": "step-b"
+    },
+    {
+      "id": "step-b",
+      "name": "Step B",
+      "type": "SERVICE_TASK",
+      "jobType": "python-step-b",
+      "retryCount": 0,
+      "nextStep": "step-c"
+    },
+    {
+      "id": "step-c",
+      "name": "Step C",
+      "type": "SERVICE_TASK",
+      "jobType": "python-step-c",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

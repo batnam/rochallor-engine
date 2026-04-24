@@ -1,0 +1,33 @@
+{
+  "id": "e2e-node-user-task",
+  "name": "E2E Node User Task",
+  "steps": [
+    {
+      "id": "node-before-review",
+      "name": "Before Review",
+      "type": "SERVICE_TASK",
+      "jobType": "node-before-review",
+      "retryCount": 0,
+      "nextStep": "node-user-task"
+    },
+    {
+      "id": "node-user-task",
+      "name": "User Review",
+      "type": "USER_TASK",
+      "nextStep": "node-after-review"
+    },
+    {
+      "id": "node-after-review",
+      "name": "After Review",
+      "type": "SERVICE_TASK",
+      "jobType": "node-after-review",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

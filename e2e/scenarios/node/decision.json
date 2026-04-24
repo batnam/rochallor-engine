@@ -1,0 +1,44 @@
+{
+  "id": "e2e-node-decision",
+  "name": "E2E Node Decision",
+  "steps": [
+    {
+      "id": "node-prepare",
+      "name": "Prepare",
+      "type": "SERVICE_TASK",
+      "jobType": "node-prepare",
+      "retryCount": 0,
+      "nextStep": "node-route"
+    },
+    {
+      "id": "node-route",
+      "name": "Route",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#result == 'approved'": "node-handle-approved",
+        "#result != 'approved'": "node-handle-rejected"
+      }
+    },
+    {
+      "id": "node-handle-approved",
+      "name": "Handle Approved",
+      "type": "SERVICE_TASK",
+      "jobType": "node-handle-approved",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "node-handle-rejected",
+      "name": "Handle Rejected",
+      "type": "SERVICE_TASK",
+      "jobType": "node-handle-rejected",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

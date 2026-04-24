@@ -1,0 +1,39 @@
+{
+  "id": "e2e-java-signalwaitstep-completeusertask",
+  "name": "E2E Go Signal and User Task",
+  "steps": [
+    {
+      "id": "java-start-task",
+      "name": "Start Task",
+      "type": "SERVICE_TASK",
+      "jobType": "java-signalwaitstep-completeusertask-start",
+      "retryCount": 0,
+      "nextStep": "java-wait-signal"
+    },
+    {
+      "id": "java-wait-signal",
+      "name": "Wait For Signal",
+      "type": "WAIT",
+      "nextStep": "java-user-task"
+    },
+    {
+      "id": "java-user-task",
+      "name": "User Review",
+      "type": "USER_TASK",
+      "nextStep": "java-end-task"
+    },
+    {
+      "id": "java-end-task",
+      "name": "End Task",
+      "type": "SERVICE_TASK",
+      "jobType": "java-signalwaitstep-completeusertask-end",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

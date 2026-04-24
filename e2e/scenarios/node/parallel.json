@@ -1,0 +1,48 @@
+{
+  "id": "e2e-node-parallel",
+  "name": "E2E Node Parallel",
+  "steps": [
+    {
+      "id": "node-parallel-gw",
+      "name": "Parallel Gateway",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["node-branch-left", "node-branch-right"],
+      "joinStep": "node-join-gw"
+    },
+    {
+      "id": "node-branch-left",
+      "name": "Branch Left",
+      "type": "SERVICE_TASK",
+      "jobType": "node-branch-left",
+      "retryCount": 0,
+      "nextStep": "node-join-gw"
+    },
+    {
+      "id": "node-branch-right",
+      "name": "Branch Right",
+      "type": "SERVICE_TASK",
+      "jobType": "node-branch-right",
+      "retryCount": 0,
+      "nextStep": "node-join-gw"
+    },
+    {
+      "id": "node-join-gw",
+      "name": "Join Gateway",
+      "type": "JOIN_GATEWAY",
+      "nextStep": "node-merge-done"
+    },
+    {
+      "id": "node-merge-done",
+      "name": "Merge Done",
+      "type": "SERVICE_TASK",
+      "jobType": "node-merge-done",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

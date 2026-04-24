@@ -1,0 +1,326 @@
+// Workflow Engine gRPC API (JSON-only scope).
+//
+// This proto is the canonical wire contract between the Engine and every language SDK
+// (Go, Java, Node/TS). The REST surface in rest-openapi.yaml mirrors this message set;
+// both surfaces expose the same capabilities.
+//
+// This service accepts JSON WorkflowDefinition payloads only. The only way to deploy
+// a definition is UploadDefinition with a JSON-serialized WorkflowDefinition.
+
+syntax = "proto3";
+
+package workflow.v1;
+
+option go_package = "github.com/batnam/rochallor-engine/workflow-engine/api/gen/workflow/v1;workflowv1";
+option java_multiple_files = true;
+option java_package = "com.batnam.workflow.api.v1";
+option java_outer_classname = "WorkflowProto";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service WorkflowEngine {
+  // Definitions
+  rpc UploadDefinition(UploadDefinitionRequest) returns (UploadDefinitionResponse);
+  rpc GetDefinition(GetDefinitionRequest) returns (GetDefinitionResponse);
+  rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
+
+  // Instances
+  rpc StartInstance(StartInstanceRequest) returns (StartInstanceResponse);
+  rpc GetInstance(GetInstanceRequest) returns (GetInstanceResponse);
+  rpc GetInstanceHistory(GetInstanceHistoryRequest) returns (GetInstanceHistoryResponse);
+  rpc CancelInstance(CancelInstanceRequest) returns (CancelInstanceResponse);
+
+  // Jobs (SDK-facing)
+  rpc PollJobs(PollJobsRequest) returns (PollJobsResponse);
+  rpc CompleteJob(CompleteJobRequest) returns (CompleteJobResponse);
+  rpc FailJob(FailJobRequest) returns (FailJobResponse);
+
+  // User tasks
+  rpc CompleteUserTask(CompleteUserTaskRequest) returns (CompleteUserTaskResponse);
+
+  // Signals — resume a WAIT step by stable step id.
+  rpc SignalWait(SignalWaitRequest) returns (SignalWaitResponse);
+}
+
+// ---------- Enums ----------
+
+enum StepType {
+  STEP_TYPE_UNSPECIFIED = 0;
+  STEP_TYPE_SERVICE_TASK = 1;
+  STEP_TYPE_USER_TASK = 2;
+  STEP_TYPE_DECISION = 3;
+  STEP_TYPE_TRANSFORMATION = 4;
+  STEP_TYPE_WAIT = 5;
+  STEP_TYPE_PARALLEL_GATEWAY = 6;
+  STEP_TYPE_JOIN_GATEWAY = 7;
+  STEP_TYPE_END = 8;
+}
+
+enum InstanceStatus {
+  INSTANCE_STATUS_UNSPECIFIED = 0;
+  INSTANCE_STATUS_ACTIVE = 1;
+  INSTANCE_STATUS_WAITING = 2;
+  INSTANCE_STATUS_COMPLETED = 3;
+  INSTANCE_STATUS_FAILED = 4;
+  INSTANCE_STATUS_CANCELLED = 5;
+}
+
+enum StepExecutionStatus {
+  STEP_EXECUTION_STATUS_UNSPECIFIED = 0;
+  STEP_EXECUTION_STATUS_RUNNING = 1;
+  STEP_EXECUTION_STATUS_COMPLETED = 2;
+  STEP_EXECUTION_STATUS_FAILED = 3;
+  STEP_EXECUTION_STATUS_SKIPPED = 4;
+}
+
+enum BoundaryEventType {
+  BOUNDARY_EVENT_TYPE_UNSPECIFIED = 0;
+  BOUNDARY_EVENT_TYPE_TIMER = 1; // the only type in scope per research R-005
+}
+
+// ---------- Definition messages ----------
+
+message WorkflowDefinition {
+  string id = 1;
+  int32 version = 2; // 0 on upload (assigned by engine); positive on read
+  string name = 3;
+  string description = 4;
+  bool auto_start_next_workflow = 5;
+  string next_workflow_id = 6;
+  repeated WorkflowStep steps = 7;
+  google.protobuf.Struct metadata = 8;
+}
+
+message WorkflowStep {
+  string id = 1;
+  string name = 2;
+  StepType type = 3;
+  string description = 4;
+
+  // Sequencing
+  string next_step = 10;
+  repeated string parallel_next_steps = 11;
+  string join_step = 12;
+
+  // Decision
+  map<string, string> conditional_next_steps = 20;
+
+  // Transformation
+  map<string, google.protobuf.Value> transformations = 30;
+
+  // Service task
+  string job_type = 40;
+  string delegate_class = 41; // advisory only per R-010
+  int32 retry_count = 42;
+
+  // Boundary events (optional; most commonly attached to SERVICE_TASK / USER_TASK / WAIT)
+  repeated BoundaryEvent boundary_events = 50;
+}
+
+message BoundaryEvent {
+  BoundaryEventType type = 1;
+  string duration = 2;      // ISO-8601 (e.g. PT30S)
+  bool interrupting = 3;    // only false observed in fixtures
+  string target_step_id = 4;
+}
+
+// ---------- Instance messages ----------
+
+message WorkflowInstance {
+  string id = 1;
+  string definition_id = 2;
+  int32 definition_version = 3;
+  InstanceStatus status = 4;
+  repeated string current_step_ids = 5;
+  google.protobuf.Struct variables = 6;
+  google.protobuf.Timestamp started_at = 7;
+  google.protobuf.Timestamp completed_at = 8;
+  string failure_reason = 9;
+  string business_key = 10;
+}
+
+message StepExecution {
+  string id = 1;
+  string instance_id = 2;
+  string step_id = 3;
+  StepType step_type = 4;
+  int32 attempt_number = 5;
+  StepExecutionStatus status = 6;
+  google.protobuf.Timestamp started_at = 7;
+  google.protobuf.Timestamp ended_at = 8;
+  string failure_reason = 9;
+}
+
+// ---------- Job messages ----------
+
+message Job {
+  string id = 1;
+  string job_type = 2;
+  string instance_id = 3;
+  string step_id = 4;
+  string step_execution_id = 5;
+  int32 retries_remaining = 6;
+  google.protobuf.Struct variables = 7;
+  google.protobuf.Timestamp lock_expires_at = 8;
+}
+
+// JobDispatchEvent is the canonical wire format for one dispatch of a
+// SERVICE_TASK job when the engine runs in kafka_outbox mode (FR-016).
+// Producers: the relay serializes this and publishes to
+// workflow.jobs.<jobType>, keyed by instance_id (R-002).
+// Consumers: the Go SDK KafkaRunner and any in-house consumer in another
+// language reuse generated types from this package so REST, gRPC, and
+// broker all describe the same job with the same schema.
+// Field numbers are the contract; names are cosmetic. Removed fields go to
+// `reserved` and are never renumbered. See
+// specs/006-kafka-outbox-dispatch/contracts/dispatch-event.proto.md.
+message JobDispatchEvent {
+  // Monotonic schema version. Starts at 1. Consumers MUST ignore fields they
+  // don't recognize; producers MUST NOT reuse the numbers of removed fields.
+  uint32 schema_version = 1;
+
+  // Dedup key. Equal to dispatch_outbox.id (ULID). Stable across republishes
+  // so consumers can dedup producer retries and relay-crash-induced replays.
+  string dedup_id = 2;
+
+  // Identity and addressing (stable across schema versions).
+  string job_id            = 10;
+  string instance_id       = 11; // also the Kafka partition key
+  string step_execution_id = 12;
+  string job_type          = 13;
+
+  // Execution-budget accounting (mirrors job.retries_remaining).
+  int32 retries_remaining = 20;
+
+  // The existing job payload, unchanged. Today the engine stores this as
+  // JSONB; on the wire it is the raw JSON bytes so worker SDKs can decode
+  // it with the same logic they use for the REST poll response.
+  bytes job_payload = 30;
+
+  // ULID timestamp of the underlying job row, for observability. Not
+  // load-bearing for correctness — consumers MAY ignore it.
+  google.protobuf.Timestamp created_at = 40;
+}
+
+// ---------- Request / response envelopes ----------
+
+message UploadDefinitionRequest {
+  WorkflowDefinition definition = 1;
+  // Uploaders MUST send a WorkflowDefinition message. The engine validates the
+  // definition and rejects requests that cannot be parsed as a valid JSON workflow.
+}
+
+message UploadDefinitionResponse {
+  string id = 1;
+  int32 version = 2;
+  google.protobuf.Timestamp uploaded_at = 3;
+}
+
+message GetDefinitionRequest {
+  string id = 1;
+  int32 version = 2; // 0 = latest
+}
+
+message GetDefinitionResponse {
+  WorkflowDefinition definition = 1;
+}
+
+message ListDefinitionsRequest {
+  string keyword = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message ListDefinitionsResponse {
+  repeated WorkflowDefinition definitions = 1;
+  int32 total = 2;
+}
+
+message StartInstanceRequest {
+  string definition_id = 1;
+  int32 definition_version = 2; // 0 = latest
+  google.protobuf.Struct variables = 3;
+  string business_key = 4;
+}
+
+message StartInstanceResponse {
+  WorkflowInstance instance = 1;
+}
+
+message GetInstanceRequest {
+  string id = 1;
+}
+
+message GetInstanceResponse {
+  WorkflowInstance instance = 1;
+}
+
+message GetInstanceHistoryRequest {
+  string id = 1;
+}
+
+message GetInstanceHistoryResponse {
+  repeated StepExecution executions = 1;
+}
+
+message CancelInstanceRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+message CancelInstanceResponse {
+  WorkflowInstance instance = 1;
+}
+
+message PollJobsRequest {
+  string worker_id = 1;
+  repeated string job_types = 2;
+  int32 max_jobs = 3;      // default 1 if 0
+  int32 lease_seconds = 4; // default 60 if 0
+}
+
+message PollJobsResponse {
+  repeated Job jobs = 1;
+}
+
+message CompleteJobRequest {
+  string job_id = 1;
+  string worker_id = 2;
+  google.protobuf.Struct variables_to_set = 3;
+}
+
+message CompleteJobResponse {}
+
+message FailJobRequest {
+  string job_id = 1;
+  string worker_id = 2;
+  bool retryable = 3;
+  string error_message = 4;
+}
+
+message FailJobResponse {}
+
+message CompleteUserTaskRequest {
+  // Tag 1 previously held `user_task_id` (legacy ULID address). That mode of
+  // addressing the user_task row has been removed; callers MUST use the
+  // stable (instance_id, user_task_step_id) pair below.
+  reserved 1;
+  reserved "user_task_id";
+
+  string completed_by = 2;
+  google.protobuf.Struct result = 3;
+
+  string instance_id = 4;
+  string user_task_step_id = 5;  // stable step id from the workflow definition
+}
+
+message CompleteUserTaskResponse {}
+
+message SignalWaitRequest {
+  string instance_id = 1;
+  string wait_step_id = 2;              // stable step id from the workflow definition
+  google.protobuf.Struct variables = 3;  // optional; merged into instance variables
+}
+
+message SignalWaitResponse {}

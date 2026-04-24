@@ -1,0 +1,65 @@
+# Go
+bin/
+dist/
+*.exe
+*.test
+*.out
+vendor/
+*.log
+.env*
+
+#AI
+.claude
+.specify
+specs
+.gemini
+CLAUDE.md
+GEMINI.md
+.claudeignore
+
+# Build artifacts
+workflow-engine/bin
+workflow-sdk-node/src/generated/
+workflow-sdk-java/build/
+
+# Node.js
+node_modules/
+workflow-sdk-node/node_modules/
+workflow-sdk-node/dist/
+workflow-sdk-node/coverage/
+
+# Java / Gradle
+.gradle/
+workflow-sdk-java/.gradle/
+workflow-sdk-java/build/
+*.class
+*.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+
+# Docker
+.dockerignore
+
+# macOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.tmp
+
+# Python SDK
+workflow-sdk-python/__pycache__/
+workflow-sdk-python/*.egg-info/
+workflow-sdk-python/dist/
+workflow-sdk-python/.pytest_cache/
+workflow-sdk-python/src/*.egg-info/
+workflow-sdk-python/src/workflow_sdk.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+
+# Test artifacts
+coverage/
+testresults/
+e2e/logs/*\n!e2e/logs/.gitkeep

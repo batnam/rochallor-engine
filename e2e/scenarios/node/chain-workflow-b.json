@@ -1,0 +1,18 @@
+{
+  "id": "e2e-node-chain-workflow-b",
+  "name": "E2E Go Chain Workflow B",
+  "steps": [
+    {
+      "id": "node-chain-finalize",
+      "name": "Finalize",
+      "type": "SERVICE_TASK",
+      "jobType": "node-chain-finalize",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End Complete",
+      "type": "END"
+    }
+  ]
+}

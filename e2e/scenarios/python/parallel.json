@@ -1,0 +1,48 @@
+{
+  "id": "e2e-python-parallel",
+  "name": "E2E Python Parallel",
+  "steps": [
+    {
+      "id": "python-parallel-gw",
+      "name": "Parallel Gateway",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["python-branch-left", "python-branch-right"],
+      "joinStep": "python-join-gw"
+    },
+    {
+      "id": "python-branch-left",
+      "name": "Branch Left",
+      "type": "SERVICE_TASK",
+      "jobType": "python-branch-left",
+      "retryCount": 0,
+      "nextStep": "python-join-gw"
+    },
+    {
+      "id": "python-branch-right",
+      "name": "Branch Right",
+      "type": "SERVICE_TASK",
+      "jobType": "python-branch-right",
+      "retryCount": 0,
+      "nextStep": "python-join-gw"
+    },
+    {
+      "id": "python-join-gw",
+      "name": "Join Gateway",
+      "type": "JOIN_GATEWAY",
+      "nextStep": "python-merge-done"
+    },
+    {
+      "id": "python-merge-done",
+      "name": "Merge Done",
+      "type": "SERVICE_TASK",
+      "jobType": "python-merge-done",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

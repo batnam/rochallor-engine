@@ -1,0 +1,41 @@
+{
+  "id": "e2e-python-timer",
+  "name": "E2E Python Timer",
+  "steps": [
+    {
+      "id": "python-before-wait",
+      "name": "Before Wait",
+      "type": "SERVICE_TASK",
+      "jobType": "python-before-wait",
+      "retryCount": 0,
+      "nextStep": "python-wait"
+    },
+    {
+      "id": "python-wait",
+      "name": "Wait",
+      "type": "WAIT",
+      "nextStep": "end",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT2S",
+          "interrupting": false,
+          "targetStepId": "python-timer-fired"
+        }
+      ]
+    },
+    {
+      "id": "python-timer-fired",
+      "name": "Timer Fired",
+      "type": "SERVICE_TASK",
+      "jobType": "python-timer-fired",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

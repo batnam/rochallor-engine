@@ -1,0 +1,20 @@
+{
+  "id": "e2e-go-chain-workflow-a",
+  "name": "E2E Go Chain Workflow A",
+  "autoStartNextWorkflow": true,
+  "nextWorkflowId": "e2e-go-chain-workflow-b",
+  "steps": [
+    {
+      "id": "go-chain-start",
+      "name": "Start",
+      "type": "SERVICE_TASK",
+      "jobType": "go-chain-start",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End Approved",
+      "type": "END"
+    }
+  ]
+}

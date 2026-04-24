@@ -1,0 +1,579 @@
+openapi: 3.1.0
+info:
+  title: Workflow Engine REST API (JSON-only scope)
+  version: 1.0.0
+  description: |
+    REST surface for the Go workflow engine. This surface is **JSON-only**.
+    The Engine accepts JSON workflow definitions only. Requests with unsupported
+    content types are rejected with HTTP 415.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: definitions
+    description: Workflow definition management (JSON upload, versioning, query)
+  - name: instances
+    description: Workflow instance lifecycle (start, query, cancel)
+  - name: jobs
+    description: Job poll / lock / complete / fail (consumed by SDK workers)
+  - name: user-tasks
+    description: Human-task completion endpoints
+
+paths:
+  /v1/definitions:
+    post:
+      tags: [definitions]
+      summary: Upload a JSON workflow definition
+      description: |
+        Accepts a single JSON workflow definition. Content-Type MUST be `application/json`.
+        Requests with other content types are rejected with HTTP 415.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowDefinition'
+      responses:
+        '201':
+          description: Definition uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinitionSummary'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '415':
+          description: Unsupported content type — only application/json is accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [definitions]
+      summary: List workflow definitions
+      parameters:
+        - in: query
+          name: keyword
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, default: 0, minimum: 0 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, default: 20, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: Page of definitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageOfDefinitionSummary'
+
+  /v1/definitions/{id}:
+    get:
+      tags: [definitions]
+      summary: Get latest version of a definition by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Definition found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/definitions/{id}/versions/{version}:
+    get:
+      tags: [definitions]
+      summary: Get a specific version of a definition
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: version
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Definition found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/instances:
+    post:
+      tags: [instances]
+      summary: Start a workflow instance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartInstanceRequest'
+      responses:
+        '201':
+          description: Instance started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstanceSummary'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/instances/{id}:
+    get:
+      tags: [instances]
+      summary: Get a workflow instance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Instance found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstanceSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/instances/{id}/history:
+    get:
+      tags: [instances]
+      summary: Get the step execution history for an instance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: History list (ordered by started_at ascending)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/instances/{id}/cancel:
+    post:
+      tags: [instances]
+      summary: Cancel an in-flight instance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstanceSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/jobs/poll:
+    post:
+      tags: [jobs]
+      summary: Poll for unlocked jobs
+      description: |
+        Called by worker processes (via the SDK) to atomically lock one or more unlocked jobs
+        matching any of the requested job types. Implemented server-side with
+        `SELECT ... FOR UPDATE SKIP LOCKED` per research R-001.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobPollRequest'
+      responses:
+        '200':
+          description: Zero or more jobs locked to this caller
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobPollResponse'
+        '410':
+          description: Gone (Returned if engine runs in kafka_outbox mode where polling is disabled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/jobs/{id}/complete:
+    post:
+      tags: [jobs]
+      summary: Report a job as successfully completed
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobCompletion'
+      responses:
+        '204':
+          description: Acknowledged; instance advances
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/jobs/{id}/fail:
+    post:
+      tags: [jobs]
+      summary: Report a job as failed (retryable or not)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobFailure'
+      responses:
+        '204':
+          description: Acknowledged; Engine re-enqueues or marks FAILED per retries_remaining
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/instances/{instanceId}/user-tasks/{userTaskId}/complete:
+    post:
+      tags: [user-tasks]
+      summary: Complete a pending USER_TASK by stable step id
+      description: |
+        Atomically completes the OPEN user_task whose (instance_id, step_id)
+        match the path parameters and advances the workflow. The supplied
+        variables are shallow-merged into the instance variables; the
+        step_execution is closed; the next step (nextStep or conditionalNextSteps)
+        is dispatched in the same transaction.
+        Idempotent — replaying a successful call is a no-op.
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema: { type: string }
+          description: Workflow instance id returned by POST /v1/instances
+        - in: path
+          name: userTaskId
+          required: true
+          schema: { type: string }
+          description: Stable step id from the workflow definition (e.g. "checker-approval")
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserTaskCompletion'
+      responses:
+        '204':
+          description: Task completed; instance advanced.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/instances/{instanceId}/signals/{waitStepId}:
+    post:
+      tags: [instances]
+      summary: Signal a WAIT step to resume the workflow
+      description: |
+        Sends a signal to a workflow instance parked at a WAIT step. The
+        optional body is shallow-merged into the instance variables on resume;
+        an empty or absent body is valid (the signal itself is the event).
+        Note: unlike /user-tasks/.../complete, this body IS the variable map —
+        there is no `{"variables": ...}` wrapper.
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: waitStepId
+          required: true
+          schema: { type: string }
+          description: Stable step id of the WAIT step (e.g. "await-settlement")
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Variables to merge into the instance on resume.
+      responses:
+        '204':
+          description: Signal accepted; instance advanced.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  schemas:
+    WorkflowDefinition:
+      type: object
+      required: [id, name, steps]
+      properties:
+        id: { type: string, maxLength: 256 }
+        name: { type: string }
+        description: { type: string }
+        autoStartNextWorkflow: { type: boolean }
+        nextWorkflowId: { type: string }
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WorkflowStep'
+        metadata: { type: object, additionalProperties: true }
+
+    WorkflowStep:
+      type: object
+      required: [id, name, type]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type:
+          type: string
+          enum: [SERVICE_TASK, USER_TASK, DECISION, TRANSFORMATION, WAIT, PARALLEL_GATEWAY, JOIN_GATEWAY, END]
+        description: { type: string }
+        nextStep: { type: string }
+        jobType: { type: string }
+        delegateClass:
+          type: string
+          description: |
+            Advisory string. The Engine stores this field but never loads or reflects on it.
+        retryCount: { type: integer, minimum: 0 }
+        conditionalNextSteps:
+          type: object
+          additionalProperties: { type: string }
+        transformations:
+          type: object
+          additionalProperties: { type: [string, number, boolean, object, array, 'null'] }
+        parallelNextSteps:
+          type: array
+          items: { type: string }
+          minItems: 2
+        joinStep: { type: string }
+        boundaryEvents:
+          type: array
+          items: { $ref: '#/components/schemas/BoundaryEvent' }
+
+    BoundaryEvent:
+      type: object
+      required: [type, targetStepId]
+      properties:
+        type:
+          type: string
+          enum: [TIMER]
+        duration: { type: string, description: ISO-8601 duration, e.g. PT30S }
+        interrupting: { type: boolean, default: false }
+        targetStepId: { type: string }
+
+    WorkflowDefinitionSummary:
+      type: object
+      required: [id, version, name]
+      properties:
+        id: { type: string }
+        version: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        uploadedAt: { type: string, format: date-time }
+
+    PageOfDefinitionSummary:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WorkflowDefinitionSummary' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+
+    StartInstanceRequest:
+      type: object
+      required: [definitionId]
+      properties:
+        definitionId: { type: string }
+        definitionVersion:
+          type: integer
+          description: If omitted, the latest version is used.
+        variables:
+          type: object
+          additionalProperties: true
+        businessKey: { type: string }
+
+    WorkflowInstanceSummary:
+      type: object
+      required: [id, definitionId, definitionVersion, status, currentStepIds, startedAt]
+      properties:
+        id: { type: string }
+        definitionId: { type: string }
+        definitionVersion: { type: integer }
+        status:
+          type: string
+          enum: [ACTIVE, WAITING, COMPLETED, FAILED, CANCELLED]
+        currentStepIds:
+          type: array
+          items: { type: string }
+        variables:
+          type: object
+          additionalProperties: true
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        failureReason: { type: string }
+        businessKey: { type: string }
+
+    StepExecutionSummary:
+      type: object
+      required: [id, instanceId, stepId, stepType, attemptNumber, status, startedAt]
+      properties:
+        id: { type: string }
+        instanceId: { type: string }
+        stepId: { type: string }
+        stepType: { type: string }
+        attemptNumber: { type: integer, minimum: 1 }
+        status:
+          type: string
+          enum: [RUNNING, COMPLETED, FAILED, SKIPPED]
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
+        failureReason: { type: string }
+
+    JobPollRequest:
+      type: object
+      required: [workerId, jobTypes]
+      properties:
+        workerId: { type: string }
+        jobTypes:
+          type: array
+          items: { type: string }
+          minItems: 1
+        maxJobs: { type: integer, minimum: 1, maximum: 100, default: 1 }
+        leaseSeconds: { type: integer, minimum: 5, maximum: 3600, default: 60 }
+
+    Job:
+      type: object
+      required: [id, jobType, instanceId, stepId, stepExecutionId, retriesRemaining, variables, lockExpiresAt]
+      properties:
+        id: { type: string }
+        jobType: { type: string }
+        instanceId: { type: string }
+        stepId: { type: string }
+        stepExecutionId: { type: string }
+        retriesRemaining: { type: integer, minimum: 0 }
+        variables:
+          type: object
+          additionalProperties: true
+        lockExpiresAt: { type: string, format: date-time }
+
+    JobPollResponse:
+      type: object
+      required: [jobs]
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+
+    HistoryResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StepExecutionSummary'
+
+    JobCompletion:
+      type: object
+      required: [workerId]
+      properties:
+        workerId: { type: string }
+        variables:
+          type: object
+          additionalProperties: true
+
+    JobFailure:
+      type: object
+      required: [workerId, retryable, errorMessage]
+      properties:
+        workerId: { type: string }
+        retryable: { type: boolean }
+        errorMessage: { type: string }
+
+    UserTaskCompletion:
+      type: object
+      properties:
+        completedBy: { type: string }
+        result:
+          type: object
+          additionalProperties: true
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        see: { type: string }
+
+  responses:
+    ValidationError:
+      description: Request failed validation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Conflict:
+      description: Conflicting state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
