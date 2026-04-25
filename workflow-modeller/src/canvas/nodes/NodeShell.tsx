@@ -1,4 +1,5 @@
 import type { Step, StepType } from '@/domain/types';
+import { useDiagnosticsForNode } from '@/store/selectors';
 import { Handle, Position } from '@xyflow/react';
 import type { ReactNode } from 'react';
 
@@ -18,11 +19,24 @@ interface NodeShellProps {
 
 export function NodeShell(props: NodeShellProps): ReactNode {
   const { data, accent, showTarget = true, source = [{ id: 'out' }], extra, subtitle } = props;
+  const { errors, warnings, diagnostics } = useDiagnosticsForNode(data.step.id);
+
+  const classes = [
+    'wm-node',
+    `wm-node--${accent.toLowerCase()}`,
+    data.isEntry && 'wm-node--entry',
+    errors > 0 && 'wm-node--has-error',
+    errors === 0 && warnings > 0 && 'wm-node--has-warning',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const badgeMessages = diagnostics
+    .map((d) => `${d.code}: ${d.message}`)
+    .join('\n');
 
   return (
-    <div
-      className={`wm-node wm-node--${accent.toLowerCase()} ${data.isEntry ? 'wm-node--entry' : ''}`}
-    >
+    <div className={classes}>
       {showTarget && <Handle type="target" position={Position.Left} id="in" />}
 
       <div className="wm-node-header">
@@ -35,6 +49,16 @@ export function NodeShell(props: NodeShellProps): ReactNode {
       <div className="wm-node-id">{data.step.id}</div>
       {subtitle && <div className="wm-node-subtitle">{subtitle}</div>}
       {extra}
+
+      {(errors > 0 || warnings > 0) && (
+        <div
+          className={`wm-node-diagnostic wm-node-diagnostic--${errors > 0 ? 'error' : 'warning'}`}
+          title={badgeMessages}
+          aria-label={`${errors} error(s), ${warnings} warning(s) on this step`}
+        >
+          {errors > 0 ? `⛔ ${errors}` : `⚠ ${warnings}`}
+        </div>
+      )}
 
       {source.map((s, i) => (
         <Handle

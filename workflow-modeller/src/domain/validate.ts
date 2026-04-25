@@ -385,6 +385,10 @@ function outgoingTargets(step: Step): StepId[] {
       return [...step.parallelNextSteps];
     case 'END':
       return [];
+    default:
+      // Unknown step type — STEP_TYPE_VALID already flags it; return no edges
+      // so the reachability / cycle walks can continue without crashing.
+      return [];
   }
 }
 

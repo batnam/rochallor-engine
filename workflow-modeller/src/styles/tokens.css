@@ -238,6 +238,18 @@ body,
   font-size: 0.8125rem;
 }
 
+.wm-validation-group + .wm-validation-group {
+  margin-top: 0.75rem;
+}
+
+.wm-validation-group-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 0.5rem 0 0.25rem;
+}
+
 .wm-diagnostic--error {
   color: #b91c1c;
 }
@@ -249,6 +261,79 @@ body,
 .wm-diagnostic code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   margin-right: 0.375rem;
+}
+
+.wm-diagnostic-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.25rem 0.375rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.wm-diagnostic-row:hover:not(:disabled) {
+  background: var(--surface-muted);
+  border-color: var(--surface-border);
+}
+
+.wm-diagnostic-row:disabled {
+  cursor: default;
+}
+
+.wm-diagnostic-node {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.wm-diagnostic-message {
+  flex: 1;
+}
+
+.wm-diagnostic-more {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 0 0.375rem;
+}
+
+/* Per-node diagnostic badges (T071) */
+.wm-node-diagnostic {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 3px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.wm-node-diagnostic--error {
+  background: color-mix(in srgb, #b91c1c 14%, var(--surface));
+  color: #b91c1c;
+}
+
+.wm-node-diagnostic--warning {
+  background: color-mix(in srgb, #a16207 14%, var(--surface));
+  color: #a16207;
+}
+
+.wm-node--has-error {
+  outline: 2px solid #b91c1c;
+  outline-offset: -2px;
+}
+
+.wm-node--has-warning:not(.wm-node--has-error) {
+  outline: 2px solid #a16207;
+  outline-offset: -2px;
 }
 
 /* Canvas nodes */

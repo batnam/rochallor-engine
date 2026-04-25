@@ -1,0 +1,8 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "steps": [
+    { "id": "j", "name": "Join", "type": "JOIN_GATEWAY", "nextStep": "" },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}

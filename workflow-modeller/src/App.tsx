@@ -7,38 +7,10 @@ import { ImportDialog } from '@/panels/ImportDialog';
 import { Palette } from '@/panels/Palette';
 import { PropertyPanel } from '@/panels/PropertyPanel';
 import { Toolbar } from '@/panels/Toolbar';
-import { useSelection, useValidationSummary } from '@/store/selectors';
+import { ValidationPanel } from '@/panels/ValidationPanel';
+import { useSelection } from '@/store/selectors';
 import { ReactFlowProvider } from '@xyflow/react';
 import { type ReactNode, useEffect, useState } from 'react';
-
-function ValidationPanel(): ReactNode {
-  const { errors, warnings, diagnostics, lastRunAt } = useValidationSummary();
-  return (
-    <footer className="wm-validation" aria-label="Validation panel">
-      <div className="wm-validation-summary">
-        <strong>
-          {errors} error(s), {warnings} warning(s)
-        </strong>
-        <span className="wm-validation-timestamp">
-          {lastRunAt ? `Checked ${new Date(lastRunAt).toLocaleTimeString()}` : 'Not run yet'}
-        </span>
-      </div>
-      {diagnostics.length > 0 && (
-        <ul className="wm-diagnostic-list">
-          {diagnostics.slice(0, 20).map((d, i) => (
-            <li
-              key={`${d.code}-${d.nodeId ?? 'root'}-${d.field ?? ''}-${i}`}
-              className={`wm-diagnostic wm-diagnostic--${d.severity}`}
-            >
-              <code>{d.code}</code> {d.nodeId ? `[${d.nodeId}] ` : ''}
-              {d.message}
-            </li>
-          ))}
-        </ul>
-      )}
-    </footer>
-  );
-}
 
 interface BannerState {
   tone: BannerTone;

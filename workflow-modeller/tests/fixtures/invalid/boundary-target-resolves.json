@@ -1,0 +1,22 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "steps": [
+    {
+      "id": "s",
+      "name": "S",
+      "type": "SERVICE_TASK",
+      "jobType": "x",
+      "nextStep": "e",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT30S",
+          "interrupting": true,
+          "targetStepId": "ghost"
+        }
+      ]
+    },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}

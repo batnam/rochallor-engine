@@ -1,5 +1,5 @@
 import { toEdges, toNodes } from '@/domain/graph';
-import type { Diagnostic, GraphEdge, GraphNode } from '@/domain/types';
+import type { Diagnostic, GraphEdge, GraphNode, StepId } from '@/domain/types';
 import { type EngineConnection, type WorkflowStore, useWorkflowStore } from './workflowStore';
 
 export function useNodes(): GraphNode[] {
@@ -40,4 +40,21 @@ export function useEngineConnection(): EngineConnection {
 
 export function useSelection(): WorkflowStore['selection'] {
   return useWorkflowStore((s) => s.selection);
+}
+
+export interface NodeDiagnosticSummary {
+  errors: number;
+  warnings: number;
+  diagnostics: Diagnostic[];
+}
+
+export function useDiagnosticsForNode(nodeId: StepId): NodeDiagnosticSummary {
+  return useWorkflowStore((s) => {
+    const diagnostics = s.validation.diagnostics.filter((d) => d.nodeId === nodeId);
+    return {
+      errors: diagnostics.filter((d) => d.severity === 'error').length,
+      warnings: diagnostics.filter((d) => d.severity === 'warning').length,
+      diagnostics,
+    };
+  });
 }

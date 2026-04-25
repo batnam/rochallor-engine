@@ -1,0 +1,21 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "steps": [
+    {
+      "id": "d",
+      "name": "Decide",
+      "type": "DECISION",
+      "conditionalNextSteps": { "true": "e" },
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT30S",
+          "interrupting": true,
+          "targetStepId": "e"
+        }
+      ]
+    },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}

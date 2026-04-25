@@ -1,0 +1,8 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "steps": [
+    { "id": "w", "name": "Wait", "type": "WAIT", "nextStep": "" },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}
