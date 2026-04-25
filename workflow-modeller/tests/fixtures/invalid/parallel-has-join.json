@@ -1,0 +1,28 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "steps": [
+    {
+      "id": "p",
+      "name": "Parallel",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["a", "b"],
+      "joinStep": "a"
+    },
+    {
+      "id": "a",
+      "name": "A",
+      "type": "SERVICE_TASK",
+      "jobType": "a",
+      "nextStep": "e"
+    },
+    {
+      "id": "b",
+      "name": "B",
+      "type": "SERVICE_TASK",
+      "jobType": "b",
+      "nextStep": "e"
+    },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}
