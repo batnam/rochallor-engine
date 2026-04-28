@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 
-const BROKEN = readFileSync(resolve(__dirname, '../fixtures/invalid/ref-resolves.json'), 'utf8');
+const BROKEN = readFileSync(
+  new URL('../fixtures/invalid/ref-resolves.json', import.meta.url),
+  'utf8',
+);
 const CLEAN = readFileSync(
-  resolve(__dirname, '../fixtures/valid/loan-disbursement-workflow.json'),
+  new URL('../fixtures/valid/loan-disbursement-workflow.json', import.meta.url),
   'utf8',
 );
 

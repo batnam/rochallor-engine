@@ -1,9 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 
 const FIXTURE = readFileSync(
-  resolve(__dirname, '../fixtures/valid/loan-application-full.json'),
+  new URL('../fixtures/valid/loan-application-full.json', import.meta.url),
   'utf8',
 );
 

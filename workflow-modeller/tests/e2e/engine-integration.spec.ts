@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 
 const SAMPLE = JSON.parse(
-  readFileSync(resolve(__dirname, '../fixtures/valid/loan-disbursement-workflow.json'), 'utf8'),
+  readFileSync(
+    new URL('../fixtures/valid/loan-disbursement-workflow.json', import.meta.url),
+    'utf8',
+  ),
 );
 
 const BASE = 'http://mock-engine.example';
