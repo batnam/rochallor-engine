@@ -1,0 +1,14 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "steps": [
+    {
+      "id": "t",
+      "name": "Transform",
+      "type": "TRANSFORMATION",
+      "nextStep": "e",
+      "transformations": {}
+    },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}

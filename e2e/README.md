@@ -40,21 +40,20 @@ The suite supports two fully parallel architectures:
 | **Kafka Outbox** | `WE_DISPATCH_MODE=kafka_outbox` | **Event-Driven.** Engine writes to `dispatch_outbox` table, a relay pushes to Kafka, and workers consume from topics. |
 
 When running in `kafka_outbox` mode:
-1. A **Redpanda** container is automatically started.
-2. A **redpanda-setup** container pre-creates the necessary `workflow.jobs.<jobType>` topics.
+1. A **Kafka** container is automatically started.
+2. A **kafka-setup** container pre-creates the necessary `workflow.jobs.<jobType>` topics.
 3. The **Engine** disables polling endpoints and starts the Transaction Outbox relay.
 4. **Workers** switch from the polling `Runner` to the `KafkaRunner`.
 
 ## Port defaults
 
-| Service        | Host port |
-|----------------|-----------|
-| Engine REST    | 18080     |
-| Engine gRPC    | 19090     |
+| Service       | Host port |
+|---------------|-----------|
+| Engine REST   | 18080     |
+| Engine gRPC   | 19090     |
 | Engine metrics | 19091     |
-| PostgreSQL     | 5433      |
-| Redpanda Kafka | 9092      |
-| Redpanda Admin | 9644      |
+| PostgreSQL    | 5433      |
+| Kafka    | 9092      |
 
 Override via env vars before running:
 

@@ -1,0 +1,26 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "steps": [
+    {
+      "id": "p1",
+      "name": "P1",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["p2", "a"],
+      "joinStep": "j1"
+    },
+    {
+      "id": "p2",
+      "name": "P2",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["b", "c"],
+      "joinStep": "j2"
+    },
+    { "id": "a", "name": "A", "type": "SERVICE_TASK", "jobType": "a", "nextStep": "j1" },
+    { "id": "b", "name": "B", "type": "SERVICE_TASK", "jobType": "b", "nextStep": "j2" },
+    { "id": "c", "name": "C", "type": "SERVICE_TASK", "jobType": "c", "nextStep": "j2" },
+    { "id": "j2", "name": "J2", "type": "JOIN_GATEWAY", "nextStep": "j1" },
+    { "id": "j1", "name": "J1", "type": "JOIN_GATEWAY", "nextStep": "e" },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}

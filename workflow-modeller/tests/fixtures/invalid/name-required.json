@@ -1,0 +1,5 @@
+{
+  "id": "wf",
+  "name": "",
+  "steps": [{ "id": "e", "name": "End", "type": "END" }]
+}
