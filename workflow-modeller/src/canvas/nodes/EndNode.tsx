@@ -1,8 +1,8 @@
 import type { NodeProps } from '@xyflow/react';
-import type { ReactNode } from 'react';
+import { type ReactNode, memo } from 'react';
 import { type NodeData, NodeShell } from './NodeShell';
 
-export function EndNode(props: NodeProps): ReactNode {
+export const EndNode = memo(function EndNode(props: NodeProps): ReactNode {
   const data = props.data as NodeData;
   return <NodeShell data={data} accent="END" source={[]} />;
-}
+});

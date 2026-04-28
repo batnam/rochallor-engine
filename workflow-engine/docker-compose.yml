@@ -13,3 +13,25 @@ services:
       interval: 3s
       timeout: 5s
       retries: 15
+
+  engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      WE_POSTGRES_DSN: postgres://workflow:workflow@postgres:5432/workflow?sslmode=disable
+      WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
+      WE_LOG_LEVEL: info
+    ports:
+      - "18080:8080"
+      - "19090:9090"
+      - "19091:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1" ]
+      interval: 3s
+      timeout: 5s
+      retries: 20

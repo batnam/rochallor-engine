@@ -32,6 +32,15 @@ export function createEngineClient(config: EngineClientConfig): EngineClient {
     return h;
   }
 
+  // Encode a single path segment, keeping characters that are safe per
+  // RFC 3986 sub-delims but that `encodeURIComponent` over-eagerly escapes.
+  // Specifically `:` — the engine's chi router does not percent-decode path
+  // params, so `LOS::loan-app` must travel as literal `:` to match what's
+  // stored, not as `%3A%3A`.
+  function encodeIdSegment(id: string): string {
+    return encodeURIComponent(id).replace(/%3A/gi, ':');
+  }
+
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let response: Response;
     try {
@@ -75,14 +84,14 @@ export function createEngineClient(config: EngineClientConfig): EngineClient {
       });
     },
     async getLatest(id) {
-      return request<WorkflowDefinition>(`/v1/definitions/${encodeURIComponent(id)}`, {
+      return request<WorkflowDefinition>(`/v1/definitions/${encodeIdSegment(id)}`, {
         method: 'GET',
         headers: headers(),
       });
     },
     async getVersion(id, version) {
       return request<WorkflowDefinition>(
-        `/v1/definitions/${encodeURIComponent(id)}/versions/${version}`,
+        `/v1/definitions/${encodeIdSegment(id)}/versions/${version}`,
         { method: 'GET', headers: headers() },
       );
     },

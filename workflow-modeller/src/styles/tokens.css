@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   /* Step-type colour tokens (FR-002) — one per StepType. Refined in later phases. */
   --step-service-task: #2563eb;
@@ -24,16 +24,6 @@
   --surface-border: #e2e8f0;
   --text: #0f172a;
   --text-muted: #475569;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --surface: #0f172a;
-    --surface-muted: #1e293b;
-    --surface-border: #334155;
-    --text: #f8fafc;
-    --text-muted: #cbd5e1;
-  }
 }
 
 html,

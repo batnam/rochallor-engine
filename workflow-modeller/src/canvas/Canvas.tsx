@@ -7,6 +7,8 @@ import {
   type Node,
   type NodeTypes,
   ReactFlow,
+  useEdgesState,
+  useNodesState,
   useReactFlow,
 } from '@xyflow/react';
 import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo } from 'react';
@@ -117,6 +119,7 @@ function CanvasInner(): ReactNode {
   const storedLayout = useWorkflowStore((s) => s.layout);
   const addStep = useWorkflowStore((s) => s.addStep);
   const setLayout = useWorkflowStore((s) => s.setLayout);
+  const source = useWorkflowStore((s) => s.source);
   const { fitView, screenToFlowPosition } = useReactFlow();
 
   const onDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -178,14 +181,31 @@ function CanvasInner(): ReactNode {
     return missing ? { ...layoutLeftToRight(nodes, edges), ...storedLayout } : storedLayout;
   }, [nodes, edges, storedLayout]);
 
-  const flowNodes = useMemo(() => mapToFlowNodes(nodes, layout), [nodes, layout]);
-  const flowEdges = useMemo(() => mapToFlowEdges(edges, nodes), [edges, nodes]);
+  // ReactFlow's internal node/edge state. We sync from the store one-way so
+  // drag interactions can update positions locally without thrashing the store
+  // — the final position is committed via onNodeDragStop. Without this pattern
+  // ReactFlow has no channel to express the in-flight drag position, leading
+  // to jerky frame drops while dragging.
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node<NodeData>>([]);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   useEffect(() => {
-    if (flowNodes.length === 0) return;
-    const timer = setTimeout(() => fitView({ duration: 250, padding: 0.2 }), 50);
+    setRfNodes(mapToFlowNodes(nodes, layout));
+  }, [nodes, layout, setRfNodes]);
+
+  useEffect(() => {
+    setRfEdges(mapToFlowEdges(edges, nodes));
+  }, [edges, nodes, setRfEdges]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `source` is intentionally a trigger-only dep — the effect body reads from getState() so it doesn't reference `source` directly, but ref changes (import / load / upload / reset) must re-fit; step edits must NOT.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (useWorkflowStore.getState().definition.steps.length > 0) {
+        fitView({ duration: 250, padding: 0.2 });
+      }
+    }, 50);
     return () => clearTimeout(timer);
-  }, [flowNodes, fitView]);
+  }, [source, fitView]);
 
   return (
     <div className="wm-canvas-inner" onDragOver={onDragOver} onDrop={onDrop}>
@@ -196,8 +216,10 @@ function CanvasInner(): ReactNode {
         </div>
       )}
       <ReactFlow
-        nodes={flowNodes}
-        edges={flowEdges}
+        nodes={rfNodes}
+        edges={rfEdges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView={nodes.length > 0}

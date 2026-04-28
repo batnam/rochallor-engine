@@ -1,6 +1,6 @@
 # Workflow Modeller
 
-Visual editor for the Rochallor Workflow Engine — feature `001-workflow-modeller`.
+Visual editor for the Rochallor Workflow Engine
 
 It reads and writes the same JSON contract the engine consumes, so you can author, validate, and publish workflow definitions without hand-editing files. The editor talks to the engine over its existing REST API; no engine-side changes are required.
 

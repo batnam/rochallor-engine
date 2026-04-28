@@ -1,13 +1,16 @@
 import { toEdges, toNodes } from '@/domain/graph';
 import type { Diagnostic, GraphEdge, GraphNode, StepId } from '@/domain/types';
+import { useMemo } from 'react';
 import { type EngineConnection, type WorkflowStore, useWorkflowStore } from './workflowStore';
 
 export function useNodes(): GraphNode[] {
-  return useWorkflowStore((s) => toNodes(s.definition));
+  const definition = useWorkflowStore((s) => s.definition);
+  return useMemo(() => toNodes(definition), [definition]);
 }
 
 export function useEdges(): GraphEdge[] {
-  return useWorkflowStore((s) => toEdges(s.definition));
+  const definition = useWorkflowStore((s) => s.definition);
+  return useMemo(() => toEdges(definition), [definition]);
 }
 
 export interface ValidationSummary {
@@ -18,16 +21,17 @@ export interface ValidationSummary {
 }
 
 export function useValidationSummary(): ValidationSummary {
-  return useWorkflowStore((s) => {
-    const errors = s.validation.diagnostics.filter((d) => d.severity === 'error').length;
-    const warnings = s.validation.diagnostics.filter((d) => d.severity === 'warning').length;
+  const validation = useWorkflowStore((s) => s.validation);
+  return useMemo(() => {
+    const errors = validation.diagnostics.filter((d) => d.severity === 'error').length;
+    const warnings = validation.diagnostics.filter((d) => d.severity === 'warning').length;
     return {
       errors,
       warnings,
-      diagnostics: s.validation.diagnostics,
-      lastRunAt: s.validation.lastRunAt,
+      diagnostics: validation.diagnostics,
+      lastRunAt: validation.lastRunAt,
     };
-  });
+  }, [validation]);
 }
 
 export function useDirty(): boolean {
@@ -49,12 +53,13 @@ export interface NodeDiagnosticSummary {
 }
 
 export function useDiagnosticsForNode(nodeId: StepId): NodeDiagnosticSummary {
-  return useWorkflowStore((s) => {
-    const diagnostics = s.validation.diagnostics.filter((d) => d.nodeId === nodeId);
+  const validation = useWorkflowStore((s) => s.validation);
+  return useMemo(() => {
+    const diagnostics = validation.diagnostics.filter((d) => d.nodeId === nodeId);
     return {
       errors: diagnostics.filter((d) => d.severity === 'error').length,
       warnings: diagnostics.filter((d) => d.severity === 'warning').length,
       diagnostics,
     };
-  });
+  }, [validation, nodeId]);
 }
