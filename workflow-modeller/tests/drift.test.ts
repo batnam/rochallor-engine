@@ -13,12 +13,7 @@ import { basename } from 'node:path';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import {
-  checkFixture,
-  compileGoRunner,
-  isGoAvailable,
-  listFixtures,
-} from '../scripts/drift-check';
+import { checkFixture, compileGoRunner, isGoAvailable, listFixtures } from '../scripts/drift-check';
 
 const validFixtures = listFixtures('valid');
 const invalidFixtures = listFixtures('invalid');

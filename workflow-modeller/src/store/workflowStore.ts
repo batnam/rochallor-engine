@@ -8,6 +8,8 @@ import type {
   WorkflowDefinition,
 } from '@/domain/types';
 import { validate } from '@/domain/validate';
+import { type EngineClient, createEngineClient } from '@/engine/client';
+import { EngineError } from '@/engine/types';
 import { exportJson as ioExport } from '@/io/export';
 import { importJson as ioImport } from '@/io/import';
 import { temporal } from 'zundo';
@@ -72,7 +74,17 @@ export interface WorkflowActions {
   exportToJson(opts?: { includeLayout?: boolean }): string;
   loadFromEngine(id: string, version?: number): Promise<void>;
   uploadToEngine(): Promise<{ version: number }>;
+  testEngineConnection(): Promise<EngineConnection['status']>;
   reset(): void;
+}
+
+let injectedClient: EngineClient | null = null;
+/** Test seam: lets MSW-driven specs swap in a deterministic client. */
+export function __setEngineClient(client: EngineClient | null): void {
+  injectedClient = client;
+}
+function getClient(state: WorkflowState): EngineClient {
+  return injectedClient ?? createEngineClient(state.engine);
 }
 
 export type WorkflowStore = WorkflowState & WorkflowActions;
@@ -243,12 +255,59 @@ const creator = (
     });
   },
 
-  async loadFromEngine(_id, _version) {
-    throw new Error('loadFromEngine will be wired in Phase 6 (US4).');
+  async loadFromEngine(id, version) {
+    const client = getClient(get());
+    const def =
+      version === undefined ? await client.getLatest(id) : await client.getVersion(id, version);
+    set({
+      definition: def,
+      layout: {},
+      selection: { kind: 'none' },
+      validation: { diagnostics: [] },
+      dirty: false,
+      importWarnings: [],
+      source: { kind: 'engine', definitionId: id, version: def.version ?? version ?? 0 },
+    });
   },
 
   async uploadToEngine() {
-    throw new Error('uploadToEngine will be wired in Phase 6 (US4).');
+    const state = get();
+    const client = getClient(state);
+    try {
+      const summary = await client.upload(state.definition);
+      set((s) => ({
+        definition: { ...s.definition, version: summary.version },
+        dirty: false,
+        source: { kind: 'engine', definitionId: summary.id, version: summary.version },
+        engine: { ...s.engine, status: 'ok', lastCheckedAt: Date.now() },
+      }));
+      return { version: summary.version };
+    } catch (e) {
+      if (e instanceof EngineError && e.kind === 'http' && e.status >= 400 && e.status < 500) {
+        // Surface engine validation rejection verbatim — drift signal per R-010.
+        const drift: Diagnostic = {
+          code: 'STEP_TYPE_VALID',
+          severity: 'error',
+          message: `Engine rejected upload (${e.status}): ${e.body || e.message}`,
+        };
+        set((s) => ({
+          validation: { lastRunAt: Date.now(), diagnostics: [...s.validation.diagnostics, drift] },
+          engine: { ...s.engine, status: 'error' },
+        }));
+      } else if (e instanceof EngineError && e.kind === 'network') {
+        set((s) => ({ engine: { ...s.engine, status: 'unreachable', lastCheckedAt: Date.now() } }));
+      } else {
+        set((s) => ({ engine: { ...s.engine, status: 'error' } }));
+      }
+      throw e;
+    }
+  },
+
+  async testEngineConnection() {
+    const client = getClient(get());
+    const status = await client.testConnection();
+    set((s) => ({ engine: { ...s.engine, status, lastCheckedAt: Date.now() } }));
+    return status;
   },
 
   reset() {
@@ -308,6 +367,7 @@ export const useWorkflowStore = create<WorkflowStore>()(
   persist(
     temporal(creator, {
       partialize: (state) => ({ definition: state.definition }),
+      equality: (a, b) => a.definition === b.definition,
       limit: 100,
     }),
     {
@@ -319,6 +379,10 @@ export const useWorkflowStore = create<WorkflowStore>()(
         source: state.source,
       }),
       version: 1,
+      migrate: (persisted, fromVersion) => {
+        if (fromVersion !== 1) return undefined as unknown as WorkflowState;
+        return persisted as WorkflowState;
+      },
     },
   ),
 );

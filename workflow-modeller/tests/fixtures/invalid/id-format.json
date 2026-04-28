@@ -1,7 +1,5 @@
 {
   "id": "bad id!",
   "name": "wf",
-  "steps": [
-    { "id": "e", "name": "End", "type": "END" }
-  ]
+  "steps": [{ "id": "e", "name": "End", "type": "END" }]
 }

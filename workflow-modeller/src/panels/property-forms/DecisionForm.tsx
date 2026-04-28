@@ -87,7 +87,12 @@ export function DecisionForm({ step }: DecisionFormProps): ReactNode {
                 excludeIds={[step.id]}
                 allowEmpty
               />
-              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up">
+              <button
+                type="button"
+                onClick={() => move(i, -1)}
+                disabled={i === 0}
+                aria-label="Move up"
+              >
                 ↑
               </button>
               <button

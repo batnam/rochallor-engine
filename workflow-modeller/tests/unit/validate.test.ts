@@ -92,8 +92,8 @@ describe('validate — rules that bypass Zod parsing', () => {
           type: 'SERVICE_TASK',
           jobType: 'x',
           nextStep: 'e',
-          // biome-ignore lint/suspicious/noExplicitAny: intentional bypass
           boundaryEvents: [
+            // biome-ignore lint/suspicious/noExplicitAny: deliberately fabricates an invalid type to exercise BOUNDARY_TYPE
             { type: 'MESSAGE', duration: 'PT30S', interrupting: true, targetStepId: 'e' } as any,
           ],
         },
@@ -114,9 +114,7 @@ describe('validate — rules that bypass Zod parsing', () => {
           type: 'SERVICE_TASK',
           jobType: 'x',
           nextStep: 'e',
-          boundaryEvents: [
-            { type: 'TIMER', duration: '', interrupting: true, targetStepId: 'e' },
-          ],
+          boundaryEvents: [{ type: 'TIMER', duration: '', interrupting: true, targetStepId: 'e' }],
         },
         { id: 'e', name: 'End', type: 'END' },
       ],

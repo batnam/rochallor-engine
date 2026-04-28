@@ -9,7 +9,7 @@
  * Usage from Vitest: see tests/drift.test.ts.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,11 +51,10 @@ export function compileGoRunner(): string {
   if (cachedBinary !== null) return cachedBinary;
   const outDir = mkdtempSync(join(tmpdir(), 'wm-drift-'));
   const out = join(outDir, 'validate-fixture');
-  const result = spawnSync(
-    'go',
-    ['build', '-o', out, './cmd/validate-fixture'],
-    { cwd: ENGINE_ROOT, encoding: 'utf-8' },
-  );
+  const result = spawnSync('go', ['build', '-o', out, './cmd/validate-fixture'], {
+    cwd: ENGINE_ROOT,
+    encoding: 'utf-8',
+  });
   if (result.status !== 0) {
     throw new Error(`go build failed: ${result.stderr || result.stdout}`);
   }

@@ -7,7 +7,14 @@ import type { ReactNode } from 'react';
 const VISIBLE_LIMIT = 50;
 
 function diagnosticKey(d: Diagnostic, i: number): string {
-  return [d.code, d.nodeId ?? 'root', d.field ?? '', d.branchKey ?? '', d.boundaryIndex ?? '', i].join('|');
+  return [
+    d.code,
+    d.nodeId ?? 'root',
+    d.field ?? '',
+    d.branchKey ?? '',
+    d.boundaryIndex ?? '',
+    i,
+  ].join('|');
 }
 
 export function ValidationPanel(): ReactNode {
@@ -36,7 +43,10 @@ export function ValidationPanel(): ReactNode {
         <h3 className="wm-validation-group-title">{title}</h3>
         <ul className="wm-diagnostic-list">
           {items.slice(0, VISIBLE_LIMIT).map((d, i) => (
-            <li key={diagnosticKey(d, i)} className={`wm-diagnostic wm-diagnostic--${severityClass}`}>
+            <li
+              key={diagnosticKey(d, i)}
+              className={`wm-diagnostic wm-diagnostic--${severityClass}`}
+            >
               <button
                 type="button"
                 className="wm-diagnostic-row"

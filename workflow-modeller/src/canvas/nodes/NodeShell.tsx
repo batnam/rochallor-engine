@@ -31,9 +31,7 @@ export function NodeShell(props: NodeShellProps): ReactNode {
     .filter(Boolean)
     .join(' ');
 
-  const badgeMessages = diagnostics
-    .map((d) => `${d.code}: ${d.message}`)
-    .join('\n');
+  const badgeMessages = diagnostics.map((d) => `${d.code}: ${d.message}`).join('\n');
 
   return (
     <div className={classes}>

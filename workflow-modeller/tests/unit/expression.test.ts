@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { lintDecisionExpression, lintTransformationExpression } from '@/domain/expression/lint';
 import {
   type Expr,
   collectIdentifiers,
@@ -7,14 +8,11 @@ import {
   topLevelLikelyBoolean,
   unwrapTransformationExpression,
 } from '@/domain/expression/parser';
-import {
-  lintDecisionExpression,
-  lintTransformationExpression,
-} from '@/domain/expression/lint';
 
 function parseOk(source: string): Expr {
   const result = parseExpression(source);
-  if (!result.ok) throw new Error(`expected parse of ${JSON.stringify(source)} to succeed: ${result.message}`);
+  if (!result.ok)
+    throw new Error(`expected parse of ${JSON.stringify(source)} to succeed: ${result.message}`);
   return result.ast;
 }
 

@@ -1,3 +1,4 @@
+import { lintTransformationExpression } from '@/domain/expression/lint';
 import type { TransformationStep } from '@/domain/types';
 import { useWorkflowStore } from '@/store/workflowStore';
 import type { ReactNode } from 'react';
@@ -45,6 +46,23 @@ export function TransformationForm({ step }: TransformationFormProps): ReactNode
         onChange={commit}
         keyLabel="variable"
         valueLabel="expression/literal"
+        valueRender={(entry, setValue) => {
+          const lint = lintTransformationExpression(entry.value, {});
+          const error = lint.find((d) => d.code === 'TRANSFORMATION_EXPR_SYNTAX');
+          return (
+            <div className="wm-keyvalue-cell">
+              <input
+                type="text"
+                className={`wm-input ${error ? 'wm-input--invalid' : ''}`}
+                defaultValue={entry.value}
+                key={entry.value}
+                onBlur={(e) => setValue(e.target.value)}
+                title={error ? error.message : undefined}
+              />
+              {error && <div className="wm-field-error">{error.message}</div>}
+            </div>
+          );
+        }}
       />
     </>
   );

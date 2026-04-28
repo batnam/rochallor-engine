@@ -1,0 +1,78 @@
+name: workflow-modeller
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'workflow-modeller/**'
+      - 'workflow-engine/**'
+      - '.github/workflows/workflow-modeller.yml'
+  pull_request:
+    paths:
+      - 'workflow-modeller/**'
+      - 'workflow-engine/**'
+      - '.github/workflows/workflow-modeller.yml'
+
+defaults:
+  run:
+    working-directory: workflow-modeller
+
+jobs:
+  build:
+    name: lint / typecheck / test / e2e / drift / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: workflow-modeller/pnpm-lock.yaml
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: workflow-engine/go.sum
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Drift guard (TS ↔ Go validators)
+        run: pnpm test:drift
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps
+
+      - name: E2E tests
+        run: pnpm test:e2e
+
+      - name: Build
+        run: pnpm build
+
+      - name: Bundle-size budget
+        run: pnpm size
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: |
+            workflow-modeller/playwright-report/
+            workflow-modeller/test-results/
+          retention-days: 7
