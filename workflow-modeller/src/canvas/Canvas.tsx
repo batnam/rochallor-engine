@@ -11,7 +11,7 @@ import {
   useNodesState,
   useReactFlow,
 } from '@xyflow/react';
-import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo } from 'react';
+import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import '@xyflow/react/dist/style.css';
 
 import type { GraphEdge, GraphNode, Step, StepId, StepType } from '@/domain/types';
@@ -22,7 +22,7 @@ import { BoundaryEdge } from './edges/BoundaryEdge';
 import { ConditionalEdge } from './edges/ConditionalEdge';
 import { ParallelEdge } from './edges/ParallelEdge';
 import { SequentialEdge } from './edges/SequentialEdge';
-import { layoutLeftToRight } from './layout';
+import { layoutWithElk } from './layout';
 import { DecisionNode } from './nodes/DecisionNode';
 import { EndNode } from './nodes/EndNode';
 import { JoinGatewayNode } from './nodes/JoinGatewayNode';
@@ -83,6 +83,7 @@ function mapToFlowEdges(edges: GraphEdge[], nodes: GraphNode[]): Edge[] {
       source: e.from,
       target: e.to,
       type: e.variant.kind,
+      sourceHandle: e.sourceHandle ?? null,
       data: {},
     };
     if (e.variant.kind === 'conditional') {
@@ -175,11 +176,22 @@ function CanvasInner(): ReactNode {
     }
   }, []);
 
-  const layout = useMemo(() => {
-    if (nodes.length === 0) return {};
-    const missing = nodes.some((n) => !(n.id in storedLayout));
-    return missing ? { ...layoutLeftToRight(nodes, edges), ...storedLayout } : storedLayout;
-  }, [nodes, edges, storedLayout]);
+  const [elkLayout, setElkLayout] = useState<Record<string, { x: number; y: number }>>({});
+
+  useEffect(() => {
+    if (nodes.length === 0) {
+      setElkLayout({});
+      return;
+    }
+    const missing = nodes.some((n) => !(n.id in storedLayout) && !(n.id in elkLayout));
+    if (!missing) return;
+    layoutWithElk(nodes, edges).then(setElkLayout);
+  }, [nodes, edges, storedLayout, elkLayout]);
+
+  const layout = useMemo(
+    () => ({ ...elkLayout, ...storedLayout }),
+    [elkLayout, storedLayout],
+  );
 
   // ReactFlow's internal node/edge state. We sync from the store one-way so
   // drag interactions can update positions locally without thrashing the store

@@ -1,4 +1,4 @@
-import { layoutLeftToRight } from '@/canvas/layout';
+import { layoutWithElk } from '@/canvas/layout';
 import { toEdges, toNodes } from '@/domain/graph';
 import { EngineError } from '@/engine/types';
 import { useDirty, useEngineConnection, useValidationSummary } from '@/store/selectors';
@@ -65,8 +65,9 @@ export function Toolbar({
 
   function handleTidy(): void {
     const def = useWorkflowStore.getState().definition;
-    const layout = layoutLeftToRight(toNodes(def), toEdges(def));
-    useWorkflowStore.setState({ layout });
+    layoutWithElk(toNodes(def), toEdges(def)).then((layout) => {
+      useWorkflowStore.setState({ layout });
+    });
   }
   const { undo, redo, pastCount, futureCount } = useTemporal();
   const { fitView } = useReactFlow();
