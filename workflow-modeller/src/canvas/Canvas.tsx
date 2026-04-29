@@ -1,5 +1,6 @@
 import {
   Background,
+  type Connection,
   Controls,
   type Edge,
   type EdgeTypes,
@@ -188,10 +189,7 @@ function CanvasInner(): ReactNode {
     layoutWithElk(nodes, edges).then(setElkLayout);
   }, [nodes, edges, storedLayout, elkLayout]);
 
-  const layout = useMemo(
-    () => ({ ...elkLayout, ...storedLayout }),
-    [elkLayout, storedLayout],
-  );
+  const layout = useMemo(() => ({ ...elkLayout, ...storedLayout }), [elkLayout, storedLayout]);
 
   // ReactFlow's internal node/edge state. We sync from the store one-way so
   // drag interactions can update positions locally without thrashing the store
@@ -201,13 +199,34 @@ function CanvasInner(): ReactNode {
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node<NodeData>>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
+  // Stores per-session handle overrides so reconnected edges keep their side
+  // after the store triggers a re-sync. Cleared when a step is removed.
+  const [edgeHandleOverrides, setEdgeHandleOverrides] = useState<
+    Record<string, { sourceHandle?: string | null; targetHandle?: string | null }>
+  >({});
+
   useEffect(() => {
     setRfNodes(mapToFlowNodes(nodes, layout));
   }, [nodes, layout, setRfNodes]);
 
   useEffect(() => {
-    setRfEdges(mapToFlowEdges(edges, nodes));
-  }, [edges, nodes, setRfEdges]);
+    setRfEdges(
+      mapToFlowEdges(edges, nodes).map((e) => {
+        const ov = edgeHandleOverrides[e.id];
+        return ov ? { ...e, ...ov } : e;
+      }),
+    );
+  }, [edges, nodes, edgeHandleOverrides, setRfEdges]);
+
+  const onReconnect = useCallback((oldEdge: Edge, newConnection: Connection) => {
+    setEdgeHandleOverrides((prev) => ({
+      ...prev,
+      [oldEdge.id]: {
+        sourceHandle: newConnection.sourceHandle,
+        targetHandle: newConnection.targetHandle,
+      },
+    }));
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `source` is intentionally a trigger-only dep — the effect body reads from getState() so it doesn't reference `source` directly, but ref changes (import / load / upload / reset) must re-fit; step edits must NOT.
   useEffect(() => {
@@ -240,6 +259,7 @@ function CanvasInner(): ReactNode {
         onPaneClick={() => useWorkflowStore.getState().select({ kind: 'none' })}
         onNodeDragStop={(_, n) => useWorkflowStore.getState().setLayout(n.id, n.position)}
         onConnect={onConnect}
+        onReconnect={onReconnect}
       >
         <Background gap={16} />
         {nodes.length > 0 && <MiniMap pannable zoomable />}

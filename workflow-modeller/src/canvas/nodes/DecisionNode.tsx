@@ -1,4 +1,5 @@
 import type { NodeProps } from '@xyflow/react';
+import { HelpCircle } from 'lucide-react';
 import { type ReactNode, memo } from 'react';
 import { type NodeData, NodeShell } from './NodeShell';
 
@@ -6,11 +7,21 @@ export const DecisionNode = memo(function DecisionNode(props: NodeProps): ReactN
   const data = props.data as NodeData;
   const step = data.step;
   if (step.type !== 'DECISION') {
-    return <NodeShell data={data} accent="DECISION" />;
+    return (
+      <NodeShell data={data} accent="DECISION" shape="diamond" icon={<HelpCircle size={12} />} />
+    );
   }
   const branches = Object.keys(step.conditionalNextSteps);
   const source = branches.length
     ? branches.map((expr) => ({ id: `branch:${expr}`, label: expr }))
     : [{ id: 'out' }];
-  return <NodeShell data={data} accent="DECISION" source={source} />;
+  return (
+    <NodeShell
+      data={data}
+      accent="DECISION"
+      shape="diamond"
+      icon={<HelpCircle size={12} />}
+      source={source}
+    />
+  );
 });

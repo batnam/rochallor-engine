@@ -13,7 +13,7 @@ import { ValidationPanel } from '@/panels/ValidationPanel';
 import { useSelection } from '@/store/selectors';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { ReactFlowProvider } from '@xyflow/react';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 function isEditableTarget(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
@@ -71,7 +71,26 @@ export function App(): ReactNode {
   const [deleteTarget, setDeleteTarget] = useState<StepId | null>(null);
   const [banner, setBanner] = useState<BannerState | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [inspectorWidth, setInspectorWidth] = useState(320);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const selection = useSelection();
+
+  function handleResizeStart(e: React.MouseEvent): void {
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startWidth: inspectorWidth };
+    function onMove(ev: MouseEvent): void {
+      if (!dragRef.current) return;
+      const delta = dragRef.current.startX - ev.clientX;
+      setInspectorWidth(Math.max(200, dragRef.current.startWidth + delta));
+    }
+    function onUp(): void {
+      dragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
 
   useKeyboardShortcuts({
     onDelete: () => {
@@ -135,10 +154,14 @@ export function App(): ReactNode {
             </div>
             <Palette />
           </aside>
-          <section className="wm-body">
+          <section
+            className="wm-body"
+            style={{ gridTemplateColumns: `1fr 4px ${inspectorWidth}px` }}
+          >
             <section className="wm-canvas" aria-label="Canvas">
               <Canvas />
             </section>
+            <div className="wm-resize-handle" onMouseDown={handleResizeStart} />
             <PropertyPanel onRequestDelete={(id) => setDeleteTarget(id)} />
           </section>
         </div>

@@ -2,7 +2,7 @@ import type { Diagnostic } from '@/domain/types';
 import { useValidationSummary } from '@/store/selectors';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { useReactFlow } from '@xyflow/react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 const VISIBLE_LIMIT = 50;
 
@@ -21,6 +21,7 @@ export function ValidationPanel(): ReactNode {
   const { errors, warnings, diagnostics, lastRunAt } = useValidationSummary();
   const select = useWorkflowStore((s) => s.select);
   const { setCenter, getNode } = useReactFlow();
+  const [collapsed, setCollapsed] = useState(false);
 
   const errorEntries = diagnostics.filter((d) => d.severity === 'error');
   const warningEntries = diagnostics.filter((d) => d.severity === 'warning');
@@ -69,7 +70,10 @@ export function ValidationPanel(): ReactNode {
   }
 
   return (
-    <footer className="wm-validation" aria-label="Validation panel">
+    <footer
+      className={`wm-validation${collapsed ? ' wm-validation--collapsed' : ''}`}
+      aria-label="Validation panel"
+    >
       <div className="wm-validation-summary">
         <strong>
           {errors} error(s), {warnings} warning(s)
@@ -77,12 +81,21 @@ export function ValidationPanel(): ReactNode {
         <span className="wm-validation-timestamp">
           {lastRunAt ? `Checked ${new Date(lastRunAt).toLocaleTimeString()}` : 'Not run yet'}
         </span>
+        <button
+          type="button"
+          className="wm-validation-toggle"
+          onClick={() => setCollapsed((c) => !c)}
+          aria-label={collapsed ? 'Show validation details' : 'Hide validation details'}
+          title={collapsed ? 'Show' : 'Hide'}
+        >
+          {collapsed ? '▲' : '▼'}
+        </button>
       </div>
-      {diagnostics.length === 0 && lastRunAt !== undefined && (
+      {!collapsed && diagnostics.length === 0 && lastRunAt !== undefined && (
         <p className="wm-panel-empty">Workflow passed every validation rule.</p>
       )}
-      {renderGroup('Errors', errorEntries, 'error')}
-      {renderGroup('Warnings', warningEntries, 'warning')}
+      {!collapsed && renderGroup('Errors', errorEntries, 'error')}
+      {!collapsed && renderGroup('Warnings', warningEntries, 'warning')}
     </footer>
   );
 }

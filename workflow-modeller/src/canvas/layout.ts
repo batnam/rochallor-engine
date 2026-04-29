@@ -1,6 +1,6 @@
+import type { GraphEdge, GraphNode, StepId } from '@/domain/types';
 import type { ElkExtendedEdge, ElkNode, ElkPort } from 'elkjs';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import type { GraphEdge, GraphNode, StepId } from '@/domain/types';
 
 const elk = new ELK();
 
@@ -27,9 +27,7 @@ function nodeHeight(node: GraphNode): number {
 }
 
 function nodePorts(node: GraphNode): ElkPort[] {
-  const ports: ElkPort[] = [
-    { id: `${node.id}__in`, layoutOptions: { 'port.side': 'WEST' } },
-  ];
+  const ports: ElkPort[] = [{ id: `${node.id}__in`, layoutOptions: { 'port.side': 'WEST' } }];
   if (node.step.type === 'DECISION') {
     Object.keys(node.step.conditionalNextSteps).forEach((_, i) => {
       ports.push({ id: `${node.id}__branch_${i}`, layoutOptions: { 'port.side': 'EAST' } });

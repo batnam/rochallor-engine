@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { layoutWithElk } from '@/canvas/layout';
 import { toEdges, toNodes } from '@/domain/graph';
 import { zWorkflowDefinition } from '@/domain/schema';
-import { layoutWithElk } from '@/canvas/layout';
 import { describe, expect, it } from 'vitest';
 
 const VALID_DIR = resolve(__dirname, '../fixtures/valid');

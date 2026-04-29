@@ -2,19 +2,19 @@
   color-scheme: light;
 
   /* Step-type colour tokens (FR-002) — one per StepType. Refined in later phases. */
-  --step-service-task: #2563eb;
-  --step-user-task: #9333ea;
-  --step-decision: #f59e0b;
-  --step-transformation: #14b8a6;
+  --step-service-task: #3b82f6;
+  --step-user-task: #22c55e;
+  --step-decision: #ef4444;
+  --step-transformation: #a855f7;
   --step-wait: #64748b;
-  --step-parallel-gateway: #ec4899;
-  --step-join-gateway: #ec4899;
+  --step-parallel-gateway: #06b6d4;
+  --step-join-gateway: #f59e0b;
   --step-end: #0f172a;
 
   /* Edge-variant tokens (FR-003). */
   --edge-sequential: #334155;
-  --edge-conditional: #f59e0b;
-  --edge-parallel: #ec4899;
+  --edge-conditional: #f97316;
+  --edge-parallel: #14b8a6;
   --edge-join-target: #a3a3a3;
   --edge-join-out: #334155;
   --edge-boundary: #dc2626;
@@ -129,10 +129,24 @@ body,
 
 .wm-body {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr 4px 320px;
   min-height: 0;
   flex: 1;
   overflow: hidden;
+}
+
+.wm-resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: var(--surface-border);
+  transition: background 0.15s;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.wm-resize-handle:hover,
+.wm-resize-handle:active {
+  background: var(--step-service-task);
 }
 
 .wm-palette,
@@ -324,10 +338,30 @@ body,
   font-size: 0.875rem;
 }
 
+.wm-validation--collapsed {
+  min-height: 0;
+}
+
 .wm-validation-summary {
   display: flex;
   align-items: baseline;
   gap: 1rem;
+}
+
+.wm-validation-toggle {
+  margin-left: auto;
+  padding: 0 0.25rem;
+  font: inherit;
+  font-size: 0.75rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.wm-validation-toggle:hover {
+  color: var(--text);
 }
 
 .wm-validation-timestamp {
@@ -464,6 +498,8 @@ body,
 }
 .wm-node--user_task {
   border-left-color: var(--step-user-task);
+  outline: 2px solid var(--step-user-task);
+  outline-offset: 3px;
 }
 .wm-node--decision {
   border-left-color: var(--step-decision);
@@ -516,6 +552,136 @@ body,
   font-size: 0.75rem;
 }
 
+.wm-node-icon {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+}
+
+/* Extra handles (top / bottom / opposite side) — hidden until node is hovered
+   or a connection is in progress. ReactFlow adds .connecting class to the canvas
+   when dragging a new connection, making them fully visible for snap-targeting. */
+.react-flow__handle.wm-handle-side {
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.react-flow__node:hover .react-flow__handle.wm-handle-side,
+.react-flow__node.selected .react-flow__handle.wm-handle-side {
+  opacity: 0.6;
+  pointer-events: auto;
+}
+
+.react-flow__handle.connectionindicator.wm-handle-side {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Circle shape — WAIT */
+.wm-node--circle {
+  min-width: unset;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border-left-width: 2px; /* uniform border on circle */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.5rem;
+}
+
+/* Diamond shape — DECISION
+   The outer container IS the visual diamond: background + border are here.
+   Inner div counter-rotates content so text is readable.
+   Handles are direct children of the outer container → appear at diamond tips. */
+.wm-node--diamond {
+  min-width: unset;
+  width: 130px;
+  height: 130px;
+  padding: 0;
+  background: var(--surface);
+  border: 2px solid var(--step-decision);
+  border-left-width: 2px; /* uniform — reset the 4px left */
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(45deg);
+}
+
+.wm-node--diamond .wm-node-inner {
+  transform: rotate(-45deg);
+  width: 95px;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Small Diamond — PARALLEL_GATEWAY, JOIN_GATEWAY */
+.wm-node--diamond-sm {
+  min-width: unset;
+  width: 90px;
+  height: 90px;
+  padding: 0;
+  background: var(--surface);
+  border: 2px solid var(--step-parallel-gateway);
+  border-left-width: 2px;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(45deg);
+}
+
+.wm-node--diamond-sm.wm-node--join_gateway {
+  border-color: var(--step-join-gateway);
+}
+
+.wm-node--diamond-sm .wm-node-inner {
+  transform: rotate(-45deg);
+  width: 65px;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  overflow: hidden;
+  font-size: 0.6875rem;
+  pointer-events: none;
+}
+
+/* Active-node pulsating border */
+@keyframes wm-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-color) 60%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent-color) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-color) 0%, transparent);
+  }
+}
+
+.wm-node--active {
+  animation: wm-pulse 1.4s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wm-node--active {
+    animation: none;
+    border: 2px solid var(--accent-color);
+  }
+}
+
 .wm-handle-label {
   display: inline-block;
   padding: 1px 4px;
@@ -558,6 +724,7 @@ body,
 
 .wm-edge-conditional-label code {
   color: var(--edge-conditional);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .wm-edge-boundary-label {
@@ -701,8 +868,14 @@ body,
 }
 
 @keyframes wm-toast-in {
-  from { opacity: 0; transform: translateY(-0.5rem); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Forms */
