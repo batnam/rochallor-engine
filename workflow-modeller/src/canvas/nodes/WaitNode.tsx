@@ -5,5 +5,5 @@ import { type NodeData, NodeShell } from './NodeShell';
 
 export const WaitNode = memo(function WaitNode(props: NodeProps): ReactNode {
   const data = props.data as NodeData;
-  return <NodeShell data={data} accent="WAIT" shape="circle" icon={<Clock size={12} />} />;
+  return <NodeShell data={data} accent="WAIT" shape="circle" icon={<Clock size={24} />} />;
 });

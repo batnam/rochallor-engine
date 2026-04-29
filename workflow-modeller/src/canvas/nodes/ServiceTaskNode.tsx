@@ -12,7 +12,7 @@ export const ServiceTaskNode = memo(function ServiceTaskNode(props: NodeProps): 
     <NodeShell
       data={data}
       accent="SERVICE_TASK"
-      icon={<Settings size={12} />}
+      icon={<Settings size={24} />}
       subtitle={subtitle}
     />
   );

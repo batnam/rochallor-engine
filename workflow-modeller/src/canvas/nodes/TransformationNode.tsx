@@ -11,6 +11,6 @@ export const TransformationNode = memo(function TransformationNode(props: NodePr
       ? `${Object.keys(step.transformations).length} transformation(s)`
       : undefined;
   return (
-    <NodeShell data={data} accent="TRANSFORMATION" icon={<Wand2 size={12} />} subtitle={subtitle} />
+    <NodeShell data={data} accent="TRANSFORMATION" icon={<Wand2 size={24} />} subtitle={subtitle} />
   );
 });

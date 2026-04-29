@@ -71,7 +71,12 @@ export function NodeShell(props: NodeShellProps): ReactNode {
     <>
       {showTarget && (
         <>
-          <Handle type="target" position={Position.Left} id="in" />
+          <Handle
+            type="target"
+            position={Position.Left}
+            id="in"
+            style={isDiamond ? { top: 0 } : undefined}
+          />
           <Handle type="target" position={Position.Top} id="in-top" className="wm-handle-side" />
           <Handle
             type="target"
@@ -94,9 +99,11 @@ export function NodeShell(props: NodeShellProps): ReactNode {
           position={Position.Right}
           id={s.id}
           style={
-            source.length > 1
-              ? { top: `${s.offsetPct ?? ((i + 1) * 100) / (source.length + 1)}%` }
-              : undefined
+            isDiamond
+              ? { top: '100%' }
+              : source.length > 1
+                ? { top: `${s.offsetPct ?? ((i + 1) * 100) / (source.length + 1)}%` }
+                : undefined
           }
         >
           {source.length > 1 && s.label ? <span className="wm-handle-label">{s.label}</span> : null}

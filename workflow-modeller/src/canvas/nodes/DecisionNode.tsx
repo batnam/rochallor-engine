@@ -8,7 +8,7 @@ export const DecisionNode = memo(function DecisionNode(props: NodeProps): ReactN
   const step = data.step;
   if (step.type !== 'DECISION') {
     return (
-      <NodeShell data={data} accent="DECISION" shape="diamond" icon={<HelpCircle size={12} />} />
+      <NodeShell data={data} accent="DECISION" shape="diamond" icon={<HelpCircle size={24} />} />
     );
   }
   const branches = Object.keys(step.conditionalNextSteps);
@@ -20,7 +20,7 @@ export const DecisionNode = memo(function DecisionNode(props: NodeProps): ReactN
       data={data}
       accent="DECISION"
       shape="diamond"
-      icon={<HelpCircle size={12} />}
+      icon={<HelpCircle size={24} />}
       source={source}
     />
   );

@@ -6,6 +6,6 @@ import { type NodeData, NodeShell } from './NodeShell';
 export const JoinGatewayNode = memo(function JoinGatewayNode(props: NodeProps): ReactNode {
   const data = props.data as NodeData;
   return (
-    <NodeShell data={data} accent="JOIN_GATEWAY" shape="diamond-sm" icon={<Plus size={12} />} />
+    <NodeShell data={data} accent="JOIN_GATEWAY" shape="diamond-sm" icon={<Plus size={24} />} />
   );
 });

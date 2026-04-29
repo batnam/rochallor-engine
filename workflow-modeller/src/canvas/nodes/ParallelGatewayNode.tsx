@@ -12,7 +12,7 @@ export const ParallelGatewayNode = memo(function ParallelGatewayNode(props: Node
         data={data}
         accent="PARALLEL_GATEWAY"
         shape="diamond-sm"
-        icon={<Plus size={12} />}
+        icon={<Plus size={24} />}
       />
     );
   }
@@ -24,7 +24,7 @@ export const ParallelGatewayNode = memo(function ParallelGatewayNode(props: Node
       data={data}
       accent="PARALLEL_GATEWAY"
       shape="diamond-sm"
-      icon={<Plus size={12} />}
+      icon={<Plus size={24} />}
       source={source}
     />
   );
