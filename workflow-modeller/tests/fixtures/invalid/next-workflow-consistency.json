@@ -1,0 +1,6 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "autoStartNextWorkflow": true,
+  "steps": [{ "id": "e", "name": "End", "type": "END" }]
+}

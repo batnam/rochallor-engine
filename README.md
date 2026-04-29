@@ -183,6 +183,30 @@ The engine supports two dispatch models, chosen per deployment via a single envi
 
 ---
 
+## Workflow Modeller
+
+The repository includes a browser-based visual editor that reads and writes the same JSON contract the engine consumes.
+
+**Key capabilities**
+
+- Drag-and-drop canvas — add, connect, and rearrange steps visually.
+- Live validation — all engine rules are enforced inline; errors and warnings appear directly on the affected nodes.
+- Engine integration — connect to a running engine to load existing definitions or publish new ones without leaving the browser.
+- Offline authoring — the editor is fully functional without an engine; import/export JSON at any time.
+- Auto-layout — one-click Tidy button routes the graph with ELK, eliminating manual positioning.
+
+**Quick start**
+
+```bash
+cd workflow-modeller
+pnpm install
+pnpm dev          # opens at http://localhost:5173
+```
+
+For full setup instructions, available scripts, and the spec docs, see **[workflow-modeller/README.md](workflow-modeller/README.md)**.
+
+---
+
 ## Documentation
 
 | Topic | Description |

@@ -9,6 +9,7 @@ import (
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/obs"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -32,6 +33,15 @@ func NewRouter(
 	// Global middleware
 	r.Use(middleware.RealIP)
 	r.Use(obs.TraceparentMiddleware)
+	// CORS — placed early so OPTIONS preflights short-circuit before the
+	// heavier middleware (FormatGuard, Prometheus, logging) runs.
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	}))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(FormatGuardMiddleware)

@@ -1,0 +1,15 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "steps": [
+    {
+      "id": "p",
+      "name": "Parallel",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["j"],
+      "joinStep": "j"
+    },
+    { "id": "j", "name": "Join", "type": "JOIN_GATEWAY", "nextStep": "e" },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}

@@ -4,6 +4,7 @@ package rest
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -11,6 +12,18 @@ import (
 	engineapi "github.com/batnam/rochallor-engine/workflow-engine/internal/api"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
 )
+
+// pathID returns the {id} path param with percent-encoded characters decoded.
+// chi captures the raw URL segment, so identifiers containing reserved chars
+// (e.g. "LOS::loan-app" → "LOS%3A%3Aloan-app") arrive escaped and must be
+// decoded before they're used as a lookup key.
+func pathID(r *http.Request) string {
+	raw := chi.URLParam(r, "id")
+	if decoded, err := url.PathUnescape(raw); err == nil {
+		return decoded
+	}
+	return raw
+}
 
 // DefinitionHandlers exposes the definition endpoints.
 type DefinitionHandlers struct {
@@ -52,7 +65,7 @@ func (h *DefinitionHandlers) Upload(w http.ResponseWriter, r *http.Request) {
 
 // GetLatest handles GET /v1/definitions/{id}.
 func (h *DefinitionHandlers) GetLatest(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := pathID(r)
 	def, err := h.repo.GetLatest(r.Context(), id)
 	if err != nil {
 		engineapi.WriteNotFound(w, err.Error())
@@ -63,7 +76,7 @@ func (h *DefinitionHandlers) GetLatest(w http.ResponseWriter, r *http.Request) {
 
 // GetVersion handles GET /v1/definitions/{id}/versions/{version}.
 func (h *DefinitionHandlers) GetVersion(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := pathID(r)
 	ver, err := strconv.Atoi(chi.URLParam(r, "version"))
 	if err != nil {
 		engineapi.WriteBadRequest(w, "invalid version parameter")

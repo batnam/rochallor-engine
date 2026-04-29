@@ -1,0 +1,21 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "steps": [
+    {
+      "id": "s",
+      "name": "S",
+      "type": "SERVICE_TASK",
+      "jobType": "x",
+      "nextStep": "e"
+    },
+    {
+      "id": "orphan",
+      "name": "Orphan",
+      "type": "SERVICE_TASK",
+      "jobType": "y",
+      "nextStep": "e"
+    },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}

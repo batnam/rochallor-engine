@@ -1,0 +1,13 @@
+{
+  "id": "wf",
+  "name": "wf",
+  "steps": [
+    {
+      "id": "d",
+      "name": "Decide",
+      "type": "DECISION",
+      "conditionalNextSteps": { "1 + 2": "e" }
+    },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}

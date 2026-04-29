@@ -1,0 +1,66 @@
+name: engine-e2e
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'workflow-engine/**'
+      - 'workflow-sdk-go/**'
+      - 'workflow-sdk-python/**'
+      - 'workflow-sdk-node/**'
+      - 'workflow-sdk-java/**'
+      - 'e2e/**'
+      - '.github/workflows/engine-e2e.yml'
+  pull_request:
+    paths:
+      - 'workflow-engine/**'
+      - 'workflow-sdk-go/**'
+      - 'workflow-sdk-python/**'
+      - 'workflow-sdk-node/**'
+      - 'workflow-sdk-java/**'
+      - 'e2e/**'
+      - '.github/workflows/engine-e2e.yml'
+  workflow_dispatch:
+
+# Cancel redundant runs on the same PR; let main pushes always complete.
+concurrency:
+  group: engine-e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: ${{ matrix.dispatch_mode }} / ${{ matrix.sdk }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        dispatch_mode: [kafka_outbox, polling]
+        sdk: [go, python, node, java]
+    env:
+      WE_DISPATCH_MODE: ${{ matrix.dispatch_mode }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: e2e/runner/go.mod
+          cache-dependency-path: e2e/runner/go.sum
+
+      - name: Verify Docker Compose
+        run: docker compose version
+
+      - name: Run e2e suite
+        run: ./e2e/run.sh --sdk=${{ matrix.sdk }}
+
+      - name: Upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ matrix.dispatch_mode }}-${{ matrix.sdk }}
+          path: e2e/logs/
+          retention-days: 7
+          if-no-files-found: ignore
