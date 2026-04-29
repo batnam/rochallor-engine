@@ -3,7 +3,7 @@ import {
   EdgeLabelRenderer,
   type EdgeProps,
   MarkerType,
-  getBezierPath,
+  getSmoothStepPath,
 } from '@xyflow/react';
 import type { ReactNode } from 'react';
 
@@ -30,13 +30,14 @@ export function EdgeShell(props: EdgeShellProps): ReactNode {
     style,
   } = props;
 
-  const [path, labelX, labelY] = getBezierPath({
+  const [path, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
     targetX,
     targetY,
     sourcePosition,
     targetPosition,
+    borderRadius: 10,
   });
 
   return (
