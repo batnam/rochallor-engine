@@ -1,0 +1,226 @@
+<h2>Cải thiện layout workflow — 3 hướng tiếp cận</h2>
+<p class="subtitle">Chọn hướng phù hợp với mức độ cải thiện và effort bạn muốn đầu tư</p>
+
+<div class="section">
+  <h3 style="color:#dc2626">Vấn đề hiện tại</h3>
+  <p class="subtitle">Decision node có nhiều nhánh — Bezier curves chồng chéo, labels đè nhau, nodes quá sát nhau (nodesep=40px)</p>
+  <div style="display:flex;justify-content:center;margin:1rem 0">
+    <svg width="420" height="180" viewBox="0 0 420 180" style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">
+      <!-- Label -->
+      <text x="210" y="18" text-anchor="middle" font-size="11" fill="#94a3b8" font-family="system-ui">Bezier curves chồng chéo khi nhánh đi lên + đi xuống cùng lúc</text>
+      <!-- Entry step -->
+      <rect x="10" y="72" width="90" height="36" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="55" y="86" text-anchor="middle" font-size="9" fill="#1e40af" font-family="system-ui">SERVICE TASK</text>
+      <text x="55" y="99" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af" font-family="system-ui">check-order</text>
+      <!-- arrow -->
+      <path d="M 100 90 L 118 90" stroke="#334155" stroke-width="1.5" marker-end="url(#arr-prob)"/>
+      <!-- Decision node -->
+      <rect x="118" y="66" width="100" height="48" rx="4" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="168" y="85" text-anchor="middle" font-size="9" fill="#92400e" font-family="system-ui">DECISION</text>
+      <text x="168" y="99" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e" font-family="system-ui">route-order</text>
+      <!-- Tangled bezier edges from decision -->
+      <!-- Edge 1: handle top → target bottom (CROSSES edge 3) -->
+      <path d="M 218 78 C 268 78 268 148 318 148" fill="none" stroke="#f59e0b" stroke-width="2" opacity="0.9"/>
+      <!-- Edge 2: handle mid → target mid -->
+      <path d="M 218 90 C 268 90 268 90 318 90" fill="none" stroke="#f59e0b" stroke-width="2" opacity="0.9"/>
+      <!-- Edge 3: handle bottom → target top (CROSSES edge 1) -->
+      <path d="M 218 102 C 268 102 268 32 318 32" fill="none" stroke="#f59e0b" stroke-width="2" opacity="0.9"/>
+      <!-- Crossing highlight -->
+      <circle cx="265" cy="90" r="12" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="4 2" opacity="0.8"/>
+      <text x="265" y="94" text-anchor="middle" font-size="14" fill="#dc2626">✕</text>
+      <!-- Labels overlapping -->
+      <rect x="228" y="56" width="70" height="14" rx="2" fill="#fef9c3" stroke="#fbbf24" stroke-width="0.5"/>
+      <text x="263" y="67" text-anchor="middle" font-size="8" fill="#78350f" font-family="monospace">value=="VIP"</text>
+      <rect x="228" y="104" width="70" height="14" rx="2" fill="#fef9c3" stroke="#fbbf24" stroke-width="0.5"/>
+      <text x="263" y="115" text-anchor="middle" font-size="8" fill="#78350f" font-family="monospace">value=="STD"</text>
+      <!-- Target nodes too close together -->
+      <rect x="318" y="18" width="88" height="30" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="362" y="37" text-anchor="middle" font-size="9" fill="#1e40af" font-family="system-ui">vip-process</text>
+      <rect x="318" y="75" width="88" height="30" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="362" y="94" text-anchor="middle" font-size="9" fill="#1e40af" font-family="system-ui">std-process</text>
+      <rect x="318" y="132" width="88" height="30" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="362" y="151" text-anchor="middle" font-size="9" fill="#1e40af" font-family="system-ui">bulk-process</text>
+      <!-- Too close label -->
+      <line x1="406" y1="48" x2="406" y2="132" stroke="#dc2626" stroke-width="1" stroke-dasharray="3 2"/>
+      <text x="414" y="96" text-anchor="start" font-size="8" fill="#dc2626" font-family="system-ui" transform="rotate(90,414,96)">chỉ 40px</text>
+      <defs>
+        <marker id="arr-prob" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#334155"/>
+        </marker>
+      </defs>
+    </svg>
+  </div>
+</div>
+
+<div class="cards">
+
+  <!-- Option A -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:1rem;background:#f8fafc;border-radius:8px;margin-bottom:0.75rem">
+      <svg width="100%" viewBox="0 0 260 160" style="display:block">
+        <defs>
+          <marker id="arr-a" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#334155"/>
+          </marker>
+          <marker id="arr-a-cond" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#f59e0b"/>
+          </marker>
+        </defs>
+        <!-- Entry -->
+        <rect x="5" y="62" width="72" height="36" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="41" y="82" text-anchor="middle" font-size="9" fill="#1e40af" font-family="system-ui">check-order</text>
+        <path d="M 77 80 L 90 80" stroke="#334155" stroke-width="1.5" marker-end="url(#arr-a)"/>
+        <!-- Decision -->
+        <rect x="90" y="62" width="78" height="36" rx="4" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="129" y="82" text-anchor="middle" font-size="9" fill="#92400e" font-family="system-ui">route-order</text>
+        <!-- Smooth step edges (right-angle, no crossing) -->
+        <!-- Top branch -->
+        <path d="M 168 72 L 188 72 L 188 28 L 205 28" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-a-cond)"/>
+        <!-- Mid branch -->
+        <path d="M 168 80 L 205 80" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-a-cond)"/>
+        <!-- Bot branch -->
+        <path d="M 168 88 L 188 88 L 188 132 L 205 132" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-a-cond)"/>
+        <!-- Targets more spaced -->
+        <rect x="205" y="12" width="50" height="28" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="230" y="30" text-anchor="middle" font-size="8" fill="#1e40af" font-family="system-ui">vip</text>
+        <rect x="205" y="66" width="50" height="28" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="230" y="84" text-anchor="middle" font-size="8" fill="#1e40af" font-family="system-ui">std</text>
+        <rect x="205" y="118" width="50" height="28" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="230" y="136" text-anchor="middle" font-size="8" fill="#1e40af" font-family="system-ui">bulk</text>
+        <!-- No crossing checkmark -->
+        <text x="183" y="82" text-anchor="middle" font-size="11" fill="#16a34a">✓</text>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>A · Quick Tune <span style="font-size:0.75rem;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;margin-left:4px">~2 giờ</span></h3>
+      <p>Tăng spacing dagre + đổi sang <strong>SmoothStep</strong> edges (đường gấp khúc thẳng, không chéo). Không cần thêm thư viện.</p>
+      <div class="pros-cons" style="margin-top:0.5rem">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Nhanh, ít rủi ro</li>
+          <li>Không phụ thuộc mới</li>
+          <li>Decision edges hết chồng chéo</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Dagre vẫn không hiểu ports</li>
+          <li>Layout phức tạp vẫn chưa tối ưu</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B - ELK -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)" style="border-color:#2563eb">
+    <div class="card-image" style="padding:1rem;background:#f8fafc;border-radius:8px;margin-bottom:0.75rem;position:relative">
+      <div style="position:absolute;top:8px;right:8px;background:#2563eb;color:white;font-size:10px;padding:2px 6px;border-radius:4px">★ Recommended</div>
+      <svg width="100%" viewBox="0 0 260 180" style="display:block">
+        <defs>
+          <marker id="arr-b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#334155"/>
+          </marker>
+          <marker id="arr-b-cond" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#f59e0b"/>
+          </marker>
+        </defs>
+        <!-- Entry -->
+        <rect x="5" y="76" width="72" height="36" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="41" y="98" text-anchor="middle" font-size="9" fill="#1e40af" font-family="system-ui">check-order</text>
+        <path d="M 77 94 L 90 94" stroke="#334155" stroke-width="1.5" marker-end="url(#arr-b)"/>
+        <!-- Decision with port-aware spacing -->
+        <rect x="90" y="62" width="78" height="64" rx="4" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="129" y="87" text-anchor="middle" font-size="9" fill="#92400e" font-family="system-ui">DECISION</text>
+        <text x="129" y="102" text-anchor="middle" font-size="9" font-weight="600" fill="#92400e" font-family="system-ui">route-order</text>
+        <!-- ELK routes cleanly from specific ports, wider separation -->
+        <!-- ELK uses proper port positions and ensures no crossings -->
+        <path d="M 168 76 L 195 76 L 195 24 L 210 24" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-b-cond)"/>
+        <path d="M 168 94 L 210 94" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-b-cond)"/>
+        <path d="M 168 112 L 195 112 L 195 164 L 210 164" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-b-cond)"/>
+        <!-- Targets properly spaced by ELK (70px apart) -->
+        <rect x="210" y="8" width="46" height="32" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="233" y="28" text-anchor="middle" font-size="8" fill="#1e40af" font-family="system-ui">vip</text>
+        <rect x="210" y="78" width="46" height="32" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="233" y="98" text-anchor="middle" font-size="8" fill="#1e40af" font-family="system-ui">std</text>
+        <rect x="210" y="148" width="46" height="32" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="233" y="168" text-anchor="middle" font-size="8" fill="#1e40af" font-family="system-ui">bulk</text>
+        <!-- ELK spacing indicator -->
+        <line x1="257" y1="40" x2="257" y2="78" stroke="#16a34a" stroke-width="1" stroke-dasharray="3 2"/>
+        <text x="258" y="64" font-size="8" fill="#16a34a" font-family="system-ui">70px</text>
+        <line x1="257" y1="110" x2="257" y2="148" stroke="#16a34a" stroke-width="1" stroke-dasharray="3 2"/>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>B · ELK Engine <span style="font-size:0.75rem;background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:4px;margin-left:4px">~1 ngày</span></h3>
+      <p>Thay dagre bằng <strong>Eclipse Layout Kernel (elkjs)</strong> — layout engine chuyên nghiệp. ELK hiểu node ports, tối thiểu crossing, và distribute nhánh decision tự động.</p>
+      <div class="pros-cons" style="margin-top:0.5rem">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Port-aware: decision/parallel layout chính xác</li>
+          <li>Crossing minimization thuật toán</li>
+          <li>Industry standard (dùng trong VS Code, Eclipse)</li>
+          <li>Kết quả đẹp với workflow phức tạp</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Thêm dependency (~500KB)</li>
+          <li>API async — cần refactor layout.ts</li>
+          <li>Effort lớn hơn</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C - Hybrid -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:1rem;background:#f8fafc;border-radius:8px;margin-bottom:0.75rem">
+      <svg width="100%" viewBox="0 0 260 180" style="display:block">
+        <defs>
+          <marker id="arr-c" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#334155"/>
+          </marker>
+          <marker id="arr-c-cond" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#f59e0b"/>
+          </marker>
+        </defs>
+        <!-- Entry -->
+        <rect x="5" y="76" width="72" height="36" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="41" y="98" text-anchor="middle" font-size="9" fill="#1e40af" font-family="system-ui">check-order</text>
+        <path d="M 77 94 L 90 94" stroke="#334155" stroke-width="1.5" marker-end="url(#arr-c)"/>
+        <!-- Decision with dynamically sized height (based on branch count) -->
+        <rect x="90" y="56" width="78" height="76" rx="4" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="129" y="85" text-anchor="middle" font-size="9" fill="#92400e" font-family="system-ui">DECISION</text>
+        <text x="129" y="98" text-anchor="middle" font-size="9" font-weight="600" fill="#92400e" font-family="system-ui">route-order</text>
+        <text x="129" y="118" text-anchor="middle" font-size="8" fill="#b45309" font-family="system-ui">height ∝ branches</text>
+        <!-- Smooth step from dagre-tuned positions -->
+        <path d="M 168 74 L 195 74 L 195 24 L 210 24" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-c-cond)"/>
+        <path d="M 168 94 L 210 94" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-c-cond)"/>
+        <path d="M 168 114 L 195 114 L 195 164 L 210 164" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-c-cond)"/>
+        <!-- Targets -->
+        <rect x="210" y="8" width="46" height="32" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="233" y="28" text-anchor="middle" font-size="8" fill="#1e40af" font-family="system-ui">vip</text>
+        <rect x="210" y="78" width="46" height="32" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="233" y="98" text-anchor="middle" font-size="8" fill="#1e40af" font-family="system-ui">std</text>
+        <rect x="210" y="148" width="46" height="32" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+        <text x="233" y="168" text-anchor="middle" font-size="8" fill="#1e40af" font-family="system-ui">bulk</text>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>C · Hybrid <span style="font-size:0.75rem;background:#f0fdf4;color:#15803d;padding:2px 6px;border-radius:4px;margin-left:4px">~4 giờ</span></h3>
+      <p>Giữ dagre nhưng: tăng spacing, tính <strong>dynamic node height</strong> theo số nhánh, + SmoothStep edges. Không cần thư viện mới.</p>
+      <div class="pros-cons" style="margin-top:0.5rem">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Không thêm dependency</li>
+          <li>Decision nodes có đủ không gian</li>
+          <li>Edges không chồng chéo</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Vẫn là dagre — crossing không tối ưu với workflow rất phức tạp</li>
+          <li>Cần maintain height calculation</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:1.5rem;padding:1rem;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe">
+  <h3 style="color:#1e40af;margin-top:0">Khuyến nghị của tôi</h3>
+  <p><strong>Làm A ngay</strong> (2 giờ) để loại bỏ vấn đề cấp bách nhất — bezier curves chồng chéo. Sau đó <strong>lên kế hoạch B</strong> khi có thời gian để có layout chất lượng cao lâu dài. C là middle-ground nếu không muốn thêm dependency.</p>
+  <p style="margin:0;color:#1e40af;font-size:0.875rem">Cụ thể với A: <code>nodesep 40→80</code>, <code>ranksep 80→140</code>, <code>getBezierPath → getSmoothStepPath</code> trong EdgeShell.</p>
+</div>

@@ -59,6 +59,8 @@ function useKeyboardShortcuts(handlers: {
 interface BannerState {
   tone: BannerTone;
   messages: string[];
+  floating?: boolean;
+  autoDismissMs?: number;
 }
 
 export function App(): ReactNode {
@@ -68,6 +70,7 @@ export function App(): ReactNode {
   const [engineBrowserOpen, setEngineBrowserOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StepId | null>(null);
   const [banner, setBanner] = useState<BannerState | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const selection = useSelection();
 
   useKeyboardShortcuts({
@@ -93,28 +96,52 @@ export function App(): ReactNode {
   return (
     <ReactFlowProvider>
       <main className="wm-shell">
-        <header className="wm-toolbar">
-          <h1>Rochallor Workflow Modeller</h1>
-          <Toolbar
-            onImport={() => setImportOpen(true)}
-            onExport={() => setExportOpen(true)}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onOpenEngineBrowser={() => setEngineBrowserOpen(true)}
-            onUploadResult={(r) =>
-              setBanner({ tone: r.ok ? 'info' : 'error', messages: [r.message] })
-            }
-          />
-        </header>
-        {banner && (
-          <Banner tone={banner.tone} messages={banner.messages} onDismiss={() => setBanner(null)} />
-        )}
-        <section className="wm-body">
-          <Palette />
-          <section className="wm-canvas" aria-label="Canvas">
-            <Canvas />
+        <div className="wm-header-area">
+          <header className="wm-topbar">
+            <button
+              type="button"
+              className="wm-sidebar-toggle"
+              onClick={() => setSidebarOpen((o) => !o)}
+              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            >
+              ≡
+            </button>
+            <h1>Rochallor Workflow Modeller</h1>
+          </header>
+          {banner && (
+            <Banner
+              tone={banner.tone}
+              messages={banner.messages}
+              onDismiss={() => setBanner(null)}
+              floating={banner.floating}
+              autoDismissMs={banner.autoDismissMs}
+            />
+          )}
+        </div>
+        <div className="wm-layout">
+          <aside className={`wm-sidebar${sidebarOpen ? '' : ' wm-sidebar--collapsed'}`}>
+            <div className="wm-sidebar-section">
+              <span className="wm-sidebar-section-label">Actions</span>
+              <Toolbar
+                onImport={() => setImportOpen(true)}
+                onExport={() => setExportOpen(true)}
+                onOpenSettings={() => setSettingsOpen(true)}
+                onOpenEngineBrowser={() => setEngineBrowserOpen(true)}
+                onUploadResult={(r) =>
+                  setBanner({ tone: r.ok ? 'info' : 'error', messages: [r.message] })
+                }
+              />
+            </div>
+            <Palette />
+          </aside>
+          <section className="wm-body">
+            <section className="wm-canvas" aria-label="Canvas">
+              <Canvas />
+            </section>
+            <PropertyPanel onRequestDelete={(id) => setDeleteTarget(id)} />
           </section>
-          <PropertyPanel onRequestDelete={(id) => setDeleteTarget(id)} />
-        </section>
+        </div>
         <ValidationPanel />
       </main>
       <ImportDialog
@@ -131,7 +158,14 @@ export function App(): ReactNode {
       <EngineBrowser
         open={engineBrowserOpen}
         onClose={() => setEngineBrowserOpen(false)}
-        onLoaded={() => setBanner({ tone: 'info', messages: ['Loaded definition from engine.'] })}
+        onLoaded={() =>
+          setBanner({
+            tone: 'info',
+            messages: ['Loaded definition from engine.'],
+            floating: true,
+            autoDismissMs: 3000,
+          })
+        }
       />
       <DeleteStepDialog stepId={deleteTarget} onClose={() => setDeleteTarget(null)} />
     </ReactFlowProvider>

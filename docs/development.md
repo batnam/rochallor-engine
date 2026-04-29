@@ -63,14 +63,14 @@ git clone https://github.com/batnam/rochallor-engine.git
 cd rochallor-engine
 
 # 1. Start PostgreSQL
-docker compose -f workflow-engine/docker-compose.yml up -d
+docker compose -f workflow-engine/docker-compose.yml up -d postgres
 
 # 2. Generate proto code (required before first build)
 cd workflow-engine
 make proto-gen
 
 # 3. Build and start the engine
-export WE_POSTGRES_DSN="postgres://workflow:workflow@localhost:5432/workflow?sslmode=disable"
+export WE_POSTGRES_DSN="postgres://workflow:workflow@localhost:5434/workflow?sslmode=disable"
 make run
 ```
 
@@ -141,24 +141,6 @@ go test -race ./internal/...
 ```
 
 ---
-
-### Integration tests
-
-Integration tests spin up a real PostgreSQL instance via [testcontainers-go](https://testcontainers.com/modules/go/) — no manual setup needed beyond having Docker running.
-
-```bash
-cd workflow-engine
-make test-integration
-# equivalent: go test -tags integration ./test/integration/...
-```
-
-Each test gets an isolated database created and torn down automatically.
-
-To run a single integration test:
-
-```bash
-go test -tags integration -run TestLifecycleTransformation ./test/integration/...
-```
 
 Available integration test suites:
 
