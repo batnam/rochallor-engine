@@ -133,7 +133,7 @@ export function Toolbar({
         disabled={blocksExport || uploading}
         title={blockedTitle}
       >
-        {uploading ? 'Uploading…' : 'Upload'}
+        {uploading ? 'Uploading…' : 'Upload Workflow to Engine'}
       </button>
       <button type="button" onClick={onOpenSettings}>
         Settings
