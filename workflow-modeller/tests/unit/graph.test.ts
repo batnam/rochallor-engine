@@ -117,12 +117,14 @@ describe('toEdges sourceHandle', () => {
     expect(handles).toEqual(['parallel:0', 'parallel:1']);
   });
 
-  it('sequential edges do not carry sourceHandle', () => {
+  it('non-conditional, non-parallel edges do not carry sourceHandle', () => {
     const def = loadFixtures().find((f) => f.name === 'loan-application-full.json')?.def;
     expect(def).toBeDefined();
     if (!def) return;
     const edges = toEdges(def);
-    for (const e of edges.filter((e) => e.variant.kind === 'sequential')) {
+    for (const e of edges.filter(
+      (e) => e.variant.kind !== 'conditional' && e.variant.kind !== 'parallel',
+    )) {
       expect(e.sourceHandle, `edge ${e.id}`).toBeUndefined();
     }
   });
