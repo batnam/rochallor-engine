@@ -1,44 +1,97 @@
+import type { ElkExtendedEdge, ElkNode, ElkPort } from 'elkjs';
+import ELK from 'elkjs/lib/elk.bundled.js';
 import type { GraphEdge, GraphNode, StepId } from '@/domain/types';
-import dagre from 'dagre';
+
+const elk = new ELK();
 
 const NODE_WIDTH = 180;
-const NODE_HEIGHT = 56;
 
-export function layoutLeftToRight(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-): Record<StepId, { x: number; y: number }> {
-  const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: 'LR', nodesep: 40, ranksep: 80 });
-  g.setDefaultEdgeLabel(() => ({}));
+const ELK_OPTIONS: Record<string, string> = {
+  'elk.algorithm': 'layered',
+  'elk.direction': 'RIGHT',
+  'elk.spacing.nodeNode': '80',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '140',
+  'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+  'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+  'elk.padding': '[top=30, left=30, bottom=30, right=30]',
+};
 
-  for (const node of nodes) {
-    g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+function nodeHeight(node: GraphNode): number {
+  if (node.step.type === 'DECISION') {
+    return Math.max(70, Object.keys(node.step.conditionalNextSteps).length * 28);
   }
-  for (const edge of edges) {
-    g.setEdge(edge.from, edge.to);
+  if (node.step.type === 'PARALLEL_GATEWAY') {
+    return Math.max(70, node.step.parallelNextSteps.length * 28);
   }
-
-  dagre.layout(g);
-
-  const positions: Record<StepId, { x: number; y: number }> = {};
-  for (const node of nodes) {
-    const laidOut = g.node(node.id);
-    if (!laidOut) continue;
-    positions[node.id] = {
-      x: laidOut.x - NODE_WIDTH / 2,
-      y: laidOut.y - NODE_HEIGHT / 2,
-    };
-  }
-  return positions;
+  return 70;
 }
 
-/** Merge auto-layout positions with any existing manual positions (manual wins). */
-export function tidyLayout(
+function nodePorts(node: GraphNode): ElkPort[] {
+  const ports: ElkPort[] = [
+    { id: `${node.id}__in`, properties: { 'port.side': 'WEST' } },
+  ];
+  if (node.step.type === 'DECISION') {
+    Object.keys(node.step.conditionalNextSteps).forEach((_, i) => {
+      ports.push({ id: `${node.id}__branch_${i}`, properties: { 'port.side': 'EAST' } });
+    });
+  } else if (node.step.type === 'PARALLEL_GATEWAY') {
+    node.step.parallelNextSteps.forEach((_, i) => {
+      ports.push({ id: `${node.id}__parallel_${i}`, properties: { 'port.side': 'EAST' } });
+    });
+  } else if (node.step.type !== 'END') {
+    ports.push({ id: `${node.id}__out`, properties: { 'port.side': 'EAST' } });
+  }
+  return ports;
+}
+
+function elkSourcePort(edge: GraphEdge, source: GraphNode): string {
+  if (edge.variant.kind === 'conditional' && source.step.type === 'DECISION') {
+    const idx = Object.keys(source.step.conditionalNextSteps).indexOf(edge.variant.expression);
+    return `${edge.from}__branch_${idx >= 0 ? idx : 0}`;
+  }
+  if (edge.variant.kind === 'parallel' && edge.sourceHandle) {
+    const i = edge.sourceHandle.replace('parallel:', '');
+    return `${edge.from}__parallel_${i}`;
+  }
+  return `${edge.from}__out`;
+}
+
+export async function layoutWithElk(
   nodes: GraphNode[],
   edges: GraphEdge[],
-  existing: Record<StepId, { x: number; y: number }> = {},
-): Record<StepId, { x: number; y: number }> {
-  const auto = layoutLeftToRight(nodes, edges);
-  return { ...auto, ...existing };
+): Promise<Record<StepId, { x: number; y: number }>> {
+  if (nodes.length === 0) return {};
+
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
+  const graph: ElkNode = {
+    id: 'root',
+    layoutOptions: ELK_OPTIONS,
+    children: nodes.map((n) => ({
+      id: n.id,
+      width: NODE_WIDTH,
+      height: nodeHeight(n),
+      ports: nodePorts(n),
+      properties: { 'elk.portConstraints': 'FIXED_SIDE' },
+    })),
+    edges: edges
+      .filter((e) => nodeById.has(e.from) && nodeById.has(e.to))
+      .map(
+        (e): ElkExtendedEdge => ({
+          id: e.id,
+          sources: [elkSourcePort(e, nodeById.get(e.from)!)],
+          targets: [`${e.to}__in`],
+        }),
+      ),
+  };
+
+  const laid = await elk.layout(graph);
+
+  const positions: Record<StepId, { x: number; y: number }> = {};
+  for (const child of laid.children ?? []) {
+    if (child.x != null && child.y != null) {
+      positions[child.id] = { x: child.x, y: child.y };
+    }
+  }
+  return positions;
 }
