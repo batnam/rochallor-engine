@@ -63,14 +63,15 @@ export function Toolbar({
     persistApi?.clearStorage?.();
   }
 
-  function handleTidy(): void {
-    const def = useWorkflowStore.getState().definition;
-    layoutWithElk(toNodes(def), toEdges(def)).then((layout) => {
-      useWorkflowStore.setState({ layout });
-    });
-  }
   const { undo, redo, pastCount, futureCount } = useTemporal();
   const { fitView } = useReactFlow();
+
+  async function handleTidy(): Promise<void> {
+    const def = useWorkflowStore.getState().definition;
+    const positions = await layoutWithElk(toNodes(def), toEdges(def));
+    useWorkflowStore.setState({ layout: positions });
+    setTimeout(() => fitView({ duration: 250, padding: 0.2 }), 50);
+  }
   const [uploading, setUploading] = useState(false);
 
   const blocksExport = errors > 0;
