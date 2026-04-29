@@ -28,18 +28,18 @@ function nodeHeight(node: GraphNode): number {
 
 function nodePorts(node: GraphNode): ElkPort[] {
   const ports: ElkPort[] = [
-    { id: `${node.id}__in`, properties: { 'port.side': 'WEST' } },
+    { id: `${node.id}__in`, layoutOptions: { 'port.side': 'WEST' } },
   ];
   if (node.step.type === 'DECISION') {
     Object.keys(node.step.conditionalNextSteps).forEach((_, i) => {
-      ports.push({ id: `${node.id}__branch_${i}`, properties: { 'port.side': 'EAST' } });
+      ports.push({ id: `${node.id}__branch_${i}`, layoutOptions: { 'port.side': 'EAST' } });
     });
   } else if (node.step.type === 'PARALLEL_GATEWAY') {
     node.step.parallelNextSteps.forEach((_, i) => {
-      ports.push({ id: `${node.id}__parallel_${i}`, properties: { 'port.side': 'EAST' } });
+      ports.push({ id: `${node.id}__parallel_${i}`, layoutOptions: { 'port.side': 'EAST' } });
     });
   } else if (node.step.type !== 'END') {
-    ports.push({ id: `${node.id}__out`, properties: { 'port.side': 'EAST' } });
+    ports.push({ id: `${node.id}__out`, layoutOptions: { 'port.side': 'EAST' } });
   }
   return ports;
 }
@@ -49,8 +49,8 @@ function elkSourcePort(edge: GraphEdge, source: GraphNode): string {
     const idx = Object.keys(source.step.conditionalNextSteps).indexOf(edge.variant.expression);
     return `${edge.from}__branch_${idx >= 0 ? idx : 0}`;
   }
-  if (edge.variant.kind === 'parallel' && edge.sourceHandle) {
-    const i = edge.sourceHandle.replace('parallel:', '');
+  if (edge.variant.kind === 'parallel') {
+    const i = edge.sourceHandle ? edge.sourceHandle.replace('parallel:', '') : '0';
     return `${edge.from}__parallel_${i}`;
   }
   return `${edge.from}__out`;
@@ -72,7 +72,7 @@ export async function layoutWithElk(
       width: NODE_WIDTH,
       height: nodeHeight(n),
       ports: nodePorts(n),
-      properties: { 'elk.portConstraints': 'FIXED_SIDE' },
+      layoutOptions: { 'elk.portConstraints': 'FIXED_SIDE' },
     })),
     edges: edges
       .filter((e) => nodeById.has(e.from) && nodeById.has(e.to))
