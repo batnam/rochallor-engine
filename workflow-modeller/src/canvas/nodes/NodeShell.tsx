@@ -1,6 +1,6 @@
 import type { Step, StepType } from '@/domain/types';
 import { useDiagnosticsForNode } from '@/store/selectors';
-import { Handle, Position, type HandleProps } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
 import type { CSSProperties, ReactNode } from 'react';
 
 const STEP_ACCENT: Record<StepType, string> = {
@@ -90,6 +90,39 @@ export function NodeShell(props: NodeShellProps): ReactNode {
             id="in-bottom"
             className="wm-handle-side"
           />
+          {isDiamond && (
+            <>
+              {/* Upper-left edge of diamond — the previously missing target anchor. */}
+              <Handle
+                type="target"
+                position={Position.Left}
+                id="in-edge-tl"
+                className="wm-handle-side"
+              />
+              {/* RIGHT, BOTTOM, LEFT corners of diamond (TOP corner is `in`). */}
+              <Handle
+                type="target"
+                position={Position.Right}
+                id="in-c-right"
+                style={{ top: 0 }}
+                className="wm-handle-side"
+              />
+              <Handle
+                type="target"
+                position={Position.Right}
+                id="in-c-bottom"
+                style={{ top: '100%' }}
+                className="wm-handle-side"
+              />
+              <Handle
+                type="target"
+                position={Position.Left}
+                id="in-c-left"
+                style={{ top: '100%' }}
+                className="wm-handle-side"
+              />
+            </>
+          )}
         </>
       )}
       {source.map((s, i) => (
@@ -109,7 +142,7 @@ export function NodeShell(props: NodeShellProps): ReactNode {
           {source.length > 1 && s.label ? <span className="wm-handle-label">{s.label}</span> : null}
         </Handle>
       ))}
-      {isSingleOut && (
+      {isSingleOut && !isDiamond && (
         <>
           <Handle type="source" position={Position.Top} id="out-top" className="wm-handle-side" />
           <Handle
@@ -119,6 +152,59 @@ export function NodeShell(props: NodeShellProps): ReactNode {
             className="wm-handle-side"
           />
           <Handle type="source" position={Position.Left} id="out-left" className="wm-handle-side" />
+        </>
+      )}
+      {isDiamond && (
+        // Reroute-only ghost source handles at every diamond anchor except the
+        // BOTTOM corner (where the main source / branches already live). These
+        // let the user drag an existing edge endpoint onto any side or corner
+        // of the diamond — the override saved by Canvas keeps the new routing.
+        <>
+          <Handle
+            type="source"
+            position={Position.Top}
+            id="out-c-top"
+            style={{ left: 0 }}
+            className="wm-handle-side"
+          />
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="out-c-right"
+            style={{ top: 0 }}
+            className="wm-handle-side"
+          />
+          <Handle
+            type="source"
+            position={Position.Left}
+            id="out-c-left"
+            style={{ top: '100%' }}
+            className="wm-handle-side"
+          />
+          <Handle
+            type="source"
+            position={Position.Left}
+            id="out-edge-tl"
+            className="wm-handle-side"
+          />
+          <Handle
+            type="source"
+            position={Position.Top}
+            id="out-edge-tr"
+            className="wm-handle-side"
+          />
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="out-edge-br"
+            className="wm-handle-side"
+          />
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="out-edge-bl"
+            className="wm-handle-side"
+          />
         </>
       )}
     </>
