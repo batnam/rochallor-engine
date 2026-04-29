@@ -90,6 +90,44 @@ describe('toEdges', () => {
   });
 });
 
+describe('toEdges sourceHandle', () => {
+  it('conditional edges carry sourceHandle matching branch:<expression>', () => {
+    const def = loadFixtures().find((f) => f.name === 'loan-application-full.json')?.def;
+    expect(def).toBeDefined();
+    if (!def) return;
+    const edges = toEdges(def);
+    const conditional = edges.filter((e) => e.variant.kind === 'conditional');
+    expect(conditional.length).toBeGreaterThan(0);
+    for (const e of conditional) {
+      expect(e.sourceHandle, `edge ${e.id}`).toBeDefined();
+      if (e.variant.kind === 'conditional') {
+        expect(e.sourceHandle).toBe(`branch:${e.variant.expression}`);
+      }
+    }
+  });
+
+  it('parallel edges carry sourceHandle matching parallel:<index>', () => {
+    const def = loadFixtures().find((f) => f.name === 'loan-application-full.json')?.def;
+    expect(def).toBeDefined();
+    if (!def) return;
+    const edges = toEdges(def);
+    const parallel = edges.filter((e) => e.variant.kind === 'parallel');
+    expect(parallel).toHaveLength(2); // parallel-risk-checks has 2 branches
+    const handles = parallel.map((e) => e.sourceHandle).sort();
+    expect(handles).toEqual(['parallel:0', 'parallel:1']);
+  });
+
+  it('sequential edges do not carry sourceHandle', () => {
+    const def = loadFixtures().find((f) => f.name === 'loan-application-full.json')?.def;
+    expect(def).toBeDefined();
+    if (!def) return;
+    const edges = toEdges(def);
+    for (const e of edges.filter((e) => e.variant.kind === 'sequential')) {
+      expect(e.sourceHandle, `edge ${e.id}`).toBeUndefined();
+    }
+  });
+});
+
 function groupByKind(edges: ReturnType<typeof toEdges>): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const e of edges) counts[e.variant.kind] = (counts[e.variant.kind] ?? 0) + 1;

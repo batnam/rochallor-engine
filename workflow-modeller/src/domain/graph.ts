@@ -47,7 +47,10 @@ function pushStepEdges(step: Step, out: GraphEdge[]): void {
 
     case 'DECISION':
       for (const [expression, target] of Object.entries(step.conditionalNextSteps)) {
-        out.push(makeEdge(step.id, target, { kind: 'conditional', expression }));
+        out.push({
+          ...makeEdge(step.id, target, { kind: 'conditional', expression }),
+          sourceHandle: `branch:${expression}`,
+        });
       }
       break;
 
@@ -56,9 +59,12 @@ function pushStepEdges(step: Step, out: GraphEdge[]): void {
       break;
 
     case 'PARALLEL_GATEWAY':
-      for (const target of step.parallelNextSteps) {
-        out.push(makeEdge(step.id, target, { kind: 'parallel' }));
-      }
+      step.parallelNextSteps.forEach((target, i) => {
+        out.push({
+          ...makeEdge(step.id, target, { kind: 'parallel' }),
+          sourceHandle: `parallel:${i}`,
+        });
+      });
       break;
 
     case 'JOIN_GATEWAY':

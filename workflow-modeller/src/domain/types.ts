@@ -100,4 +100,5 @@ export interface GraphEdge {
   from: StepId;
   to: StepId;
   variant: EdgeVariant;
+  sourceHandle?: string;
 }
