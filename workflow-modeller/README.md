@@ -32,17 +32,6 @@ To connect to a running engine: open **Settings**, point it at your engine base 
 | `pnpm test:drift` | Drift guard only — runs every fixture through TS + Go validators (`go` must be on `PATH`). |
 | `pnpm size` | Build, then fail if the gzipped JS bundle exceeds 500 KB. |
 
-## Spec docs
-
-The behaviour and rationale are specified under `../specs/001-workflow-modeller/`:
-
-- [`spec.md`](../specs/001-workflow-modeller/spec.md) — user stories, acceptance criteria.
-- [`plan.md`](../specs/001-workflow-modeller/plan.md) — tech stack, architecture.
-- [`data-model.md`](../specs/001-workflow-modeller/data-model.md) — domain entities, validation rules.
-- [`contracts/workflow-json.md`](../specs/001-workflow-modeller/contracts/workflow-json.md) — JSON schema the editor reads/writes.
-- [`contracts/engine-rest.md`](../specs/001-workflow-modeller/contracts/engine-rest.md) — engine REST endpoints consumed.
-- [`quickstart.md`](../specs/001-workflow-modeller/quickstart.md) — five-journey walkthrough.
-
 ## Drift guard
 
 `pnpm test:drift` runs every fixture under `tests/fixtures/` through both the TypeScript validator (`src/domain/validate.ts`) and the Go validator (`workflow-engine/cmd/validate-fixture`). Any case where the editor accepts JSON the engine would reject (or vice versa) fails the suite. This is the load-bearing guarantee for SC-002 — do not disable it.
