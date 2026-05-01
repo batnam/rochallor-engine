@@ -187,7 +187,7 @@ The engine supports two dispatch models, chosen per deployment via a single envi
 
 The repository includes a browser-based visual editor that reads and writes the same JSON contract the engine consumes.
 <p align="left">
-  <img src="images/Workflow-Modeller.png" alt="Rochallor Workflow Modeller" width="70%">
+  <img src="images/Workflow-Modeller.png" alt="Rochallor Workflow Modeller" width="100%">
 </p>
 
 **Key capabilities**
