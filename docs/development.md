@@ -26,8 +26,7 @@ rochallor-engine/
 │   ├── migrations/                     # Numbered SQL migration files (up + down)
 │   ├── test/
 │   │   ├── contract/                   # REST contract replay tests
-│   │   ├── fixtures/                   # Shared JSON fixtures
-│   │   └── integration/                # End-to-end lifecycle tests (testcontainers)
+│   │   └── fixtures/                   # Shared JSON fixtures
 │   ├── Makefile
 │   └── docker-compose.yml              # PostgreSQL for local dev
 │
@@ -139,23 +138,6 @@ With race detector (recommended before opening a PR):
 ```bash
 go test -race ./internal/...
 ```
-
----
-
-Available integration test suites:
-
-| File | What it covers |
-|------|---------------|
-| `lifecycle_loan_application_test.go` | Full loan workflow — SERVICE_TASK, DECISION, parallel gateway |
-| `lifecycle_parallel_test.go` | PARALLEL_GATEWAY + JOIN_GATEWAY fan-out / fan-in |
-| `lifecycle_transformation_test.go` | TRANSFORMATION step, `${now()}`, boolean expressions |
-| `lifecycle_document_verification_test.go` | USER_TASK, boundary timer events |
-| `boundary_timer_test.go` | Timer sweeper firing and re-routing |
-| `job_lease_sweeper_test.go` | Lease expiry and job reclaim |
-| `job_retry_test.go` | Retry budget decrement and exhaustion |
-| `job_poll_contention_test.go` | Concurrent worker poll under SKIP LOCKED |
-| `definition_repository_test.go` | Definition upload, version increment, retrieval |
-| `migration_test.go` | All migrations run up and down cleanly |
 
 ---
 
