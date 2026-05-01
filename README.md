@@ -187,7 +187,7 @@ The engine supports two dispatch models, chosen per deployment via a single envi
 
 The repository includes a browser-based visual editor that reads and writes the same JSON contract the engine consumes.
 <p align="left">
-  <img src="images/Workflow-Modeller.png" alt="Rochallor Workflow Modeller" width="70%">
+  <img src="images/Workflow-Modeller.png" alt="Rochallor Workflow Modeller" width="100%">
 </p>
 
 **Key capabilities**
@@ -196,7 +196,6 @@ The repository includes a browser-based visual editor that reads and writes the 
 - Live validation — all engine rules are enforced inline; errors and warnings appear directly on the affected nodes.
 - Engine integration — connect to a running engine to load existing definitions or publish new ones without leaving the browser.
 - Offline authoring — the editor is fully functional without an engine; import/export JSON at any time.
-- Auto-layout — one-click Tidy button routes the graph with ELK, eliminating manual positioning.
 
 **Quick start**
 
@@ -207,10 +206,6 @@ pnpm dev          # opens at http://localhost:5173
 ```
 
 For full setup instructions, available scripts, and the spec docs, see **[workflow-modeller/README.md](workflow-modeller/README.md)**.
-
-> **`workflow-engine/validate-fixture` — compiled binary, not source**
->
-> The `workflow-engine/` directory contains a pre-built binary named `validate-fixture`. It is the compiled form of `workflow-engine/cmd/validate-fixture/main.go` — a small Go CLI that runs the engine's authoritative parser and validator against a single workflow JSON file and prints `{"accepted": bool, "error": "..."}` on stdout. It is called by the workflow-modeller's drift-guard harness to verify that every fixture accepted by the TypeScript validator is also accepted by the Go engine (the mechanical guarantee that the two implementations stay in sync). You do not need to run it directly; the modeller's test suite invokes it automatically.
 
 ---
 
