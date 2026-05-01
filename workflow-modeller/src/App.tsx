@@ -5,56 +5,14 @@ import { DeleteStepDialog } from '@/panels/DeleteStepDialog';
 import { EngineBrowser } from '@/panels/EngineBrowser';
 import { ExportDialog } from '@/panels/ExportDialog';
 import { ImportDialog } from '@/panels/ImportDialog';
+import { JsonEditor } from '@/panels/JsonEditor';
 import { Palette } from '@/panels/Palette';
 import { PropertyPanel } from '@/panels/PropertyPanel';
 import { SettingsDialog } from '@/panels/SettingsDialog';
 import { Toolbar } from '@/panels/Toolbar';
 import { ValidationPanel } from '@/panels/ValidationPanel';
-import { useSelection } from '@/store/selectors';
-import { useWorkflowStore } from '@/store/workflowStore';
 import { ReactFlowProvider } from '@xyflow/react';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-
-function isEditableTarget(t: EventTarget | null): boolean {
-  if (!(t instanceof HTMLElement)) return false;
-  return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable;
-}
-
-function useKeyboardShortcuts(handlers: {
-  onDelete?: () => void;
-  onUndo: () => void;
-  onRedo: () => void;
-}): void {
-  const { onDelete, onUndo, onRedo } = handlers;
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent): void {
-      if (isEditableTarget(e.target)) return;
-      const mod = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
-      if (mod && key === 'z' && e.shiftKey) {
-        e.preventDefault();
-        onRedo();
-        return;
-      }
-      if (mod && key === 'z') {
-        e.preventDefault();
-        onUndo();
-        return;
-      }
-      if (mod && key === 'y') {
-        e.preventDefault();
-        onRedo();
-        return;
-      }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && onDelete) {
-        onDelete();
-        return;
-      }
-    }
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [onDelete, onUndo, onRedo]);
-}
+import { type ReactNode, useRef, useState } from 'react';
 
 interface BannerState {
   tone: BannerTone;
@@ -71,9 +29,9 @@ export function App(): ReactNode {
   const [deleteTarget, setDeleteTarget] = useState<StepId | null>(null);
   const [banner, setBanner] = useState<BannerState | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [view, setView] = useState<'canvas' | 'json'>('canvas');
   const [inspectorWidth, setInspectorWidth] = useState(320);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const selection = useSelection();
 
   function handleResizeStart(e: React.MouseEvent): void {
     e.preventDefault();
@@ -91,26 +49,6 @@ export function App(): ReactNode {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }
-
-  useKeyboardShortcuts({
-    onDelete: () => {
-      if (selection.kind === 'step') setDeleteTarget(selection.id);
-    },
-    onUndo: () => {
-      (
-        useWorkflowStore as unknown as { temporal: { getState: () => { undo: () => void } } }
-      ).temporal
-        .getState()
-        .undo();
-    },
-    onRedo: () => {
-      (
-        useWorkflowStore as unknown as { temporal: { getState: () => { redo: () => void } } }
-      ).temporal
-        .getState()
-        .redo();
-    },
-  });
 
   return (
     <ReactFlowProvider>
@@ -158,8 +96,30 @@ export function App(): ReactNode {
             className="wm-body"
             style={{ gridTemplateColumns: `1fr 4px ${inspectorWidth}px` }}
           >
-            <section className="wm-canvas" aria-label="Canvas">
-              <Canvas />
+            <section className="wm-canvas" aria-label="Workflow editor">
+              <div className="wm-view-tabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'canvas'}
+                  className={`wm-view-tab${view === 'canvas' ? ' wm-view-tab--active' : ''}`}
+                  onClick={() => setView('canvas')}
+                >
+                  Visual
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'json'}
+                  className={`wm-view-tab${view === 'json' ? ' wm-view-tab--active' : ''}`}
+                  onClick={() => setView('json')}
+                >
+                  JSON
+                </button>
+              </div>
+              <div className="wm-canvas-content">
+                {view === 'canvas' ? <Canvas /> : <JsonEditor />}
+              </div>
             </section>
             <div className="wm-resize-handle" onMouseDown={handleResizeStart} />
             <PropertyPanel onRequestDelete={(id) => setDeleteTarget(id)} />

@@ -9,7 +9,7 @@ interface ExportDialogProps {
 export function ExportDialog({ open, onClose }: ExportDialogProps): ReactNode {
   const exportToJson = useWorkflowStore((s) => s.exportToJson);
   const definitionName = useWorkflowStore((s) => s.definition.name);
-  const [includeLayout, setIncludeLayout] = useState(false);
+  const [includeLayout, setIncludeLayout] = useState(true);
   const [copied, setCopied] = useState(false);
 
   const text = useMemo(

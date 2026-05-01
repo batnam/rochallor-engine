@@ -13,7 +13,7 @@ export const DecisionNode = memo(function DecisionNode(props: NodeProps): ReactN
   }
   const branches = Object.keys(step.conditionalNextSteps);
   const source = branches.length
-    ? branches.map((expr) => ({ id: `branch:${expr}`, label: expr }))
+    ? branches.map((expr) => ({ id: `branch:${expr}` }))
     : [{ id: 'out' }];
   return (
     <NodeShell

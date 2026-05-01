@@ -73,11 +73,13 @@ export function NodeShell(props: NodeShellProps): ReactNode {
         <>
           <Handle
             type="target"
-            position={Position.Left}
+            position={isDiamond ? Position.Top : Position.Left}
             id="in"
-            style={isDiamond ? { top: 0 } : undefined}
+            style={isDiamond ? { left: 0, top: 0, transform: 'translate(-50%, -50%)' } : undefined}
           />
-          <Handle type="target" position={Position.Top} id="in-top" className="wm-handle-side" />
+          {!isDiamond && (
+            <Handle type="target" position={Position.Top} id="in-top" className="wm-handle-side" />
+          )}
           <Handle
             type="target"
             position={Position.Right}
@@ -109,9 +111,9 @@ export function NodeShell(props: NodeShellProps): ReactNode {
               />
               <Handle
                 type="target"
-                position={Position.Right}
+                position={Position.Bottom}
                 id="in-c-bottom"
-                style={{ top: '100%' }}
+                style={{ top: '100%', left: '100%', transform: 'translate(-50%, -50%)' }}
                 className="wm-handle-side"
               />
               <Handle
@@ -129,11 +131,11 @@ export function NodeShell(props: NodeShellProps): ReactNode {
         <Handle
           key={s.id}
           type="source"
-          position={Position.Right}
+          position={isDiamond ? Position.Bottom : Position.Right}
           id={s.id}
           style={
             isDiamond
-              ? { top: '100%' }
+              ? { top: '100%', left: '100%', transform: 'translate(-50%, -50%)' }
               : source.length > 1
                 ? { top: `${s.offsetPct ?? ((i + 1) * 100) / (source.length + 1)}%` }
                 : undefined
@@ -203,6 +205,7 @@ export function NodeShell(props: NodeShellProps): ReactNode {
             type="source"
             position={Position.Bottom}
             id="out-edge-bl"
+            style={{ top: '100%', left: '100%', transform: 'translate(-50%, -50%)' }}
             className="wm-handle-side"
           />
         </>
@@ -235,10 +238,24 @@ export function NodeShell(props: NodeShellProps): ReactNode {
     </>
   );
 
+  // All diamonds: name floats above, only type-specific content inside.
+  // Decision: "DECISION" type label. Gateways: icon only.
+  const diamondContent =
+    shape === 'diamond' ? (
+      <div className="wm-node-diamond-type">{accent.replace(/_/g, ' ')}</div>
+    ) : (
+      <span className="wm-node-diamond-icon">{icon}</span>
+    );
+
   return (
     <div className={classes} style={accentStyle}>
+      {isDiamond && (
+        <div className="wm-diamond-float-name" title={data.step.name}>
+          {data.step.name}
+        </div>
+      )}
       {handles}
-      {isDiamond ? <div className="wm-node-inner">{innerContent}</div> : innerContent}
+      {isDiamond ? <div className="wm-node-inner">{diamondContent}</div> : innerContent}
     </div>
   );
 }
