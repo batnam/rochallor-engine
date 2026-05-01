@@ -10,7 +10,7 @@ import type {
 import { validate } from '@/domain/validate';
 import { type EngineClient, createEngineClient } from '@/engine/client';
 import { EngineError } from '@/engine/types';
-import { exportJson as ioExport } from '@/io/export';
+import { embedLayout, exportJson as ioExport } from '@/io/export';
 import { importJson as ioImport } from '@/io/import';
 import { temporal } from 'zundo';
 import { create } from 'zustand';
@@ -45,9 +45,15 @@ export interface ImportResult {
   warnings?: string[];
 }
 
+export type EdgeHandles = Record<
+  string,
+  { sourceHandle?: string | null; targetHandle?: string | null }
+>;
+
 export interface WorkflowState {
   definition: WorkflowDefinition;
   layout: Record<StepId, { x: number; y: number }>;
+  edgeHandles: EdgeHandles;
   selection: Selection;
   validation: { lastRunAt?: number; diagnostics: Diagnostic[] };
   dirty: boolean;
@@ -66,15 +72,18 @@ export interface WorkflowActions {
   setDefinitionMeta(patch: Partial<WorkflowDefinition>): void;
 
   setLayout(id: StepId, pos: { x: number; y: number }): void;
+  setEdgeHandle(edgeId: string, handles: EdgeHandles[string]): void;
   select(sel: Selection): void;
   runValidation(): void;
   setEngineConnection(patch: Partial<EngineConnection>): void;
 
   importFromJson(text: string, meta?: { name?: string }): ImportResult;
+  applyDefinitionFromJson(text: string): ImportResult;
   exportToJson(opts?: { includeLayout?: boolean }): string;
   loadFromEngine(id: string, version?: number): Promise<void>;
   uploadToEngine(): Promise<{ version: number }>;
   testEngineConnection(): Promise<EngineConnection['status']>;
+  /** @internal Test helper — resets store to initial state. Not exposed in the UI. */
   reset(): void;
 }
 
@@ -101,6 +110,7 @@ function initialState(): WorkflowState {
   return {
     definition: emptyDefinition(),
     layout: {},
+    edgeHandles: {},
     selection: { kind: 'none' },
     validation: { diagnostics: [] },
     dirty: false,
@@ -218,6 +228,10 @@ const creator = (
     set((state) => ({ layout: { ...state.layout, [id]: pos } }));
   },
 
+  setEdgeHandle(edgeId, handles) {
+    set((state) => ({ edgeHandles: { ...state.edgeHandles, [edgeId]: handles } }));
+  },
+
   select(sel) {
     set({ selection: sel });
   },
@@ -236,9 +250,11 @@ const creator = (
     if (!result.ok) {
       return { ok: false, errors: result.errors };
     }
+    const embedded = extractEmbeddedModeller(result.def);
     set({
       definition: result.def,
-      layout: {},
+      layout: embedded.layout,
+      edgeHandles: embedded.edgeHandles,
       selection: { kind: 'none' },
       validation: { diagnostics: [] },
       dirty: false,
@@ -248,10 +264,30 @@ const creator = (
     return { ok: true, warnings: result.warnings };
   },
 
+  applyDefinitionFromJson(text) {
+    const result = ioImport(text);
+    if (!result.ok) return { ok: false, errors: result.errors };
+    const newIds = new Set(result.def.steps.map((s) => s.id));
+    const preservedLayout = Object.fromEntries(
+      Object.entries(get().layout).filter(([id]) => newIds.has(id)),
+    );
+    set({
+      definition: result.def,
+      layout: preservedLayout,
+      // edgeHandles unchanged — JSON editor doesn't touch routing
+      selection: { kind: 'none' },
+      validation: { diagnostics: [] },
+      dirty: true,
+      importWarnings: result.warnings,
+    });
+    return { ok: true, warnings: result.warnings };
+  },
+
   exportToJson(opts) {
     return ioExport(get().definition, {
       includeLayout: opts?.includeLayout ?? false,
       layout: get().layout,
+      edgeHandles: get().edgeHandles,
     });
   },
 
@@ -259,9 +295,11 @@ const creator = (
     const client = getClient(get());
     const def =
       version === undefined ? await client.getLatest(id) : await client.getVersion(id, version);
+    const embedded = extractEmbeddedModeller(def);
     set({
       definition: def,
-      layout: {},
+      layout: embedded.layout,
+      edgeHandles: embedded.edgeHandles,
       selection: { kind: 'none' },
       validation: { diagnostics: [] },
       dirty: false,
@@ -274,7 +312,9 @@ const creator = (
     const state = get();
     const client = getClient(state);
     try {
-      const summary = await client.upload(state.definition);
+      const summary = await client.upload(
+        embedLayout(state.definition, state.layout, state.edgeHandles),
+      );
       set((s) => ({
         definition: { ...s.definition, version: summary.version },
         dirty: false,
@@ -314,6 +354,36 @@ const creator = (
     set(initialState());
   },
 });
+
+function extractEmbeddedModeller(def: WorkflowDefinition): {
+  layout: Record<string, { x: number; y: number }>;
+  edgeHandles: EdgeHandles;
+} {
+  try {
+    const wm = (def.metadata as Record<string, unknown> | undefined)?.workflowModeller as
+      | Record<string, unknown>
+      | undefined;
+
+    const rawLayout = wm?.layout as Record<string, unknown> | undefined;
+    const layout: Record<string, { x: number; y: number }> = {};
+    if (rawLayout && typeof rawLayout === 'object') {
+      for (const [id, pos] of Object.entries(rawLayout)) {
+        if (pos && typeof pos === 'object' && 'x' in pos && 'y' in pos) {
+          const { x, y } = pos as { x: unknown; y: unknown };
+          if (typeof x === 'number' && typeof y === 'number') layout[id] = { x, y };
+        }
+      }
+    }
+
+    const rawHandles = wm?.edgeHandles as EdgeHandles | undefined;
+    const edgeHandles: EdgeHandles =
+      rawHandles && typeof rawHandles === 'object' ? { ...rawHandles } : {};
+
+    return { layout, edgeHandles };
+  } catch {
+    return { layout: {}, edgeHandles: {} };
+  }
+}
 
 function scrubRefs(def: WorkflowDefinition, removedId: StepId): WorkflowDefinition {
   const steps = def.steps.map((step) => {
@@ -375,6 +445,7 @@ export const useWorkflowStore = create<WorkflowStore>()(
       partialize: (state) => ({
         definition: state.definition,
         layout: state.layout,
+        edgeHandles: state.edgeHandles,
         engine: { baseUrl: state.engine.baseUrl, authHeader: state.engine.authHeader },
         source: state.source,
       }),

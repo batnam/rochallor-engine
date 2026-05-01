@@ -1,6 +1,12 @@
 :root {
   color-scheme: light;
 
+  /* Bento grid layout */
+  --bento-bg: #e4e8ef;
+  --bento-gap: 8px;
+  --bento-radius: 12px;
+  --bento-shadow: 0 1px 3px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.05);
+
   /* Step-type colour tokens (FR-002) — one per StepType. Refined in later phases. */
   --step-service-task: #3b82f6;
   --step-user-task: #22c55e;
@@ -32,20 +38,28 @@ body,
   height: 100%;
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background: var(--surface-muted);
+  background: var(--bento-bg);
   color: var(--text);
 }
 
 .wm-shell {
   display: grid;
   grid-template-rows: auto 1fr auto;
+  gap: var(--bento-gap);
+  padding: var(--bento-gap);
   height: 100%;
+  box-sizing: border-box;
+  background: var(--bento-bg);
 }
 
 /* Top bar */
 .wm-header-area {
   display: flex;
   flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--bento-radius);
+  box-shadow: var(--bento-shadow);
+  overflow: hidden;
 }
 
 .wm-topbar {
@@ -88,8 +102,8 @@ body,
 /* Sidebar + main layout */
 .wm-layout {
   display: flex;
+  gap: var(--bento-gap);
   min-height: 0;
-  overflow: hidden;
 }
 
 .wm-sidebar {
@@ -98,14 +112,16 @@ body,
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-right: 1px solid var(--surface-border);
+  border-radius: var(--bento-radius);
+  box-shadow: var(--bento-shadow);
   overflow-y: auto;
   overflow-x: hidden;
-  transition: width 0.2s ease;
+  transition: width 0.2s ease, opacity 0.2s ease;
 }
 
 .wm-sidebar--collapsed {
   width: 0;
+  opacity: 0;
 }
 
 .wm-sidebar-section {
@@ -132,13 +148,12 @@ body,
   grid-template-columns: 1fr 4px 320px;
   min-height: 0;
   flex: 1;
-  overflow: hidden;
 }
 
 .wm-resize-handle {
   width: 4px;
   cursor: col-resize;
-  background: var(--surface-border);
+  background: transparent;
   transition: background 0.15s;
   z-index: 1;
   flex-shrink: 0;
@@ -146,7 +161,7 @@ body,
 
 .wm-resize-handle:hover,
 .wm-resize-handle:active {
-  background: var(--step-service-task);
+  background: color-mix(in srgb, var(--step-service-task) 40%, transparent);
 }
 
 .wm-palette,
@@ -158,13 +173,100 @@ body,
 
 .wm-inspector {
   border-right: none;
-  border-left: 1px solid var(--surface-border);
+  border-left: none;
+  border-radius: var(--bento-radius);
+  box-shadow: var(--bento-shadow);
 }
 
 .wm-canvas {
   position: relative;
   overflow: hidden;
   background: var(--surface-muted);
+  border-radius: var(--bento-radius);
+  box-shadow: var(--bento-shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+/* View tab bar (Visual / JSON) */
+.wm-view-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--surface-border);
+  flex-shrink: 0;
+}
+
+.wm-view-tab {
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.25rem 0.875rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.wm-view-tab:hover:not(.wm-view-tab--active) {
+  background: var(--surface-border);
+  color: var(--text);
+}
+
+.wm-view-tab--active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+
+/* Canvas / JSON editor content area */
+.wm-canvas-content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* JSON editor */
+.wm-json-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface);
+}
+
+.wm-json-editor-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.875rem;
+  background: color-mix(in srgb, #b91c1c 8%, var(--surface));
+  border-bottom: 1px solid color-mix(in srgb, #b91c1c 20%, var(--surface));
+  flex-shrink: 0;
+}
+
+.wm-json-editor-error-item {
+  font-size: 0.8125rem;
+  color: #b91c1c;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.wm-json-editor-textarea {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  background: var(--surface);
+  color: var(--text);
+  box-sizing: border-box;
 }
 
 .wm-canvas-empty {
@@ -180,7 +282,8 @@ body,
   min-height: 120px;
   padding: 0.75rem 1.25rem;
   background: var(--surface);
-  border-top: 1px solid var(--surface-border);
+  border-radius: var(--bento-radius);
+  box-shadow: var(--bento-shadow);
   overflow: auto;
   max-height: 240px;
 }
@@ -228,7 +331,7 @@ body,
   text-align: left;
   border-color: transparent;
   background: transparent;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 0.8125rem;
   padding: 0.5rem 0.75rem;
 }
@@ -280,40 +383,68 @@ body,
 
 .wm-palette-item {
   width: 100%;
-  padding: 0.5rem 0.625rem;
+  padding: 0.375rem 0.625rem;
   font: inherit;
   font-size: 0.8125rem;
   text-align: left;
-  border-radius: 4px;
+  border-radius: 8px;
   border: 1px solid var(--surface-border);
   background: var(--surface-muted);
   color: var(--text);
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.wm-palette-item--service_task {
-  border-left: 3px solid var(--step-service-task);
+.wm-palette-item:hover {
+  background: var(--surface);
+  border-color: var(--text-muted);
 }
-.wm-palette-item--user_task {
-  border-left: 3px solid var(--step-user-task);
+
+/* Mini shape previews in the palette */
+.wm-palette-shape-wrap {
+  width: 32px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
-.wm-palette-item--decision {
-  border-left: 3px solid var(--step-decision);
+
+.wm-palette-shape-rect {
+  width: 26px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1.5px solid var(--surface-border);
+  border-left: 3px solid var(--shape-color, var(--surface-border));
+  background: var(--surface);
 }
-.wm-palette-item--transformation {
-  border-left: 3px solid var(--step-transformation);
+
+.wm-palette-shape-circle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--shape-color, var(--surface-border));
+  background: var(--surface);
 }
-.wm-palette-item--wait {
-  border-left: 3px solid var(--step-wait);
+
+.wm-palette-shape-diamond {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--shape-color, var(--surface-border));
+  border-radius: 2px;
+  background: var(--surface);
+  transform: rotate(45deg);
 }
-.wm-palette-item--parallel_gateway {
-  border-left: 3px solid var(--step-parallel-gateway);
-}
-.wm-palette-item--join_gateway {
-  border-left: 3px solid var(--step-join-gateway);
-}
-.wm-palette-item--end {
-  border-left: 3px solid var(--step-end);
+
+.wm-palette-shape-diamond-sm {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--shape-color, var(--surface-border));
+  border-radius: 1px;
+  background: var(--surface);
+  transform: rotate(45deg);
 }
 
 .wm-property-list {
@@ -484,9 +615,9 @@ body,
   color: var(--text);
   border: 1px solid var(--surface-border);
   border-left-width: 4px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 0.8125rem;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
 }
 
 .wm-node--entry {
@@ -598,8 +729,8 @@ body,
    Handles are direct children of the outer container → appear at diamond tips. */
 .wm-node--diamond {
   min-width: unset;
-  width: 130px;
-  height: 130px;
+  width: 72px;
+  height: 72px;
   padding: 0;
   background: var(--surface);
   border: 2px solid var(--step-decision);
@@ -614,7 +745,7 @@ body,
 
 .wm-node--diamond .wm-node-inner {
   transform: rotate(-45deg);
-  width: 95px;
+  width: 54px;
   padding: 0.25rem;
   display: flex;
   flex-direction: column;
@@ -622,13 +753,62 @@ body,
   text-align: center;
   overflow: hidden;
   pointer-events: none;
+  gap: 0.25rem;
+}
+
+/* Step name floated above any diamond (Decision + Gateways) */
+.wm-diamond-float-name {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  transform: rotate(-45deg) translate(-50%, calc(-100% - 8px));
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  padding: 2px 8px;
+  border-radius: 6px;
+  box-shadow: var(--bento-shadow);
+  pointer-events: none;
+  z-index: 10;
+  text-align: center;
+}
+
+.wm-node-diamond-name {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text);
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.wm-node-diamond-type {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+/* Decision diamond: type label uses accent color for clarity */
+.wm-node--diamond .wm-node-diamond-type {
+  color: var(--step-decision);
 }
 
 /* Small Diamond — PARALLEL_GATEWAY, JOIN_GATEWAY */
 .wm-node--diamond-sm {
   min-width: unset;
-  width: 90px;
-  height: 90px;
+  width: 64px;
+  height: 64px;
   padding: 0;
   background: var(--surface);
   border: 2px solid var(--step-parallel-gateway);
@@ -647,15 +827,28 @@ body,
 
 .wm-node--diamond-sm .wm-node-inner {
   transform: rotate(-45deg);
-  width: 65px;
-  padding: 0.25rem;
+  width: 40px;
+  padding: 0.125rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   overflow: hidden;
-  font-size: 0.6875rem;
   pointer-events: none;
+  gap: 0.125rem;
+}
+
+/* Gateway icon inside diamond */
+.wm-node-diamond-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wm-node--parallel_gateway .wm-node-diamond-icon {
+  color: var(--step-parallel-gateway);
+}
+.wm-node--join_gateway .wm-node-diamond-icon {
+  color: var(--step-join-gateway);
 }
 
 /* Active-node pulsating border */
@@ -746,7 +939,7 @@ body,
   width: min(640px, 92vw);
   background: var(--surface);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--bento-radius);
   padding: 1.25rem;
   box-shadow: 0 20px 40px rgb(0 0 0 / 30%);
   display: grid;
@@ -819,7 +1012,7 @@ body,
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
-  border-bottom: 1px solid var(--surface-border);
+  border-top: 1px solid var(--surface-border);
 }
 
 .wm-banner--info {

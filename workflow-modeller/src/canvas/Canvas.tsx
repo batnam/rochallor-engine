@@ -119,8 +119,10 @@ function CanvasInner(): ReactNode {
   const nodes = useNodes();
   const edges = useEdges();
   const storedLayout = useWorkflowStore((s) => s.layout);
+  const edgeHandles = useWorkflowStore((s) => s.edgeHandles);
   const addStep = useWorkflowStore((s) => s.addStep);
   const setLayout = useWorkflowStore((s) => s.setLayout);
+  const setEdgeHandle = useWorkflowStore((s) => s.setEdgeHandle);
   const source = useWorkflowStore((s) => s.source);
   const { fitView, screenToFlowPosition } = useReactFlow();
 
@@ -186,7 +188,23 @@ function CanvasInner(): ReactNode {
     }
     const missing = nodes.some((n) => !(n.id in storedLayout) && !(n.id in elkLayout));
     if (!missing) return;
-    layoutWithElk(nodes, edges).then(setElkLayout);
+    let cancelled = false;
+    layoutWithElk(nodes, edges).then((positions) => {
+      if (cancelled) return;
+      setElkLayout(positions);
+      // Persist ELK-computed positions to the store so they survive tab switches.
+      // Only write nodes that don't already have a stored position.
+      const current = useWorkflowStore.getState().layout;
+      const toSave = Object.fromEntries(
+        Object.entries(positions).filter(([id]) => !(id in current)),
+      );
+      if (Object.keys(toSave).length > 0) {
+        useWorkflowStore.setState((s) => ({ layout: { ...s.layout, ...toSave } }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [nodes, edges, storedLayout, elkLayout]);
 
   const layout = useMemo(() => ({ ...elkLayout, ...storedLayout }), [elkLayout, storedLayout]);
@@ -199,12 +217,6 @@ function CanvasInner(): ReactNode {
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node<NodeData>>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Stores per-session handle overrides so reconnected edges keep their side
-  // after the store triggers a re-sync. Cleared when a step is removed.
-  const [edgeHandleOverrides, setEdgeHandleOverrides] = useState<
-    Record<string, { sourceHandle?: string | null; targetHandle?: string | null }>
-  >({});
-
   useEffect(() => {
     setRfNodes(mapToFlowNodes(nodes, layout));
   }, [nodes, layout, setRfNodes]);
@@ -212,21 +224,21 @@ function CanvasInner(): ReactNode {
   useEffect(() => {
     setRfEdges(
       mapToFlowEdges(edges, nodes).map((e) => {
-        const ov = edgeHandleOverrides[e.id];
+        const ov = edgeHandles[e.id];
         return ov ? { ...e, ...ov } : e;
       }),
     );
-  }, [edges, nodes, edgeHandleOverrides, setRfEdges]);
+  }, [edges, nodes, edgeHandles, setRfEdges]);
 
-  const onReconnect = useCallback((oldEdge: Edge, newConnection: Connection) => {
-    setEdgeHandleOverrides((prev) => ({
-      ...prev,
-      [oldEdge.id]: {
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      setEdgeHandle(oldEdge.id, {
         sourceHandle: newConnection.sourceHandle,
         targetHandle: newConnection.targetHandle,
-      },
-    }));
-  }, []);
+      });
+    },
+    [setEdgeHandle],
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `source` is intentionally a trigger-only dep — the effect body reads from getState() so it doesn't reference `source` directly, but ref changes (import / load / upload / reset) must re-fit; step edits must NOT.
   useEffect(() => {

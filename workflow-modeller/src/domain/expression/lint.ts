@@ -1,10 +1,5 @@
 import type { Diagnostic } from '../types';
-import {
-  collectIdentifiers,
-  parseExpression,
-  topLevelLikelyBoolean,
-  unwrapTransformationExpression,
-} from './parser';
+import { parseExpression, topLevelLikelyBoolean, unwrapTransformationExpression } from './parser';
 
 interface LintContext {
   nodeId?: string;
@@ -14,7 +9,7 @@ interface LintContext {
 
 export function lintDecisionExpression(
   source: string,
-  knownVars: Set<string>,
+  _knownVars: Set<string>,
   ctx: LintContext,
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
@@ -36,19 +31,6 @@ export function lintDecisionExpression(
       message: 'Decision expression must resolve to a boolean.',
       ...ctx,
     });
-  }
-
-  for (const ref of collectIdentifiers(result.ast)) {
-    const head = ref.split('.')[0];
-    if (!head) continue;
-    if (knownVars.size > 0 && !knownVars.has(ref) && !knownVars.has(head)) {
-      out.push({
-        code: 'DECISION_EXPR_UNKNOWN_IDENT',
-        severity: 'warning',
-        message: `Unknown identifier "${ref}".`,
-        ...ctx,
-      });
-    }
   }
 
   return out;

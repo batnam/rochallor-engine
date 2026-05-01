@@ -34,8 +34,8 @@ export function EngineBrowser({ open, onClose, onLoaded }: EngineBrowserProps): 
     setError(null);
     try {
       const res = await client.listDefinitions({ keyword, page, pageSize: PAGE_SIZE });
-      setItems(res.items);
-      setTotal(res.total);
+      setItems(res.items ?? []);
+      setTotal(res.total ?? 0);
     } catch (e) {
       setError(e instanceof EngineError ? `${e.message}` : 'Unable to list definitions');
     } finally {
