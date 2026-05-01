@@ -63,3 +63,5 @@ __pycache__/
 coverage/
 testresults/
 e2e/logs/*\n!e2e/logs/.gitkeep
+workflow-modeller/playwright-report/
+workflow-modeller/.vite/
