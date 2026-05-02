@@ -19,8 +19,7 @@ import (
 // It exits when ctx is cancelled.
 //
 // Across multiple engine replicas the sweep is gated by a PostgreSQL
-// advisory lock (LeaseSweeperLockKey) so only one replica sweeps per
-// interval (FR-004, SC-004).
+// advisory lock (LeaseSweeperLockKey) so only one replica sweeps per interval.
 func StartLeaseSweeper(ctx context.Context, pool *pgxpool.Pool, d dispatch.Dispatcher, interval time.Duration) {
 	go func() {
 		ticker := time.NewTicker(interval)

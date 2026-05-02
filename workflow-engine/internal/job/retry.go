@@ -1,11 +1,11 @@
 package job
+
 import (
 	"context"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-
 
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch"
 )
@@ -25,7 +25,7 @@ func Retry(ctx context.Context, pool *pgxpool.Pool, d dispatch.Dispatcher, jobID
 			return fmt.Errorf("load job for retry: %w", err)
 		}
 
-		// Re-enqueue to the configured dispatcher (FR-014, FR-011).
+		// Re-enqueue to the configured dispatcher.
 		// Polling mode: no-op. kafka_outbox mode: writes outbox row.
 		if err := d.Enqueue(ctx, tx, j); err != nil {
 			return fmt.Errorf("re-enqueue job for retry: %w", err)

@@ -7,10 +7,9 @@ import (
 
 // All exported metrics are registered against the default registry via promauto
 // so they are available immediately after package init, with no explicit
-// registration call required by callers (per R-013).
+// registration call required by callers.
 //
-// Exceptions: polling-specific metrics are registered conditionally via
-// RegisterPollingMetrics (FR-010).
+// Exceptions: polling-specific metrics are registered conditionally via RegisterPollingMetrics.
 
 var (
 	// ── Definitions ──────────────────────────────────────────────────────────

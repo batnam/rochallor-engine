@@ -278,6 +278,22 @@ func protoDefToInternal(p *workflowv1.WorkflowDefinition) *definition.WorkflowDe
 			DelegateClass:        ps.DelegateClass,
 			RetryCount:           int(ps.RetryCount),
 		}
+		for _, pbe := range ps.BoundaryEvents {
+			s.BoundaryEvents = append(s.BoundaryEvents, definition.BoundaryEvent{
+				Type:         definition.BoundaryEventType(pbe.Type.String()[len("BOUNDARY_EVENT_TYPE_"):]),
+				Duration:     pbe.Duration,
+				Interrupting: pbe.Interrupting,
+				TargetStepId: pbe.TargetStepId,
+			})
+		}
+		if len(ps.Transformations) > 0 {
+			s.Transformations = make(map[string]json.RawMessage, len(ps.Transformations))
+			for k, v := range ps.Transformations {
+				if b, err := json.Marshal(v.AsInterface()); err == nil {
+					s.Transformations[k] = b
+				}
+			}
+		}
 		d.Steps = append(d.Steps, s)
 	}
 	return d

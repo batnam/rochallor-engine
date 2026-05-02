@@ -17,7 +17,7 @@ import (
 )
 
 // PoolOptions configures NewPoolWithOptions. Zero values fall back to the
-// historical runtime.NumCPU()*4 sizing (R-001) with a floor of 4.
+// historical runtime.NumCPU()*4 sizing with a floor of 4.
 type PoolOptions struct {
 	// MaxConns caps the pgxpool. 0 means "use the default
 	// runtime.NumCPU()*4 with a floor of 4".

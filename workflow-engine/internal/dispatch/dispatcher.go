@@ -4,10 +4,9 @@
 //
 // Two implementations exist:
 //   - dispatch/polling:      no-op. The job row itself is the signal for the
-//                            existing FOR UPDATE SKIP LOCKED poll path (FR-001, FR-009).
+//     existing FOR UPDATE SKIP LOCKED poll path.
 //   - dispatch/kafka_outbox: writes a dispatch_outbox row in the same tx; a
-//                            leader-elected relay drains those rows to Kafka
-//                            (FR-002, FR-003, FR-017, FR-018).
+//     leader-elected relay drains those rows to Kafka.
 //
 // cmd/engine/main.go selects one implementation at startup based on
 // cfg.DispatchMode and wires it through instance.NewService.
@@ -39,7 +38,7 @@ type DispatchJob struct {
 }
 
 // Dispatcher is called by instance.Service once per newly-created job, INSIDE
-// the transaction that inserts the job row (FR-002, INV-1).
+// the transaction that inserts the job row.
 //
 // Enqueue MUST be synchronous, MUST participate in the caller's transaction
 // (no nested transaction, no side-effects outside tx), and MUST NOT touch the
@@ -54,7 +53,7 @@ type Dispatcher interface {
 // leader-election loop, and the relay goroutine.
 type Runtime interface {
 	// Start opens the broker connection (if any), validates dependencies
-	// (FR-008), and — in kafka_outbox mode — starts the relay goroutine.
+	// , and — in kafka_outbox mode — starts the relay goroutine.
 	// Returns a non-nil error if startup validation fails, causing the
 	// engine to exit with a loud failure. No silent fallback.
 	Start(ctx context.Context) error

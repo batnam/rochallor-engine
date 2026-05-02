@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # Entry point for the E2E integration test suite.
-# Usage: ./e2e/run.sh [--sdk=go|python|node|java|all]
+# Usage: ./e2e/run.sh [--sdk=go|python|node|java|all] [--transport=rest|grpc|all]
 #
 # Requirements: Docker + Docker Compose v2, Go 1.22+ (for the test runner).
 # Run from the rochallor-engine/ directory.
@@ -19,16 +19,21 @@ LOGS_DIR="$SCRIPT_DIR/logs"
 RUNNER_DIR="$SCRIPT_DIR/runner"
 
 ENGINE_REST_PORT="${ENGINE_REST_PORT:-18080}"
+ENGINE_GRPC_PORT="${ENGINE_GRPC_PORT:-19090}"
 SDK="all"
+TRANSPORT="${TRANSPORT:-rest}"
 
-# Parse --sdk=<value> argument
+# Parse --sdk=<value> and --transport=<value> arguments
 for arg in "$@"; do
   case "$arg" in
-    --sdk=*) SDK="${arg#--sdk=}" ;;
+    --sdk=*)       SDK="${arg#--sdk=}" ;;
+    --transport=*) TRANSPORT="${arg#--transport=}" ;;
     --help|-h)
-      echo "Usage: $0 [--sdk=go|python|node|java|all]"
+      echo "Usage: $0 [--sdk=go|python|node|java|all] [--transport=rest|grpc|all]"
       echo ""
       echo "Environment variables:"
+      echo "  WE_DISPATCH_MODE   Dispatch mode: polling (default) or kafka_outbox"
+      echo "  TRANSPORT          Client transport: rest (default), grpc, or all"
       echo "  ENGINE_REST_PORT   Host port for engine REST (default: 18080)"
       echo "  ENGINE_GRPC_PORT   Host port for engine gRPC (default: 19090)"
       echo "  POSTGRES_PORT      Host port for PostgreSQL (default: 5433)"
@@ -110,11 +115,13 @@ docker compose -f "$COMPOSE_FILE" $PROFILES up --build -d
 
 wait_for_engine
 
-echo "[e2e] running test suite..."
+echo "[e2e] running test suite (transport=$TRANSPORT)..."
 cd "$RUNNER_DIR"
 go run . \
   -engine="http://localhost:${ENGINE_REST_PORT}" \
+  -grpc-engine="localhost:${ENGINE_GRPC_PORT}" \
   -sdk="$SDK" \
+  -transport="$TRANSPORT" \
   -scenarios="$SCRIPT_DIR/scenarios"
 EXIT_CODE=$?
 cd - > /dev/null

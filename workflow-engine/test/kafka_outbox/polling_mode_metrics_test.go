@@ -11,7 +11,7 @@ import (
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch/polling"
 )
 
-// TestPollingModeMetrics — US2 Acceptance #3. In polling mode, assert that
+// TestPollingModeMetrics — In polling mode, assert that
 // polling metrics are present and kafka_outbox metrics are absent.
 func TestPollingModeMetrics(t *testing.T) {
 	ctx := context.Background()

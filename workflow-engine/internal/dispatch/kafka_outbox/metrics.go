@@ -7,7 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// Per FR-010: kafka_outbox metrics are registered ONLY when the engine boots
+// kafka_outbox metrics are registered ONLY when the engine boots
 // in kafka_outbox mode, so polling-mode deployments cannot fire kafka_outbox-
 // specific alerts by accident. The sync.Once guard ensures the registration
 // survives multiple Runtime boots inside the same process (e.g., tests) and

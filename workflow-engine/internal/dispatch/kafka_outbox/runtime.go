@@ -15,7 +15,7 @@ import (
 // Runtime is the per-process lifecycle for event-driven dispatch. It owns the
 // Kafka client, the leader-election loop, and the relay goroutine. At most
 // one replica per Postgres holds the advisory lock and publishes at any time
-// (INV-3, FR-018); other replicas keep polling for leadership but stay idle
+// other replicas keep polling for leadership but stay idle
 // on the publish path.
 type Runtime struct {
 	cfg    Config
@@ -119,7 +119,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 }
 
 // validateTopics issues a Metadata request against every configured topic.
-// Per R-002 topics are not auto-created.
+// topics are not auto-created.
 func (r *Runtime) validateTopics(ctx context.Context, client *kgo.Client) error {
 	if len(r.cfg.JobTypes) == 0 {
 		return nil

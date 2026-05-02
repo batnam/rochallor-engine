@@ -25,7 +25,7 @@ const advisoryLockKey int64 = 4893219751932018491
 
 // leaderElection runs a background loop that tries to acquire a PostgreSQL
 // session-scoped advisory lock. At most one replica at a time will hold it
-// (INV-3, FR-018). The lock is held on a dedicated connection; if that
+// The lock is held on a dedicated connection; if that
 // connection dies, the session ends and the lock is released automatically.
 type leaderElection struct {
 	pool          *pgxpool.Pool
