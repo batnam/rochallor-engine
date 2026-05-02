@@ -162,18 +162,19 @@ type jsonWorkflowDef struct {
 }
 
 type jsonStep struct {
-	ID                   string              `json:"id"`
-	Name                 string              `json:"name"`
-	Type                 string              `json:"type"`
-	Description          string              `json:"description"`
-	NextStep             string              `json:"nextStep"`
-	ParallelNextSteps    []string            `json:"parallelNextSteps"`
-	JoinStep             string              `json:"joinStep"`
-	ConditionalNextSteps map[string]string   `json:"conditionalNextSteps"`
-	JobType              string              `json:"jobType"`
-	DelegateClass        string              `json:"delegateClass"`
-	RetryCount           int32               `json:"retryCount"`
-	BoundaryEvents       []jsonBoundaryEvent `json:"boundaryEvents"`
+	ID                   string                     `json:"id"`
+	Name                 string                     `json:"name"`
+	Type                 string                     `json:"type"`
+	Description          string                     `json:"description"`
+	NextStep             string                     `json:"nextStep"`
+	ParallelNextSteps    []string                   `json:"parallelNextSteps"`
+	JoinStep             string                     `json:"joinStep"`
+	ConditionalNextSteps map[string]string          `json:"conditionalNextSteps"`
+	Transformations      map[string]json.RawMessage `json:"transformations"`
+	JobType              string                     `json:"jobType"`
+	DelegateClass        string                     `json:"delegateClass"`
+	RetryCount           int32                      `json:"retryCount"`
+	BoundaryEvents       []jsonBoundaryEvent        `json:"boundaryEvents"`
 }
 
 type jsonBoundaryEvent struct {
@@ -225,6 +226,20 @@ func parseJSONDefinition(defJSON []byte) (*workflowv1.WorkflowDefinition, error)
 			JobType:              js.JobType,
 			DelegateClass:        js.DelegateClass,
 			RetryCount:           js.RetryCount,
+		}
+		if len(js.Transformations) > 0 {
+			ps.Transformations = make(map[string]*structpb.Value, len(js.Transformations))
+			for k, raw := range js.Transformations {
+				var v any
+				if err := json.Unmarshal(raw, &v); err != nil {
+					return nil, fmt.Errorf("step %q transformation %q: %w", js.ID, k, err)
+				}
+				sv, err := structpb.NewValue(v)
+				if err != nil {
+					return nil, fmt.Errorf("step %q transformation %q: convert to proto: %w", js.ID, k, err)
+				}
+				ps.Transformations[k] = sv
+			}
 		}
 		for _, jbe := range js.BoundaryEvents {
 			ps.BoundaryEvents = append(ps.BoundaryEvents, &workflowv1.BoundaryEvent{
