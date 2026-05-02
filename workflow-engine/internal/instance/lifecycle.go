@@ -644,7 +644,7 @@ func (s *Service) failInstance(ctx context.Context, tx pgx.Tx, inst *WorkflowIns
 		return err
 	}
 	inst.Status = InstanceStatusFailed
-	return fmt.Errorf("%s", reason)
+	return nil
 }
 
 // scheduleBoundaryEvents creates boundary_event_schedule rows for any TIMER
