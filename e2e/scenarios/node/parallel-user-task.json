@@ -1,0 +1,38 @@
+{
+  "id": "e2e-node-parallel-user-task",
+  "name": "E2E Node Parallel User Task",
+  "steps": [
+    {
+      "id": "node-put-gateway",
+      "name": "Parallel Gateway",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["node-put-svc-branch", "node-put-user-task"],
+      "joinStep": "node-put-join"
+    },
+    {
+      "id": "node-put-svc-branch",
+      "name": "Service Branch",
+      "type": "SERVICE_TASK",
+      "jobType": "node-put-svc-branch",
+      "retryCount": 0,
+      "nextStep": "node-put-join"
+    },
+    {
+      "id": "node-put-user-task",
+      "name": "User Task Branch",
+      "type": "USER_TASK",
+      "nextStep": "node-put-join"
+    },
+    {
+      "id": "node-put-join",
+      "name": "Join Gateway",
+      "type": "JOIN_GATEWAY",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "e2e-java-cancel",
+  "name": "E2E Java Cancel",
+  "steps": [
+    {
+      "id": "java-cancel-wait",
+      "name": "Wait For Cancel",
+      "type": "WAIT",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

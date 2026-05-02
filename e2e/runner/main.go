@@ -157,9 +157,18 @@ func runSDKSuite(transport string, client scenarios.ClientIface, sdk, scenariosD
 		{"user-task", scenarios.RunUserTask},
 		{"timer", scenarios.RunTimer},
 		{"wait-signal", scenarios.RunWaitSignal},
-		{"retry-fail", scenarios.RunRetryFail}, {"chaining", scenarios.RunChaining},
+		{"retry-fail", scenarios.RunRetryFail},
+		{"chaining", scenarios.RunChaining},
 		{"signalwaitstep-completeusertask", scenarios.RunSignalWaitStepCompleteUserTask},
 		{"loan-approval", scenarios.RunLoanApproval},
+		{"transformation", scenarios.RunTransformation},
+		{"retry-exhausted", scenarios.RunRetryExhausted},
+		{"cancel", scenarios.RunCancel},
+		{"decision-no-match", scenarios.RunDecisionNoMatch},
+		{"business-key", scenarios.RunBusinessKey},
+		{"definition-api", scenarios.RunDefinitionAPI},
+		{"parallel-user-task", scenarios.RunParallelUserTask},
+		{"timer-interrupting", scenarios.RunTimerInterrupting},
 	}
 
 	var results []Result

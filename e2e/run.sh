@@ -109,9 +109,9 @@ wait_for_engine() {
 
 trap cleanup EXIT
 
-echo "[e2e] building and starting stack (sdk=$SDK)..."
+echo "[e2e] building and starting stack (sdk=$SDK, transport=$TRANSPORT)..."
 # shellcheck disable=SC2086
-docker compose -f "$COMPOSE_FILE" $PROFILES up --build -d
+WORKER_TRANSPORT="$TRANSPORT" docker compose -f "$COMPOSE_FILE" $PROFILES up --build -d
 
 wait_for_engine
 

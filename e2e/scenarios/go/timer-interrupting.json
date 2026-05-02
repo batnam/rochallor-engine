@@ -1,0 +1,35 @@
+{
+  "id": "e2e-go-timer-interrupting",
+  "name": "E2E Go Timer Interrupting",
+  "steps": [
+    {
+      "id": "go-slow-task",
+      "name": "Slow Task",
+      "type": "SERVICE_TASK",
+      "jobType": "go-slow-task",
+      "retryCount": 0,
+      "nextStep": "end",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT2S",
+          "interrupting": true,
+          "targetStepId": "go-timeout-handler"
+        }
+      ]
+    },
+    {
+      "id": "go-timeout-handler",
+      "name": "Timeout Handler",
+      "type": "SERVICE_TASK",
+      "jobType": "go-timeout-handler",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

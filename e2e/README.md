@@ -22,18 +22,23 @@ Each scenario type runs against every combination of **SDK** (go, python, node, 
 
 ## Transport
 
-The `TRANSPORT` variable controls which engine API the test runner uses to orchestrate workflows (upload definitions, start/query instances, complete user tasks, signal waits). Workers always use their own SDK client internally.
+The `--transport` flag (or `TRANSPORT` env var) controls the transport used by **both** the test runner and the SDK workers:
 
-| Value | Description |
-|-------|-------------|
-| `rest` | **Default.** All orchestration calls go through the REST API (`http://localhost:ENGINE_REST_PORT`). |
-| `grpc` | All orchestration calls go through the gRPC API (`localhost:ENGINE_GRPC_PORT`). |
-| `all` | Run the full suite twice — once per transport — in the same stack. |
+- **Test runner** — which API surface it uses to orchestrate workflows (upload definitions, start/query instances, complete user tasks, signal waits).
+- **SDK workers** — which client they use to poll for jobs and report completions/failures.
+
+`run.sh` automatically sets `WORKER_TRANSPORT=$TRANSPORT` before starting the Docker Compose stack, so both layers are always aligned.
+
+| Value | Test runner | Workers |
+|-------|-------------|---------|
+| `rest` | **Default.** REST API (`http://localhost:ENGINE_REST_PORT`) | REST (`ENGINE_REST_URL`) |
+| `grpc` | gRPC API (`localhost:ENGINE_GRPC_PORT`) | gRPC (`ENGINE_GRPC_HOST`) |
+| `all` | Runs full suite twice — once per transport | Workers restart between runs with matching transport |
 
 Set via environment variable or `--transport` flag:
 
 ```sh
-# gRPC transport
+# gRPC transport for both runner and workers
 TRANSPORT=grpc ./e2e/run.sh
 
 # Both transports in one run
@@ -41,6 +46,13 @@ TRANSPORT=all ./e2e/run.sh
 
 # Flag form
 ./e2e/run.sh --transport=grpc --sdk=go
+```
+
+To override the worker transport independently of the runner (advanced use):
+
+```sh
+# REST runner, gRPC workers
+TRANSPORT=rest WORKER_TRANSPORT=grpc ./e2e/run.sh --sdk=go
 ```
 
 ## Dispatch mode
@@ -74,7 +86,8 @@ When running in `kafka_outbox` mode:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WE_DISPATCH_MODE` | `polling` | Worker dispatch: `polling` or `kafka_outbox` |
-| `TRANSPORT` | `rest` | Test runner transport: `rest`, `grpc`, or `all` |
+| `TRANSPORT` | `rest` | Test runner transport: `rest`, `grpc`, or `all`. Also sets `WORKER_TRANSPORT` unless overridden. |
+| `WORKER_TRANSPORT` | `$TRANSPORT` | SDK worker transport: `rest` or `grpc`. Set automatically by `run.sh`; override only for mixed-mode testing. |
 | `ENGINE_REST_PORT` | `18080` | Host port mapped to engine REST (`:8080`) |
 | `ENGINE_GRPC_PORT` | `19090` | Host port mapped to engine gRPC (`:9090`) |
 | `ENGINE_METRICS_PORT` | `19091` | Host port mapped to engine metrics (`:9091`) |
@@ -138,6 +151,10 @@ e2e/
 
 ## How transport works
 
+There are two independent transport layers:
+
+### Test runner (orchestration plane)
+
 `ClientIface` is the minimal engine API surface used by every scenario:
 
 ```go
@@ -154,7 +171,20 @@ type ClientIface interface {
 `RestEngineClient` (`client.go`) implements it over HTTP/JSON.  
 `GrpcEngineClient` (`grpc_client.go`) implements the same interface over gRPC, converting camelCase scenario JSON into proto messages on the fly.
 
-All 10 scenario types run identically against both clients — the transport is transparent to scenario logic.
+All scenario types run identically against both clients — the transport is transparent to scenario logic.
+
+### SDK workers (job execution plane)
+
+Workers read `WORKER_TRANSPORT` at startup and select their engine client accordingly:
+
+| SDK | REST client | gRPC client |
+|-----|-------------|-------------|
+| Go | `client.NewRest(...)` | `client.NewGrpc(...)` |
+| Node | `RestEngineClient` | `GrpcEngineClient` |
+| Java | `RestEngineClient` | `GrpcEngineClient` |
+| Python | `RestEngineClient` | `GrpcEngineClient` |
+
+Both clients implement the same `EngineClient` interface (`PollJobs`, `CompleteJob`, `FailJob`), so the `Runner` and `KafkaRunner` work unchanged with either transport.
 
 ## Adding a scenario
 

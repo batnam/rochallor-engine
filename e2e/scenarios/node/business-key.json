@@ -1,0 +1,19 @@
+{
+  "id": "e2e-node-business-key",
+  "name": "E2E Node Business Key",
+  "steps": [
+    {
+      "id": "node-bk-step",
+      "name": "Step",
+      "type": "SERVICE_TASK",
+      "jobType": "node-step-a",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

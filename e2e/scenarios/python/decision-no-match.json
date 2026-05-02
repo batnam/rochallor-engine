@@ -1,0 +1,27 @@
+{
+  "id": "e2e-python-decision-no-match",
+  "name": "E2E Python Decision No Match",
+  "steps": [
+    {
+      "id": "python-prepare-no-match",
+      "name": "Prepare",
+      "type": "SERVICE_TASK",
+      "jobType": "python-prepare-no-match",
+      "retryCount": 0,
+      "nextStep": "python-route-no-match"
+    },
+    {
+      "id": "python-route-no-match",
+      "name": "Route",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#result == 'approved'": "end"
+      }
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

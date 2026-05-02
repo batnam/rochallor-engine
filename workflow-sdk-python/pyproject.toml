@@ -22,6 +22,7 @@ classifiers = [
 ]
 dependencies = [
     "confluent-kafka>=2.4.0",
+    "grpcio>=1.60",
     "protobuf>=4.25",
     "httpx>=0.27",
     "prometheus-client>=0.20",

@@ -1,0 +1,30 @@
+{
+  "id": "e2e-java-transformation",
+  "name": "E2E Java Transformation",
+  "steps": [
+    {
+      "id": "java-transform-init",
+      "name": "Init",
+      "type": "SERVICE_TASK",
+      "jobType": "java-transform-init",
+      "retryCount": 0,
+      "nextStep": "java-transform-step"
+    },
+    {
+      "id": "java-transform-step",
+      "name": "Transform Variables",
+      "type": "TRANSFORMATION",
+      "transformations": {
+        "fullName": "${firstName}",
+        "greeting": "Hello",
+        "score": 42
+      },
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

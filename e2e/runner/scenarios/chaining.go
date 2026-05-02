@@ -57,6 +57,10 @@ func RunChaining(t TestReporter, client ClientIface, scenariosDir, prefix string
 		return
 	}
 
+	// Assert that the worker's output variables are present on the completed instance.
+	assertVar(t, prefix, "chaining", instA.Variables, "applicantId", "123")
+	assertVar(t, prefix, "chaining", instA.Variables, "amount", float64(100))
+
 	// 4. Verification: Poll for the automatically started second instance.
     // The second workflow ID is "e2e-{prefix}-chain-workflow-b"
 	workflowB := "e2e-" + prefix + "-chain-workflow-b"
