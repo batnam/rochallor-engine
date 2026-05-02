@@ -1,4 +1,4 @@
--- 0009: dispatch_outbox — transactional outbox for event-driven dispatch (FR-002, FR-017).
+-- 0009: dispatch_outbox — transactional outbox for event-driven dispatch.
 -- Written inside the same tx that inserts a `job` row when DispatchMode=kafka_outbox.
 -- Deleted by the relay inside the tx that commits the successful Kafka publish
 -- (delete-on-publish; durable trail lives in audit_log).

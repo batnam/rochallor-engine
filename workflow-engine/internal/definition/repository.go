@@ -33,7 +33,7 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 // the given natural key. If the exact JSON content was already uploaded (idempotent
 // re-upload), the existing summary is returned with no error.
 //
-// The Engine derives jobType from step.id per R-010 before persisting when the
+// The Engine derives jobType from step.id per  before persisting when the
 // step's jobType is empty. This derivation is written into parsed_steps but NOT
 // mutated in-memory on def.
 func (r *Repository) Upload(ctx context.Context, def *WorkflowDefinition) (Summary, error) {
@@ -42,7 +42,7 @@ func (r *Repository) Upload(ctx context.Context, def *WorkflowDefinition) (Summa
 	copy(parsedSteps, def.Steps)
 	for i := range parsedSteps {
 		if parsedSteps[i].JobType == "" && (parsedSteps[i].Type == StepTypeServiceTask || parsedSteps[i].Type == StepTypeUserTask) {
-			parsedSteps[i].JobType = parsedSteps[i].ID // R-010 derivation
+			parsedSteps[i].JobType = parsedSteps[i].ID //  derivation
 		}
 	}
 

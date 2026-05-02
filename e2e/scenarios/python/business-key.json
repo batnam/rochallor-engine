@@ -1,0 +1,19 @@
+{
+  "id": "e2e-python-business-key",
+  "name": "E2E Python Business Key",
+  "steps": [
+    {
+      "id": "python-bk-step",
+      "name": "Step",
+      "type": "SERVICE_TASK",
+      "jobType": "python-step-a",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

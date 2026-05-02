@@ -1,5 +1,5 @@
 -- 0001: workflow_definition
--- Stores immutable, versioned workflow definitions (JSON only — no BPMN).
+-- Stores immutable, versioned workflow definitions.
 
 CREATE TABLE IF NOT EXISTS workflow_definition (
     pk                           BIGSERIAL        PRIMARY KEY,

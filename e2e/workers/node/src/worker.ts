@@ -1,12 +1,17 @@
 import { RestEngineClient } from '../sdk-src/client/rest'
+import { GrpcEngineClient } from '../sdk-src/client/grpc'
 import { HandlerRegistry } from '../sdk-src/handler/registry'
 import { Runner } from '../sdk-src/runner/runner'
 import { KafkaRunner } from '../sdk-src/runner/kafka_runner'
 
 const engineUrl = process.env['ENGINE_REST_URL'] ?? 'http://localhost:8080'
+const grpcHost = process.env['ENGINE_GRPC_HOST'] ?? 'localhost:9090'
+const workerTransport = process.env['WORKER_TRANSPORT'] ?? 'rest'
 const workerId = process.env['WORKER_ID'] ?? 'worker-node-1'
 
-const client = new RestEngineClient(engineUrl)
+const client = workerTransport === 'grpc'
+  ? new GrpcEngineClient(grpcHost)
+  : new RestEngineClient(engineUrl)
 const registry = new HandlerRegistry()
 
 // Linear scenario handlers
@@ -47,6 +52,18 @@ registry.register('node-signalwaitstep-completeusertask-end', async () => ({ var
 // Chaining scenario handlers
 registry.register('node-chain-start', async () => ({ variablesToSet: { applicantId: '123', amount: 100 } }))
 registry.register('node-chain-finalize', async () => ({ variablesToSet: { finalized: true } }))
+
+// Transformation scenario handler
+registry.register('node-transform-init', async () => ({ variablesToSet: { firstName: 'Alice' } }))
+
+// Retry-exhausted scenario handler: always fails to exhaust all retries
+registry.register('node-always-fail', async () => { throw new Error('always fails') })
+
+// Decision-no-match scenario handler: sets result to "rejected" so no branch matches
+registry.register('node-prepare-no-match', async () => ({ variablesToSet: { result: 'rejected' } }))
+
+// Parallel-user-task scenario handler
+registry.register('node-put-svc-branch', async () => ({ variablesToSet: { svcBranchDone: true } }))
 
 // Loan approval scenario handlers
 registry.register('validate-application', async () => ({ variablesToSet: { applicationValidated: true } }))

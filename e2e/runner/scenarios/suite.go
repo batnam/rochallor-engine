@@ -19,11 +19,12 @@ type TestReporter interface {
 }
 // Instance mirrors the engine's instance response shape.
 type Instance struct {
-	ID             string          `json:"id"`
-	Status         string          `json:"status"`
-	CurrentStepIds []string        `json:"currentStepIds,omitempty"`
-	Variables      map[string]any  `json:"variables,omitempty"`
-	FailureReason  string          `json:"failureReason,omitempty"`
+	ID             string         `json:"id"`
+	Status         string         `json:"status"`
+	CurrentStepIds []string       `json:"currentStepIds,omitempty"`
+	Variables      map[string]any `json:"variables,omitempty"`
+	FailureReason  string         `json:"failureReason,omitempty"`
+	BusinessKey    string         `json:"businessKey,omitempty"`
 }
 
 // StepExecution mirrors one entry from GET /v1/instances/{id}/history.
@@ -34,14 +35,25 @@ type StepExecution struct {
 	Status   string `json:"Status"`
 }
 
+// DefinitionSummary mirrors the engine's definition summary response shape.
+type DefinitionSummary struct {
+	ID      string `json:"id"`
+	Version int    `json:"version"`
+	Name    string `json:"name"`
+}
+
 // ClientIface is the minimal engine API surface used by scenario functions.
 type ClientIface interface {
 	UploadDefinition(ctx context.Context, defJSON []byte) error
 	StartInstance(ctx context.Context, defID string, vars map[string]any) (string, error)
+	StartInstanceWithBusinessKey(ctx context.Context, defID string, vars map[string]any, businessKey string) (string, error)
 	GetInstance(ctx context.Context, id string) (Instance, error)
 	GetHistory(ctx context.Context, id string) ([]StepExecution, error)
 	CompleteUserTaskByStableID(ctx context.Context, instanceID, userTaskStepID string, vars map[string]any) error
 	SignalWait(ctx context.Context, instanceID, waitStepID string, vars map[string]any) error
+	CancelInstance(ctx context.Context, id string, reason string) (Instance, error)
+	GetDefinition(ctx context.Context, id string) (DefinitionSummary, error)
+	ListDefinitions(ctx context.Context) ([]DefinitionSummary, error)
 }
 
 // PollUntilTerminal polls GetInstance every 500 ms until COMPLETED/FAILED/CANCELLED.

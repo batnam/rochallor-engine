@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/batnam/rochallor-engine/workflow-sdk-go/client"
 	"github.com/batnam/rochallor-engine/workflow-sdk-go/handler"
@@ -16,6 +17,8 @@ import (
 
 func main() {
 	engineURL := envOrDefault("ENGINE_REST_URL", "http://localhost:8080")
+	grpcHost := envOrDefault("ENGINE_GRPC_HOST", "localhost:9090")
+	workerTransport := envOrDefault("WORKER_TRANSPORT", "rest")
 	workerID := envOrDefault("WORKER_ID", "worker-go-1")
 	logLevel := envOrDefault("WE_LOG_LEVEL", "info")
 
@@ -109,6 +112,36 @@ func main() {
 		return handler.Result{VariablesToSet: map[string]any{"finalized": true}}, nil
 	})
 
+	// Transformation scenario handler
+	registry.Register("go-transform-init", func(_ context.Context, _ handler.JobContext) (handler.Result, error) {
+		return handler.Result{VariablesToSet: map[string]any{"firstName": "Alice"}}, nil
+	})
+
+	// Retry-exhausted scenario handler: always fails to exhaust all retries
+	registry.Register("go-always-fail", func(_ context.Context, _ handler.JobContext) (handler.Result, error) {
+		return handler.Result{}, fmt.Errorf("always fails")
+	})
+
+	// Decision-no-match scenario handler: sets result to "rejected" so no branch matches
+	registry.Register("go-prepare-no-match", func(_ context.Context, _ handler.JobContext) (handler.Result, error) {
+		return handler.Result{VariablesToSet: map[string]any{"result": "rejected"}}, nil
+	})
+
+	// Parallel-user-task scenario handler
+	registry.Register("go-put-svc-branch", func(_ context.Context, _ handler.JobContext) (handler.Result, error) {
+		return handler.Result{VariablesToSet: map[string]any{"svcBranchDone": true}}, nil
+	})
+
+	// Timer-interrupting scenario handlers
+	registry.Register("go-slow-task", func(_ context.Context, _ handler.JobContext) (handler.Result, error) {
+		// Intentionally sleeps past the PT2S interrupting timer so the boundary fires first.
+		time.Sleep(30 * time.Second)
+		return handler.Result{}, nil
+	})
+	registry.Register("go-timeout-handler", func(_ context.Context, _ handler.JobContext) (handler.Result, error) {
+		return handler.Result{VariablesToSet: map[string]any{"timedOut": true}}, nil
+	})
+
 	// Loan approval scenario handlers
 	registry.Register("validate-application", func(_ context.Context, _ handler.JobContext) (handler.Result, error) {
 		return handler.Result{VariablesToSet: map[string]any{"applicationValidated": true}}, nil
@@ -138,7 +171,19 @@ func main() {
 		return handler.Result{VariablesToSet: map[string]any{"disbursementNotified": true}}, nil
 	})
 
-	restClient := client.NewRest(engineURL, workerID)
+	var engineClient client.EngineClient
+	if workerTransport == "grpc" {
+		gc, err := client.NewGrpc(grpcHost, workerID)
+		if err != nil {
+			slog.Error("failed to create grpc client", "err", err)
+			os.Exit(1)
+		}
+		engineClient = gc
+		slog.Info("worker transport: grpc", "host", grpcHost)
+	} else {
+		engineClient = client.NewRest(engineURL, workerID)
+		slog.Info("worker transport: rest", "engine", engineURL)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -151,7 +196,7 @@ func main() {
 			WorkerID:    workerID,
 			SeedBrokers: brokers,
 			JobTypes:    jobTypes,
-		}, restClient, registry)
+		}, engineClient, registry)
 		if err != nil {
 			slog.Error("failed to create kafkarunner", "err", err)
 			os.Exit(1)
@@ -159,8 +204,8 @@ func main() {
 		slog.Info("worker starting (kafka mode)", "brokers", brokers, "workerID", workerID, "jobTypes", jobTypes)
 		r.Run(ctx)
 	} else {
-		r := runner.New(runner.Config{WorkerID: workerID}, restClient, registry)
-		slog.Info("worker starting (polling mode)", "engine", engineURL, "workerID", workerID)
+		r := runner.New(runner.Config{WorkerID: workerID}, engineClient, registry)
+		slog.Info("worker starting (polling mode)", "workerID", workerID)
 		r.Run(ctx)
 	}
 	slog.Info("worker stopped")

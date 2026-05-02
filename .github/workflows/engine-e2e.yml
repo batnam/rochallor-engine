@@ -32,16 +32,21 @@ permissions:
 
 jobs:
   e2e:
-    name: ${{ matrix.dispatch_mode }} / ${{ matrix.sdk }}
+    name: ${{ matrix.dispatch_mode }} / ${{ matrix.transport }} / ${{ matrix.sdk }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        dispatch_mode: [kafka_outbox, polling]
+        dispatch_mode: [polling, kafka_outbox]
+        transport: [rest, grpc]
         sdk: [go, python, node, java]
     env:
       WE_DISPATCH_MODE: ${{ matrix.dispatch_mode }}
+      TRANSPORT: ${{ matrix.transport }}
+      # WORKER_TRANSPORT is derived from TRANSPORT inside run.sh.
+      # Set it explicitly here so it appears clearly in the job environment.
+      WORKER_TRANSPORT: ${{ matrix.transport }}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +65,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-logs-${{ matrix.dispatch_mode }}-${{ matrix.sdk }}
+          name: e2e-logs-${{ matrix.dispatch_mode }}-${{ matrix.transport }}-${{ matrix.sdk }}
           path: e2e/logs/
           retention-days: 7
           if-no-files-found: ignore

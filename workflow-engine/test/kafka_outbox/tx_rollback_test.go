@@ -11,8 +11,8 @@ import (
 	kafkaoutbox "github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch/kafka_outbox"
 )
 
-// TestTxRollback — US1 Acceptance #4, FR-002 edge case. A rolled-back
-// transaction MUST NOT leave an outbox row and MUST NOT publish to Kafka.
+// TestTxRollback — . A rolled-back transaction
+// MUST NOT leave an outbox row and MUST NOT publish to Kafka.
 // This is the durability-over-speed invariant: we only publish work that
 // has been committed.
 func TestTxRollback(t *testing.T) {

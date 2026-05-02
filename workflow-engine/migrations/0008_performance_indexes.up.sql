@@ -1,4 +1,4 @@
--- 0008: performance indexes for sweeper and admin queries (FR-005).
+-- 0008: performance indexes for sweeper and admin queries.
 -- The existing `(status, job_type) WHERE status = 'UNLOCKED'` and
 -- `(lock_expires_at) WHERE status = 'LOCKED'` partial indexes already
 -- cover the hot poll/sweep paths. These composite indexes support

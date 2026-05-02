@@ -13,10 +13,11 @@ import (
 
 // Result captures the outcome of one scenario run.
 type Result struct {
-	SDK      string
-	Scenario string
-	Passed   bool
-	Logs     []string
+	Transport string
+	SDK       string
+	Scenario  string
+	Passed    bool
+	Logs      []string
 }
 
 // SimpleReporter implements scenarios.TestReporter for the runner binary.
@@ -40,8 +41,10 @@ func (r *SimpleReporter) AuditLog(instanceID string, eventType string, message s
 
 func (r *SimpleReporter) Failed() bool { return r.failed }
 func main() {
-	engineURL := flag.String("engine", "http://localhost:18080", "workflow engine base URL")
+	engineURL := flag.String("engine", "http://localhost:18080", "workflow engine REST base URL")
+	grpcEngineAddr := flag.String("grpc-engine", "localhost:19090", "workflow engine gRPC address (host:port)")
 	sdkFlag := flag.String("sdk", "all", "SDK to test: go|all")
+	transportFlag := flag.String("transport", "rest", "client transport: rest|grpc|all")
 	scenariosDirFlag := flag.String("scenarios", "", "path to scenarios directory (default: ../scenarios relative to this binary)")
 	flag.Parse()
 
@@ -57,7 +60,6 @@ func main() {
 		}
 	}
 
-	client := NewClient(*engineURL)
 	sdks := resolveSdks(*sdkFlag)
 
 	// Configure audit log directory
@@ -69,9 +71,19 @@ func main() {
 	}
 	scenarios.SetLogDir(logDir)
 
+	transports := resolveTransports(*transportFlag)
+
 	var results []Result
-	for _, sdk := range sdks {
-		results = append(results, runSDKSuite(client, sdk, scenariosDir)...)
+	for _, transport := range transports {
+		client, cleanup, err := buildClient(transport, *engineURL, *grpcEngineAddr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "build %s client: %v\n", transport, err)
+			os.Exit(1)
+		}
+		for _, sdk := range sdks {
+			results = append(results, runSDKSuite(transport, client, sdk, scenariosDir)...)
+		}
+		cleanup()
 	}
 
 	printReport(results)
@@ -80,6 +92,36 @@ func main() {
 		if !r.Passed {
 			os.Exit(1)
 		}
+	}
+}
+
+func resolveTransports(flag string) []string {
+	switch strings.ToLower(flag) {
+	case "rest":
+		return []string{"rest"}
+	case "grpc":
+		return []string{"grpc"}
+	case "all":
+		return []string{"rest", "grpc"}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown transport %q; valid values: rest, grpc, all\n", flag)
+		os.Exit(1)
+		return nil
+	}
+}
+
+func buildClient(transport, restURL, grpcAddr string) (scenarios.ClientIface, func(), error) {
+	switch transport {
+	case "rest":
+		return NewClient(restURL), func() {}, nil
+	case "grpc":
+		c, err := NewGrpcClient(grpcAddr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return c, func() { c.Close() }, nil
+	default:
+		return nil, nil, fmt.Errorf("unknown transport %q", transport)
 	}
 }
 
@@ -102,7 +144,7 @@ func resolveSdks(sdkFlag string) []string {
 	}
 }
 
-func runSDKSuite(client *Client, sdk, scenariosDir string) []Result {
+func runSDKSuite(transport string, client scenarios.ClientIface, sdk, scenariosDir string) []Result {
 	type scenarioFn func(t scenarios.TestReporter, client scenarios.ClientIface, scenariosDir, prefix string)
 	type entry struct {
 		name string
@@ -115,9 +157,18 @@ func runSDKSuite(client *Client, sdk, scenariosDir string) []Result {
 		{"user-task", scenarios.RunUserTask},
 		{"timer", scenarios.RunTimer},
 		{"wait-signal", scenarios.RunWaitSignal},
-		{"retry-fail", scenarios.RunRetryFail}, {"chaining", scenarios.RunChaining},
+		{"retry-fail", scenarios.RunRetryFail},
+		{"chaining", scenarios.RunChaining},
 		{"signalwaitstep-completeusertask", scenarios.RunSignalWaitStepCompleteUserTask},
 		{"loan-approval", scenarios.RunLoanApproval},
+		{"transformation", scenarios.RunTransformation},
+		{"retry-exhausted", scenarios.RunRetryExhausted},
+		{"cancel", scenarios.RunCancel},
+		{"decision-no-match", scenarios.RunDecisionNoMatch},
+		{"business-key", scenarios.RunBusinessKey},
+		{"definition-api", scenarios.RunDefinitionAPI},
+		{"parallel-user-task", scenarios.RunParallelUserTask},
+		{"timer-interrupting", scenarios.RunTimerInterrupting},
 	}
 
 	var results []Result
@@ -125,10 +176,11 @@ func runSDKSuite(client *Client, sdk, scenariosDir string) []Result {
 		r := &SimpleReporter{}
 		s.fn(r, client, scenariosDir, sdk)
 		results = append(results, Result{
-			SDK:      sdk,
-			Scenario: s.name,
-			Passed:   !r.Failed(),
-			Logs:     r.logs,
+			Transport: transport,
+			SDK:       sdk,
+			Scenario:  s.name,
+			Passed:    !r.Failed(),
+			Logs:      r.logs,
 		})
 	}
 	return results
@@ -147,7 +199,7 @@ func printReport(results []Result) {
 		} else {
 			passed++
 		}
-		fmt.Printf("  [%s] %s/%s\n", status, r.SDK, r.Scenario)
+		fmt.Printf("  [%s] %s/%s/%s\n", status, r.Transport, r.SDK, r.Scenario)
 		if !r.Passed {
 			for _, l := range r.Logs {
 				fmt.Printf("        %s\n", l)

@@ -2,12 +2,6 @@
 // engine runs with WE_DISPATCH_MODE=kafka_outbox. The hot path (Enqueue)
 // writes a dispatch_outbox row inside the caller's transaction; the relay
 // goroutine drains those rows to Kafka with at-least-once semantics.
-//
-// See specs/006-kafka-outbox-dispatch/ for the full design:
-//   - research.md R-001..R-008
-//   - contracts/dispatcher-interface.md
-//   - contracts/dispatch-event.proto.md
-//   - contracts/kafka-topics.md
 package kafka_outbox
 
 import (

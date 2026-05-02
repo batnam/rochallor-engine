@@ -1,0 +1,30 @@
+{
+  "id": "e2e-python-transformation",
+  "name": "E2E Python Transformation",
+  "steps": [
+    {
+      "id": "python-transform-init",
+      "name": "Init",
+      "type": "SERVICE_TASK",
+      "jobType": "python-transform-init",
+      "retryCount": 0,
+      "nextStep": "python-transform-step"
+    },
+    {
+      "id": "python-transform-step",
+      "name": "Transform Variables",
+      "type": "TRANSFORMATION",
+      "transformations": {
+        "fullName": "${firstName}",
+        "greeting": "Hello",
+        "score": 42
+      },
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

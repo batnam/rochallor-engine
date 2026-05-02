@@ -11,7 +11,7 @@ import (
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch/polling"
 )
 
-// TestPollingModeBoot — US2 Acceptance #1. Start in polling mode and assert
+// TestPollingModeBoot - Start in polling mode and assert
 // no Kafka-related background work is started.
 func TestPollingModeBoot(t *testing.T) {
 	ctx := context.Background()

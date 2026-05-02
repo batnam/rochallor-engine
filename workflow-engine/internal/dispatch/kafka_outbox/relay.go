@@ -23,9 +23,9 @@ type outboxRow struct {
 }
 
 // relay drains dispatch_outbox rows, publishes them to Kafka, and deletes
-// them in the same transaction that commits the successful publish (INV-2,
-// FR-017). Also writes an audit_log row per published job so the durable
-// dispatch trail lives in audit_log (FR-015, FR-017).
+// them in the same transaction that commits the successful publish
+// Also writes an audit_log row per published job so the durable
+// dispatch trail lives in audit_log.
 type relay struct {
 	pool         *pgxpool.Pool
 	kafkaClient  *kgo.Client

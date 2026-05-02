@@ -1,6 +1,6 @@
 //go:build load
 
-// lifecycle_perf_test.go is the SC-001 load-test harness for feature
+// lifecycle_perf_test.go is the load-test harness for feature
 // 005-engine-performance-optimization.
 //
 // It is gated behind the `load` build tag so it never runs under `go test ./...`.
@@ -22,9 +22,6 @@
 // On completion it prints exactly one parseable line of plain text to stdout:
 //
 //	signals_processed_per_sec=<float>
-//
-// Capture the value on `main` (T022a) and on the feature branch (T022b) on the
-// same rig to validate the ≥ 1.5× ratio required by SC-001.
 package instance
 
 import (

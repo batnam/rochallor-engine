@@ -130,7 +130,9 @@ func (s *EngineServer) GetInstanceHistory(ctx context.Context, req *workflowv1.G
 			Id:            se.ID,
 			InstanceId:    se.InstanceID,
 			StepId:        se.StepID,
+			StepType:      workflowv1.StepType(workflowv1.StepType_value["STEP_TYPE_"+se.StepType]),
 			AttemptNumber: int32(se.AttemptNumber),
+			Status:        workflowv1.StepExecutionStatus(workflowv1.StepExecutionStatus_value["STEP_EXECUTION_STATUS_"+string(se.Status)]),
 			StartedAt:     timestamppb.New(se.StartedAt),
 		}
 		if se.EndedAt != nil {
@@ -277,6 +279,22 @@ func protoDefToInternal(p *workflowv1.WorkflowDefinition) *definition.WorkflowDe
 			JobType:              ps.JobType,
 			DelegateClass:        ps.DelegateClass,
 			RetryCount:           int(ps.RetryCount),
+		}
+		for _, pbe := range ps.BoundaryEvents {
+			s.BoundaryEvents = append(s.BoundaryEvents, definition.BoundaryEvent{
+				Type:         definition.BoundaryEventType(pbe.Type.String()[len("BOUNDARY_EVENT_TYPE_"):]),
+				Duration:     pbe.Duration,
+				Interrupting: pbe.Interrupting,
+				TargetStepId: pbe.TargetStepId,
+			})
+		}
+		if len(ps.Transformations) > 0 {
+			s.Transformations = make(map[string]json.RawMessage, len(ps.Transformations))
+			for k, v := range ps.Transformations {
+				if b, err := json.Marshal(v.AsInterface()); err == nil {
+					s.Transformations[k] = b
+				}
+			}
 		}
 		d.Steps = append(d.Steps, s)
 	}

@@ -35,3 +35,7 @@ To connect to a running engine: open **Settings**, point it at your engine base 
 ## Drift guard
 
 `pnpm test:drift` runs every fixture under `tests/fixtures/` through both the TypeScript validator (`src/domain/validate.ts`) and the Go validator (`workflow-engine/cmd/validate-fixture`). Any case where the editor accepts JSON the engine would reject (or vice versa) fails the suite. This is the load-bearing guarantee for SC-002 — do not disable it.
+
+> **`workflow-engine/validate-fixture` — compiled binary, not source**
+>
+> The `workflow-engine/` directory contains a pre-built binary named `validate-fixture`. It is the compiled form of `workflow-engine/cmd/validate-fixture/main.go` — a small Go CLI that runs the engine's authoritative parser and validator against a single workflow JSON file and prints `{"accepted": bool, "error": "..."}` on stdout. It is called by the workflow-modeller's drift-guard harness to verify that every fixture accepted by the TypeScript validator is also accepted by the Go engine (the mechanical guarantee that the two implementations stay in sync). You do not need to run it directly; the modeller's test suite invokes it automatically.

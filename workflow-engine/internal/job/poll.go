@@ -18,8 +18,7 @@ import (
 const defaultLockDuration = 30 * time.Second
 
 // Poll claims up to max unlocked jobs of the given jobTypes for workerID.
-// Uses SELECT … FOR UPDATE SKIP LOCKED so concurrent pollers never hand out
-// the same job (R-001, data-model §2.4).
+// Uses SELECT … FOR UPDATE SKIP LOCKED so concurrent pollers never hand out the same job.
 func Poll(ctx context.Context, pool *pgxpool.Pool, workerID string, jobTypes []string, max int) ([]instance.Job, error) {
 	if len(jobTypes) == 0 || max <= 0 {
 		return nil, nil

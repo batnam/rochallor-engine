@@ -1,0 +1,27 @@
+{
+  "id": "e2e-go-decision-no-match",
+  "name": "E2E Go Decision No Match",
+  "steps": [
+    {
+      "id": "go-prepare-no-match",
+      "name": "Prepare",
+      "type": "SERVICE_TASK",
+      "jobType": "go-prepare-no-match",
+      "retryCount": 0,
+      "nextStep": "go-route-no-match"
+    },
+    {
+      "id": "go-route-no-match",
+      "name": "Route",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#result == 'approved'": "end"
+      }
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

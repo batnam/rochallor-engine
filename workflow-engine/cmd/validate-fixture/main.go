@@ -2,7 +2,7 @@
 // and validator against a single workflow JSON fixture and prints a JSON
 // verdict `{"accepted": bool, "error": string}` on stdout.
 //
-// It is invoked by the workflow-modeller drift-guard harness (T068) to verify
+// It is invoked by the workflow-modeller drift-guard harness to verify
 // that every fixture accepted by the TypeScript validator is also accepted by
 // the Go engine — the mechanical guarantee for SC-002.
 //

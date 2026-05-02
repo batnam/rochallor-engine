@@ -1,8 +1,7 @@
 // Package id provides ULID generators for the workflow engine's primary keys.
 //
 // ULIDs are chosen over UUIDv4 for their lexicographic sort order, which
-// enables efficient "most-recent rows first" queries without a separate
-// timestamp index (per R-008).
+// enables efficient "most-recent rows first" queries without a separate timestamp index.
 //
 // The generators are concurrency-safe — each call to New() acquires a global
 // mutex over a shared monotonic source so ULIDs generated within the same

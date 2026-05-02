@@ -1,0 +1,35 @@
+{
+  "id": "e2e-python-timer-interrupting",
+  "name": "E2E Python Timer Interrupting",
+  "steps": [
+    {
+      "id": "python-slow-task",
+      "name": "Slow Task",
+      "type": "SERVICE_TASK",
+      "jobType": "python-slow-task",
+      "retryCount": 0,
+      "nextStep": "end",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT2S",
+          "interrupting": true,
+          "targetStepId": "python-timeout-handler"
+        }
+      ]
+    },
+    {
+      "id": "python-timeout-handler",
+      "name": "Timeout Handler",
+      "type": "SERVICE_TASK",
+      "jobType": "python-timeout-handler",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

@@ -24,10 +24,7 @@ rochallor-engine/
 │   │   ├── obs/                        # Logger + Prometheus metrics
 │   │   └── storage/postgres/           # DB connection pool + migration runner
 │   ├── migrations/                     # Numbered SQL migration files (up + down)
-│   ├── test/
-│   │   ├── contract/                   # REST contract replay tests
-│   │   ├── fixtures/                   # Shared JSON fixtures
-│   │   └── integration/                # End-to-end lifecycle tests (testcontainers)
+│   ├── test/                           # Test
 │   ├── Makefile
 │   └── docker-compose.yml              # PostgreSQL for local dev
 │
