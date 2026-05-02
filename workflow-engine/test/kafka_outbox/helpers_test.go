@@ -1,6 +1,6 @@
-// Package kafka_outbox_test holds the integration-test suite for feature
-// 006-kafka-outbox-dispatch. All tests in this package spin up Postgres +
-// Redpanda via testcontainers and exercise the real engine binaries end to
+// Package kafka_outbox_test holds the integration-test suite.
+// All tests in this package spin up Postgres + Redpanda
+// via testcontainers and exercise the real engine binaries end to
 // end. The suite is `//go:build integration`-gated so `go test ./...` in
 // environments without Docker stays green.
 //

@@ -1,6 +1,5 @@
 // Package instance manages the runtime lifecycle of workflow instances.
-// All state mutations happen inside PostgreSQL transactions so observers
-// never see partial state (R-007).
+// All state mutations happen inside PostgreSQL transactions so observers never see partial state.
 package instance
 
 import (
@@ -38,8 +37,8 @@ func (s *Service) Dispatcher() dispatch.Dispatcher {
 }
 
 // NewService creates a Service backed by pool, defRepo, and dispatcher.
-// The dispatcher is invoked on every SERVICE_TASK job insert inside the same
-// transaction (FR-002, INV-1). In polling mode it is a no-op; in kafka_outbox
+// The dispatcher is invoked on every SERVICE_TASK job insert inside the same transaction.
+// In polling mode it is a no-op; in kafka_outbox
 // mode it writes a dispatch_outbox row.
 func NewService(pool *pgxpool.Pool, defRepo *defrepo.Repository, dispatcher dispatch.Dispatcher) *Service {
 	return &Service{pool: pool, defRepo: defRepo, dispatcher: dispatcher}
@@ -785,7 +784,7 @@ func (s *Service) advancePastStep(ctx context.Context, tx pgx.Tx, inst *Workflow
 // updateInstanceVariablesPartial writes a WAL-efficient partial update to
 // workflow_instance.variables, emitting chained jsonb_set(…) calls — one per
 // top-level key in patch — so only the patch values travel over the wire
-// instead of the full `variables` payload (US2 / FR-002 / SC-002).
+// instead of the full `variables` payload.
 //
 // Keys are sorted for deterministic SQL output (stable prepared-statement
 // cache keys). Caller is responsible for the in-memory merge if they need an

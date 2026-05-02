@@ -1,6 +1,6 @@
 // Package config loads Engine configuration from environment variables,
 // with an optional YAML file fallback at /etc/workflow/engine.yaml
-// for local development (per R-012).
+// for local development.
 //
 // Priority: env vars > YAML file > built-in defaults.
 // Secrets (e.g. WE_POSTGRES_DSN) are always read from the environment;
@@ -272,6 +272,7 @@ func LoadFromPath(path string) (Config, error) {
 //   - unknown mode strings are rejected loudly,
 //   - kafka_outbox mode requires seed brokers + a valid transport mode,
 //   - sasl_scram_tls requires SASL credentials.
+//
 // polling (or empty) requires nothing extra — it's the default regression-safe path.
 func validateDispatchMode(cfg *Config) error {
 	switch cfg.DispatchMode {

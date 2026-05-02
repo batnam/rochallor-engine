@@ -21,7 +21,7 @@ import (
 //
 // dispatchMode controls the POST /v1/jobs/poll behaviour: in "kafka_outbox"
 // mode the handler is replaced with a 410 Gone stub that tells workers to
-// consume directly from Kafka (FR-004, R-005).
+// consume directly from Kafka.
 func NewRouter(
 	pool *pgxpool.Pool,
 	defRepo *definition.Repository,

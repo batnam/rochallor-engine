@@ -12,7 +12,7 @@ import (
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/job"
 )
 
-// TestPollingModeOutboxEmpty — US2 Acceptance #2. In polling mode, assert that
+// TestPollingModeOutboxEmpty —  In polling mode, assert that
 // creating and completing jobs never writes to the dispatch_outbox table.
 func TestPollingModeOutboxEmpty(t *testing.T) {
 	ctx := context.Background()

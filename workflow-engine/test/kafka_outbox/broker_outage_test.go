@@ -11,7 +11,7 @@ import (
 	kafkaoutbox "github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch/kafka_outbox"
 )
 
-// TestBrokerOutage — FR-003 + edge case "Broker outage longer than the retry
+// TestBrokerOutage "Broker outage longer than the retry
 // budget". Stop the broker mid-drain; new enqueues MUST accumulate in the
 // outbox (no data loss); when the broker comes back the backlog MUST drain
 // automatically without operator intervention.

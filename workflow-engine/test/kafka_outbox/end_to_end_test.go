@@ -16,7 +16,7 @@ import (
 	kafkaoutbox "github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch/kafka_outbox"
 )
 
-// TestEndToEnd — US1 Acceptance #1. Enqueue a job via the kafka_outbox
+// TestEndToEnd — Enqueue a job via the kafka_outbox
 // Dispatcher inside a tx, start the Runtime, and assert:
 //   - the outbox row briefly exists then disappears (delete-on-publish),
 //   - a Kafka message lands on workflow.jobs.<jobType> keyed by instance_id,

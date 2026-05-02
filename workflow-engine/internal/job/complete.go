@@ -92,7 +92,7 @@ func Fail(ctx context.Context, pool *pgxpool.Pool, d dispatch.Dispatcher, jobID,
 		}
 
 		if retryable && retriesRemaining > 0 {
-			// Re-enqueue (FR-014, FR-011)
+			// Re-enqueue
 			if err := d.Enqueue(ctx, tx, dispatch.DispatchJob{
 				ID:               jobID,
 				InstanceID:       instanceID,

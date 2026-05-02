@@ -1,5 +1,5 @@
 // Package polling is the no-op Dispatcher / Runtime used when the engine runs
-// in its default short-polling mode (FR-001, FR-009). The `job` row itself is
+// in its default short-polling mode. The `job` row itself is
 // the dispatch signal for poll-based workers; no outbox row is written, no
 // broker client is constructed, and no background goroutine is started.
 //

@@ -15,7 +15,7 @@ import (
 	kafkaoutbox "github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch/kafka_outbox"
 )
 
-// TestIdempotentCompletion — FR-007 + edge case "Duplicate delivery". In
+// TestIdempotentCompletion — edge case "Duplicate delivery". In
 // at-least-once mode a consumer may receive the same JobDispatchEvent more
 // than once (producer retries after an in-flight ack loss, or a relay-crash
 // republish). The engine's completion API MUST remain idempotent so a second

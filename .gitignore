@@ -27,6 +27,7 @@ node_modules/
 workflow-sdk-node/node_modules/
 workflow-sdk-node/dist/
 workflow-sdk-node/coverage/
+workflow-modeller/.vite/
 
 # Java / Gradle
 .gradle/
@@ -63,5 +64,5 @@ __pycache__/
 coverage/
 testresults/
 e2e/logs/*\n!e2e/logs/.gitkeep
+
 workflow-modeller/playwright-report/
-workflow-modeller/.vite/

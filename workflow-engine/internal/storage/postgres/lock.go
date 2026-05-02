@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Advisory-lock keys used for sweeper leader-election across engine replicas
-// (FR-004). Each sweeper must use a distinct key so they don't contend.
+// Advisory-lock keys used for sweeper leader-election across engine replicas.
+// Each sweeper must use a distinct key so they don't contend.
 // Keys are arbitrary int64 values chosen to avoid collision with any other
 // pg_advisory_lock usage in the database.
 const (
@@ -29,8 +29,7 @@ const (
 //
 // Important: the lock is session-scoped, so the same pgxpool connection must
 // be used for both acquire and release. The implementation holds one connection
-// for the lock's lifetime — do not call this in tight loops against a small
-// pool.
+// for the lock's lifetime — do not call this in tight loops against a small pool.
 func TryAcquireAdvisoryLock(ctx context.Context, pool *pgxpool.Pool, key int64) (acquired bool, release func(), err error) {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
