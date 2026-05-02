@@ -273,13 +273,13 @@ func (s *Service) Cancel(ctx context.Context, instanceID, reason string) (*Workf
 		`UPDATE workflow_instance
 		  SET status = $1, failure_reason = $2, completed_at = now()
 		  WHERE id = $3 AND status IN ('ACTIVE','WAITING')
-		  RETURNING id, definition_id, definition_version, status, current_step_ids, variables, started_at`,
+		  RETURNING id, definition_id, definition_version, status, current_step_ids, variables, started_at, failure_reason`,
 		string(InstanceStatusCancelled), reason, instanceID,
 	)
 	var inst WorkflowInstance
 	if err := row.Scan(
 		&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
-		&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt,
+		&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt, &inst.FailureReason,
 	); err != nil {
 		return nil, fmt.Errorf("cancel: %w", err)
 	}

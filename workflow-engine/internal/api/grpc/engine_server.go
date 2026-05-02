@@ -130,7 +130,9 @@ func (s *EngineServer) GetInstanceHistory(ctx context.Context, req *workflowv1.G
 			Id:            se.ID,
 			InstanceId:    se.InstanceID,
 			StepId:        se.StepID,
+			StepType:      workflowv1.StepType(workflowv1.StepType_value["STEP_TYPE_"+se.StepType]),
 			AttemptNumber: int32(se.AttemptNumber),
+			Status:        workflowv1.StepExecutionStatus(workflowv1.StepExecutionStatus_value["STEP_EXECUTION_STATUS_"+string(se.Status)]),
 			StartedAt:     timestamppb.New(se.StartedAt),
 		}
 		if se.EndedAt != nil {
