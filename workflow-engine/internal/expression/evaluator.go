@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/ast"
+	"github.com/expr-lang/expr/parser"
 	"github.com/expr-lang/expr/vm"
 )
 
@@ -130,6 +132,33 @@ func preprocess(raw string) (string, error) {
 	return strings.TrimSpace(s), nil
 }
 
+// identCollector walks an AST and records every IdentifierNode value.
+type identCollector struct{ names []string }
+
+func (v *identCollector) Visit(node *ast.Node) {
+	if ident, ok := (*node).(*ast.IdentifierNode); ok {
+		v.names = append(v.names, ident.Value)
+	}
+}
+
+// checkUndefinedIdents returns an error if the preprocessed expression references
+// any identifier not present in env. This enforces the spec rule:
+// "Undefined variable referenced → Runtime error; step fails".
+func checkUndefinedIdents(preprocessed string, env map[string]any) error {
+	tree, err := parser.Parse(preprocessed)
+	if err != nil {
+		return err // compile will surface a cleaner error
+	}
+	v := &identCollector{}
+	ast.Walk(&tree.Node, v)
+	for _, name := range v.names {
+		if _, ok := env[name]; !ok {
+			return fmt.Errorf("undefined variable %q", name)
+		}
+	}
+	return nil
+}
+
 func compileExpr(preprocessed string) (*vm.Program, error) {
 	if p, ok := programCache.get(preprocessed); ok {
 		return p, nil
@@ -170,6 +199,10 @@ func Evaluate(expression string, vars map[string]any) (any, error) {
 	}
 	for k, v := range vars {
 		env[k] = v
+	}
+
+	if err := checkUndefinedIdents(preprocessed, env); err != nil {
+		return nil, fmt.Errorf("expression %q: %w", expression, err)
 	}
 
 	result, err := expr.Run(program, env)
