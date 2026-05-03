@@ -154,4 +154,11 @@ func RunSignalWaitStepCompleteUserTask(t TestReporter, client ClientIface, scena
 	} else {
 		t.Logf("[%s/signalwaitstep-completeusertask] [US2] correctly rejected task completion in invalid state", prefix)
 	}
+
+	// T021: GetInstance with a non-existent ID must return an error.
+	if _, err = client.GetInstance(ctx, "nonexistent-instance-id-000"); err == nil {
+		t.Errorf("[%s/signalwaitstep-completeusertask] [US2] expected error for nonexistent instance lookup, got nil", prefix)
+	} else {
+		t.Logf("[%s/signalwaitstep-completeusertask] [US2] correctly rejected nonexistent instance lookup", prefix)
+	}
 }

@@ -1,0 +1,30 @@
+{
+  "id": "e2e-node-transformation",
+  "name": "E2E Node Transformation",
+  "steps": [
+    {
+      "id": "node-transform-init",
+      "name": "Init",
+      "type": "SERVICE_TASK",
+      "jobType": "node-transform-init",
+      "retryCount": 0,
+      "nextStep": "node-transform-step"
+    },
+    {
+      "id": "node-transform-step",
+      "name": "Transform Variables",
+      "type": "TRANSFORMATION",
+      "transformations": {
+        "fullName": "${firstName}",
+        "greeting": "Hello",
+        "score": 42
+      },
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

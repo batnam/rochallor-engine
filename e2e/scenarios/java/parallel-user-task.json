@@ -1,0 +1,38 @@
+{
+  "id": "e2e-java-parallel-user-task",
+  "name": "E2E Java Parallel User Task",
+  "steps": [
+    {
+      "id": "java-put-gateway",
+      "name": "Parallel Gateway",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["java-put-svc-branch", "java-put-user-task"],
+      "joinStep": "java-put-join"
+    },
+    {
+      "id": "java-put-svc-branch",
+      "name": "Service Branch",
+      "type": "SERVICE_TASK",
+      "jobType": "java-put-svc-branch",
+      "retryCount": 0,
+      "nextStep": "java-put-join"
+    },
+    {
+      "id": "java-put-user-task",
+      "name": "User Task Branch",
+      "type": "USER_TASK",
+      "nextStep": "java-put-join"
+    },
+    {
+      "id": "java-put-join",
+      "name": "Join Gateway",
+      "type": "JOIN_GATEWAY",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

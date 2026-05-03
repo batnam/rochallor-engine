@@ -112,6 +112,79 @@ func (c *Client) CompleteUserTaskByStableID(ctx context.Context, instanceID, use
 	return c.doRequest(req, nil)
 }
 
+// StartInstanceWithBusinessKey creates a new instance with the given businessKey and returns the instance ID.
+func (c *Client) StartInstanceWithBusinessKey(ctx context.Context, defID string, vars map[string]any, businessKey string) (string, error) {
+	body, err := json.Marshal(map[string]any{
+		"definitionId": defID,
+		"variables":    vars,
+		"businessKey":  businessKey,
+	})
+	if err != nil {
+		return "", fmt.Errorf("start instance with business key: marshal request: %w", err)
+	}
+
+	req, err := c.newRequest(ctx, http.MethodPost, "v1/instances", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("start instance with business key: %w", err)
+	}
+
+	var inst scenarios.Instance
+	if err := c.doRequest(req, &inst); err != nil {
+		return "", fmt.Errorf("start instance with business key: %w", err)
+	}
+	return inst.ID, nil
+}
+
+// CancelInstance calls POST /v1/instances/{id}/cancel and returns the updated instance.
+func (c *Client) CancelInstance(ctx context.Context, id string, reason string) (scenarios.Instance, error) {
+	body, err := json.Marshal(map[string]any{"reason": reason})
+	if err != nil {
+		return scenarios.Instance{}, fmt.Errorf("cancel instance: marshal request: %w", err)
+	}
+
+	req, err := c.newRequest(ctx, http.MethodPost, "v1/instances/"+id+"/cancel", bytes.NewReader(body))
+	if err != nil {
+		return scenarios.Instance{}, fmt.Errorf("cancel instance: %w", err)
+	}
+
+	var inst scenarios.Instance
+	if err := c.doRequest(req, &inst); err != nil {
+		return scenarios.Instance{}, fmt.Errorf("cancel instance: %w", err)
+	}
+	return inst, nil
+}
+
+// GetDefinition calls GET /v1/definitions/{id} and returns the definition summary.
+func (c *Client) GetDefinition(ctx context.Context, id string) (scenarios.DefinitionSummary, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, "v1/definitions/"+id, nil)
+	if err != nil {
+		return scenarios.DefinitionSummary{}, fmt.Errorf("get definition: %w", err)
+	}
+
+	var def scenarios.DefinitionSummary
+	if err := c.doRequest(req, &def); err != nil {
+		return scenarios.DefinitionSummary{}, fmt.Errorf("get definition: %w", err)
+	}
+	return def, nil
+}
+
+// ListDefinitions calls GET /v1/definitions and returns all definition summaries.
+func (c *Client) ListDefinitions(ctx context.Context) ([]scenarios.DefinitionSummary, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, "v1/definitions", nil)
+	if err != nil {
+		return nil, fmt.Errorf("list definitions: %w", err)
+	}
+	req.URL.RawQuery = "pageSize=100"
+
+	var envelope struct {
+		Items []scenarios.DefinitionSummary `json:"items"`
+	}
+	if err := c.doRequest(req, &envelope); err != nil {
+		return nil, fmt.Errorf("list definitions: %w", err)
+	}
+	return envelope.Items, nil
+}
+
 // SignalWait calls POST /v1/instances/{instanceId}/signals/{waitStepId}.
 // The body IS the variable map (not wrapped in {"variables": …}); an empty map
 // is valid — the signal itself is the event.

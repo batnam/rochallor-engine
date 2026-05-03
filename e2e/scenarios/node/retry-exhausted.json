@@ -1,0 +1,19 @@
+{
+  "id": "e2e-node-retry-exhausted",
+  "name": "E2E Node Retry Exhausted",
+  "steps": [
+    {
+      "id": "node-always-fail",
+      "name": "Always Fail",
+      "type": "SERVICE_TASK",
+      "jobType": "node-always-fail",
+      "retryCount": 1,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

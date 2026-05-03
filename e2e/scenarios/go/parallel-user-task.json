@@ -1,0 +1,38 @@
+{
+  "id": "e2e-go-parallel-user-task",
+  "name": "E2E Go Parallel User Task",
+  "steps": [
+    {
+      "id": "go-put-gateway",
+      "name": "Parallel Gateway",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["go-put-svc-branch", "go-put-user-task"],
+      "joinStep": "go-put-join"
+    },
+    {
+      "id": "go-put-svc-branch",
+      "name": "Service Branch",
+      "type": "SERVICE_TASK",
+      "jobType": "go-put-svc-branch",
+      "retryCount": 0,
+      "nextStep": "go-put-join"
+    },
+    {
+      "id": "go-put-user-task",
+      "name": "User Task Branch",
+      "type": "USER_TASK",
+      "nextStep": "go-put-join"
+    },
+    {
+      "id": "go-put-join",
+      "name": "Join Gateway",
+      "type": "JOIN_GATEWAY",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

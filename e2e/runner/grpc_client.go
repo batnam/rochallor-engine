@@ -103,6 +103,57 @@ func (c *GrpcClient) CompleteUserTaskByStableID(ctx context.Context, instanceID,
 	return nil
 }
 
+func (c *GrpcClient) StartInstanceWithBusinessKey(ctx context.Context, defID string, vars map[string]any, businessKey string) (string, error) {
+	sv, err := toStruct(vars)
+	if err != nil {
+		return "", fmt.Errorf("start instance with business key: %w", err)
+	}
+	resp, err := c.stub.StartInstance(ctx, &workflowv1.StartInstanceRequest{
+		DefinitionId: defID,
+		Variables:    sv,
+		BusinessKey:  businessKey,
+	})
+	if err != nil {
+		return "", fmt.Errorf("start instance with business key: %w", err)
+	}
+	return resp.Instance.Id, nil
+}
+
+func (c *GrpcClient) CancelInstance(ctx context.Context, id string, reason string) (scenarios.Instance, error) {
+	resp, err := c.stub.CancelInstance(ctx, &workflowv1.CancelInstanceRequest{
+		Id:     id,
+		Reason: reason,
+	})
+	if err != nil {
+		return scenarios.Instance{}, fmt.Errorf("cancel instance: %w", err)
+	}
+	return protoInstToScenario(resp.Instance), nil
+}
+
+func (c *GrpcClient) GetDefinition(ctx context.Context, id string) (scenarios.DefinitionSummary, error) {
+	resp, err := c.stub.GetDefinition(ctx, &workflowv1.GetDefinitionRequest{Id: id})
+	if err != nil {
+		return scenarios.DefinitionSummary{}, fmt.Errorf("get definition: %w", err)
+	}
+	return scenarios.DefinitionSummary{
+		ID:      resp.Definition.Id,
+		Name:    resp.Definition.Name,
+		Version: int(resp.Definition.Version),
+	}, nil
+}
+
+func (c *GrpcClient) ListDefinitions(ctx context.Context) ([]scenarios.DefinitionSummary, error) {
+	resp, err := c.stub.ListDefinitions(ctx, &workflowv1.ListDefinitionsRequest{PageSize: 100})
+	if err != nil {
+		return nil, fmt.Errorf("list definitions: %w", err)
+	}
+	out := make([]scenarios.DefinitionSummary, len(resp.Definitions))
+	for i, d := range resp.Definitions {
+		out[i] = scenarios.DefinitionSummary{ID: d.Id, Name: d.Name, Version: int(d.Version)}
+	}
+	return out, nil
+}
+
 func (c *GrpcClient) SignalWait(ctx context.Context, instanceID, waitStepID string, vars map[string]any) error {
 	sv, err := toStruct(vars)
 	if err != nil {
@@ -140,6 +191,7 @@ func protoInstToScenario(p *workflowv1.WorkflowInstance) scenarios.Instance {
 		Status:         trimPrefix(p.Status.String(), "INSTANCE_STATUS_"),
 		CurrentStepIds: p.CurrentStepIds,
 		FailureReason:  p.FailureReason,
+		BusinessKey:    p.BusinessKey,
 	}
 	if p.Variables != nil {
 		inst.Variables = p.Variables.AsMap()

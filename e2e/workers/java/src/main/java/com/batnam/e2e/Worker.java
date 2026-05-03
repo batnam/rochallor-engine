@@ -1,5 +1,7 @@
 package com.batnam.e2e;
 
+import com.batnam.rochallor_engine.workflow_sdk_java.client.EngineClient;
+import com.batnam.rochallor_engine.workflow_sdk_java.client.GrpcEngineClient;
 import com.batnam.rochallor_engine.workflow_sdk_java.client.RestEngineClient;
 import com.batnam.rochallor_engine.workflow_sdk_java.handler.HandlerRegistry;
 import com.batnam.rochallor_engine.workflow_sdk_java.runner.KafkaRunner;
@@ -11,9 +13,13 @@ public class Worker {
 
     public static void main(String[] args) throws InterruptedException {
         String engineUrl = env("ENGINE_REST_URL", "http://localhost:8080");
+        String grpcHost = env("ENGINE_GRPC_HOST", "localhost:9090");
+        String workerTransport = env("WORKER_TRANSPORT", "rest");
         String workerId = env("WORKER_ID", "worker-java-1");
 
-        RestEngineClient client = new RestEngineClient(engineUrl);
+        EngineClient client = "grpc".equals(workerTransport)
+                ? new GrpcEngineClient(grpcHost)
+                : new RestEngineClient(engineUrl);
         HandlerRegistry registry = new HandlerRegistry();
 
         // Linear scenario handlers
@@ -54,6 +60,25 @@ public class Worker {
         // Chaining scenario handlers
         registry.register("java-chain-start", ctx -> Map.of("applicantId", "123", "amount", 100.0));
         registry.register("java-chain-finalize", ctx -> Map.of("finalized", true));
+
+        // Transformation scenario handler
+        registry.register("java-transform-init", ctx -> Map.of("firstName", "Alice"));
+
+        // Retry-exhausted scenario handler: always fails to exhaust all retries
+        registry.register("java-always-fail", ctx -> { throw new RuntimeException("always fails"); });
+
+        // Decision-no-match scenario handler: sets result to "rejected" so no branch matches
+        registry.register("java-prepare-no-match", ctx -> Map.of("result", "rejected"));
+
+        // Parallel-user-task scenario handler
+        registry.register("java-put-svc-branch", ctx -> Map.of("svcBranchDone", true));
+
+        // Timer-interrupting scenario handlers
+        registry.register("java-slow-task", ctx -> {
+            try { Thread.sleep(30_000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            return Map.of();
+        });
+        registry.register("java-timeout-handler", ctx -> Map.of("timedOut", true));
 
         // Loan approval scenario handlers
         registry.register("validate-application", ctx -> Map.of("applicationValidated", true));

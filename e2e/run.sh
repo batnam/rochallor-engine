@@ -109,15 +109,15 @@ wait_for_engine() {
 
 trap cleanup EXIT
 
-echo "[e2e] building and starting stack (sdk=$SDK)..."
+echo "[e2e] building and starting stack (sdk=$SDK, transport=$TRANSPORT)..."
 # shellcheck disable=SC2086
-docker compose -f "$COMPOSE_FILE" $PROFILES up --build -d
+WORKER_TRANSPORT="$TRANSPORT" docker compose -f "$COMPOSE_FILE" $PROFILES up --build -d
 
 wait_for_engine
 
 echo "[e2e] running test suite (transport=$TRANSPORT)..."
 cd "$RUNNER_DIR"
-go run . \
+E2E_TIMER_INTERRUPTING=1 go run . \
   -engine="http://localhost:${ENGINE_REST_PORT}" \
   -grpc-engine="localhost:${ENGINE_GRPC_PORT}" \
   -sdk="$SDK" \

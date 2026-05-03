@@ -207,6 +207,10 @@ pnpm dev          # opens at http://localhost:5173
 
 For full setup instructions, available scripts, and the spec docs, see **[workflow-modeller/README.md](workflow-modeller/README.md)**.
 
+> **`workflow-engine/validate-fixture` — compiled binary, not source**
+>
+> The `workflow-engine/` directory contains a pre-built binary named `validate-fixture`. It is the compiled form of `workflow-engine/cmd/validate-fixture/main.go` — a small Go CLI that runs the engine's authoritative parser and validator against a single workflow JSON file and prints `{"accepted": bool, "error": "..."}` on stdout. It is called by the workflow-modeller's drift-guard harness to verify that every fixture accepted by the TypeScript validator is also accepted by the Go engine (the mechanical guarantee that the two implementations stay in sync). You do not need to run it directly; the modeller's test suite invokes it automatically.
+
 ---
 
 ## Documentation

@@ -1,0 +1,38 @@
+{
+  "id": "e2e-python-parallel-user-task",
+  "name": "E2E Python Parallel User Task",
+  "steps": [
+    {
+      "id": "python-put-gateway",
+      "name": "Parallel Gateway",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["python-put-svc-branch", "python-put-user-task"],
+      "joinStep": "python-put-join"
+    },
+    {
+      "id": "python-put-svc-branch",
+      "name": "Service Branch",
+      "type": "SERVICE_TASK",
+      "jobType": "python-put-svc-branch",
+      "retryCount": 0,
+      "nextStep": "python-put-join"
+    },
+    {
+      "id": "python-put-user-task",
+      "name": "User Task Branch",
+      "type": "USER_TASK",
+      "nextStep": "python-put-join"
+    },
+    {
+      "id": "python-put-join",
+      "name": "Join Gateway",
+      "type": "JOIN_GATEWAY",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

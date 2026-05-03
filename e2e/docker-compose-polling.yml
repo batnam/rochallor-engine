@@ -45,6 +45,7 @@ services:
       ENGINE_REST_URL: http://engine:8080
       ENGINE_GRPC_HOST: engine:9090
       WORKER_ID: worker-go-1
+      WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_LOG_LEVEL: info
     depends_on:
@@ -59,7 +60,9 @@ services:
     restart: unless-stopped
     environment:
       ENGINE_REST_URL: http://engine:8080
+      ENGINE_GRPC_HOST: engine:9090
       WORKER_ID: worker-python-1
+      WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_LOG_LEVEL: info
     depends_on:
@@ -76,6 +79,7 @@ services:
       ENGINE_REST_URL: http://engine:8080
       ENGINE_GRPC_HOST: engine:9090
       WORKER_ID: worker-node-1
+      WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_LOG_LEVEL: info
     depends_on:
@@ -92,6 +96,7 @@ services:
       ENGINE_REST_URL: http://engine:8080
       ENGINE_GRPC_HOST: engine:9090
       WORKER_ID: worker-java-1
+      WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_LOG_LEVEL: info
     depends_on:

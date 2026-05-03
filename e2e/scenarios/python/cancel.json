@@ -1,0 +1,17 @@
+{
+  "id": "e2e-python-cancel",
+  "name": "E2E Python Cancel",
+  "steps": [
+    {
+      "id": "python-cancel-wait",
+      "name": "Wait For Cancel",
+      "type": "WAIT",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

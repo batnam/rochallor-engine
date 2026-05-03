@@ -1,0 +1,35 @@
+{
+  "id": "e2e-java-timer-interrupting",
+  "name": "E2E Java Timer Interrupting",
+  "steps": [
+    {
+      "id": "java-slow-task",
+      "name": "Slow Task",
+      "type": "SERVICE_TASK",
+      "jobType": "java-slow-task",
+      "retryCount": 0,
+      "nextStep": "end",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT2S",
+          "interrupting": true,
+          "targetStepId": "java-timeout-handler"
+        }
+      ]
+    },
+    {
+      "id": "java-timeout-handler",
+      "name": "Timeout Handler",
+      "type": "SERVICE_TASK",
+      "jobType": "java-timeout-handler",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

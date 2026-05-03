@@ -1,0 +1,35 @@
+{
+  "id": "e2e-node-timer-interrupting",
+  "name": "E2E Node Timer Interrupting",
+  "steps": [
+    {
+      "id": "node-slow-task",
+      "name": "Slow Task",
+      "type": "SERVICE_TASK",
+      "jobType": "node-slow-task",
+      "retryCount": 0,
+      "nextStep": "end",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT2S",
+          "interrupting": true,
+          "targetStepId": "node-timeout-handler"
+        }
+      ]
+    },
+    {
+      "id": "node-timeout-handler",
+      "name": "Timeout Handler",
+      "type": "SERVICE_TASK",
+      "jobType": "node-timeout-handler",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

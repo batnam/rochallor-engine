@@ -66,7 +66,7 @@ services:
       bash -c "
         cub kafka-ready -b e2e-kafka:29092 1 30 &&
         echo 'Start creating topics in parallel...' &&
-        TOPICS='workflow.jobs.go-step-a workflow.jobs.go-step-b workflow.jobs.go-step-c workflow.jobs.go-prepare workflow.jobs.go-handle-approved workflow.jobs.go-handle-rejected workflow.jobs.go-branch-left workflow.jobs.go-branch-right workflow.jobs.go-merge-done workflow.jobs.go-before-review workflow.jobs.go-after-review workflow.jobs.go-before-wait workflow.jobs.go-timer-fired workflow.jobs.go-flaky workflow.jobs.go-signalwaitstep-completeusertask-start workflow.jobs.go-signalwaitstep-completeusertask-end workflow.jobs.go-chain-start workflow.jobs.go-chain-finalize workflow.jobs.java-step-a workflow.jobs.java-step-b workflow.jobs.java-step-c workflow.jobs.java-prepare workflow.jobs.java-handle-approved workflow.jobs.java-handle-rejected workflow.jobs.java-branch-left workflow.jobs.java-branch-right workflow.jobs.java-merge-done workflow.jobs.java-before-review workflow.jobs.java-after-review workflow.jobs.java-before-wait workflow.jobs.java-timer-fired workflow.jobs.java-flaky workflow.jobs.java-signalwaitstep-completeusertask-start workflow.jobs.java-signalwaitstep-completeusertask-end workflow.jobs.java-chain-start workflow.jobs.java-chain-finalize workflow.jobs.node-step-a workflow.jobs.node-step-b workflow.jobs.node-step-c workflow.jobs.node-prepare workflow.jobs.node-handle-approved workflow.jobs.node-handle-rejected workflow.jobs.node-branch-left workflow.jobs.node-branch-right workflow.jobs.node-merge-done workflow.jobs.node-before-review workflow.jobs.node-after-review workflow.jobs.node-before-wait workflow.jobs.node-timer-fired workflow.jobs.node-flaky workflow.jobs.node-signalwaitstep-completeusertask-start workflow.jobs.node-signalwaitstep-completeusertask-end workflow.jobs.node-chain-start workflow.jobs.node-chain-finalize workflow.jobs.validate-application workflow.jobs.credit-score workflow.jobs.fraud-screen workflow.jobs.escalate-review workflow.jobs.approve-loan workflow.jobs.notify-approval-overdue workflow.jobs.prepare-disbursement workflow.jobs.transfer-funds workflow.jobs.notify-disbursement workflow.jobs.python-step-a workflow.jobs.python-step-b workflow.jobs.python-step-c workflow.jobs.python-prepare workflow.jobs.python-handle-approved workflow.jobs.python-handle-rejected workflow.jobs.python-branch-left workflow.jobs.python-branch-right workflow.jobs.python-merge-done workflow.jobs.python-before-review workflow.jobs.python-after-review workflow.jobs.python-before-wait workflow.jobs.python-timer-fired workflow.jobs.python-flaky workflow.jobs.python-signalwaitstep-completeusertask-start workflow.jobs.python-signalwaitstep-completeusertask-end workflow.jobs.python-chain-start workflow.jobs.python-chain-finalize' &&
+        TOPICS='workflow.jobs.go-slow-task workflow.jobs.go-timeout-handler workflow.jobs.go-transform-init workflow.jobs.go-always-fail workflow.jobs.go-prepare-no-match workflow.jobs.go-put-svc-branch workflow.jobs.go-step-a workflow.jobs.go-step-b workflow.jobs.go-step-c workflow.jobs.go-prepare workflow.jobs.go-handle-approved workflow.jobs.go-handle-rejected workflow.jobs.go-branch-left workflow.jobs.go-branch-right workflow.jobs.go-merge-done workflow.jobs.go-before-review workflow.jobs.go-after-review workflow.jobs.go-before-wait workflow.jobs.go-timer-fired workflow.jobs.go-flaky workflow.jobs.go-signalwaitstep-completeusertask-start workflow.jobs.go-signalwaitstep-completeusertask-end workflow.jobs.go-chain-start workflow.jobs.go-chain-finalize workflow.jobs.java-step-a workflow.jobs.java-step-b workflow.jobs.java-step-c workflow.jobs.java-prepare workflow.jobs.java-handle-approved workflow.jobs.java-handle-rejected workflow.jobs.java-branch-left workflow.jobs.java-branch-right workflow.jobs.java-merge-done workflow.jobs.java-before-review workflow.jobs.java-after-review workflow.jobs.java-before-wait workflow.jobs.java-timer-fired workflow.jobs.java-flaky workflow.jobs.java-signalwaitstep-completeusertask-start workflow.jobs.java-signalwaitstep-completeusertask-end workflow.jobs.java-chain-start workflow.jobs.java-chain-finalize workflow.jobs.java-transform-init workflow.jobs.java-always-fail workflow.jobs.java-prepare-no-match workflow.jobs.java-put-svc-branch workflow.jobs.java-slow-task workflow.jobs.java-timeout-handler workflow.jobs.node-step-a workflow.jobs.node-step-b workflow.jobs.node-step-c workflow.jobs.node-prepare workflow.jobs.node-handle-approved workflow.jobs.node-handle-rejected workflow.jobs.node-branch-left workflow.jobs.node-branch-right workflow.jobs.node-merge-done workflow.jobs.node-before-review workflow.jobs.node-after-review workflow.jobs.node-before-wait workflow.jobs.node-timer-fired workflow.jobs.node-flaky workflow.jobs.node-signalwaitstep-completeusertask-start workflow.jobs.node-signalwaitstep-completeusertask-end workflow.jobs.node-chain-start workflow.jobs.node-chain-finalize workflow.jobs.node-transform-init workflow.jobs.node-always-fail workflow.jobs.node-prepare-no-match workflow.jobs.node-put-svc-branch workflow.jobs.node-slow-task workflow.jobs.node-timeout-handler workflow.jobs.validate-application workflow.jobs.credit-score workflow.jobs.fraud-screen workflow.jobs.escalate-review workflow.jobs.approve-loan workflow.jobs.notify-approval-overdue workflow.jobs.prepare-disbursement workflow.jobs.transfer-funds workflow.jobs.notify-disbursement workflow.jobs.python-step-a workflow.jobs.python-step-b workflow.jobs.python-step-c workflow.jobs.python-prepare workflow.jobs.python-handle-approved workflow.jobs.python-handle-rejected workflow.jobs.python-branch-left workflow.jobs.python-branch-right workflow.jobs.python-merge-done workflow.jobs.python-before-review workflow.jobs.python-after-review workflow.jobs.python-before-wait workflow.jobs.python-timer-fired workflow.jobs.python-flaky workflow.jobs.python-signalwaitstep-completeusertask-start workflow.jobs.python-signalwaitstep-completeusertask-end workflow.jobs.python-chain-start workflow.jobs.python-chain-finalize workflow.jobs.python-transform-init workflow.jobs.python-always-fail workflow.jobs.python-prepare-no-match workflow.jobs.python-put-svc-branch workflow.jobs.python-slow-task workflow.jobs.python-timeout-handler' &&
         for topic in $$TOPICS; do
           kafka-topics --create --if-not-exists --bootstrap-server e2e-kafka:29092 --partitions 1 --replication-factor 1 --topic $$topic &
         done && wait &&
@@ -112,6 +112,7 @@ services:
       ENGINE_REST_URL: http://e2e-engine:8080
       ENGINE_GRPC_HOST: e2e-engine:9090
       WORKER_ID: worker-go-1
+      WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_KAFKA_SEED_BROKERS: e2e-kafka:29092
       WE_KAFKA_TRANSPORT: plaintext
@@ -131,7 +132,9 @@ services:
     restart: unless-stopped
     environment:
       ENGINE_REST_URL: http://e2e-engine:8080
+      ENGINE_GRPC_HOST: e2e-engine:9090
       WORKER_ID: worker-python-1
+      WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_KAFKA_SEED_BROKERS: e2e-kafka:29092
       WE_KAFKA_TRANSPORT: plaintext
@@ -153,6 +156,7 @@ services:
       ENGINE_REST_URL: http://e2e-engine:8080
       ENGINE_GRPC_HOST: e2e-engine:9090
       WORKER_ID: worker-node-1
+      WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_KAFKA_SEED_BROKERS: e2e-kafka:29092
       WE_KAFKA_TRANSPORT: plaintext
@@ -174,6 +178,7 @@ services:
       ENGINE_REST_URL: http://e2e-engine:8080
       ENGINE_GRPC_HOST: e2e-engine:9090
       WORKER_ID: worker-java-1
+      WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_KAFKA_SEED_BROKERS: e2e-kafka:29092
       WE_KAFKA_TRANSPORT: plaintext

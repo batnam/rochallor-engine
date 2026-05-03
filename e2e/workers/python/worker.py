@@ -5,6 +5,7 @@ import logging
 import sys
 
 from workflow_sdk.client.rest import RestEngineClient
+from workflow_sdk.client.grpc import GrpcEngineClient
 from workflow_sdk.handler.registry import HandlerRegistry
 from workflow_sdk.runner.runner import Runner
 from workflow_sdk.runner.kafka_runner import KafkaRunner
@@ -18,6 +19,8 @@ def _make_step_handler(name: str):
 
 def main() -> None:
     engine_url = os.environ.get("ENGINE_REST_URL", "http://localhost:8080")
+    grpc_host = os.environ.get("ENGINE_GRPC_HOST", "localhost:9090")
+    worker_transport = os.environ.get("WORKER_TRANSPORT", "rest")
     worker_id = os.environ.get("WORKER_ID", "worker-python-1")
     log_level_str = os.environ.get("WE_LOG_LEVEL", "INFO").upper()
 
@@ -31,9 +34,13 @@ def main() -> None:
     )
 
     logger = logging.getLogger("worker-python")
-    logger.info(f"worker starting: engine={engine_url} workerID={worker_id}")
 
-    client = RestEngineClient(engine_url)
+    if worker_transport == "grpc":
+        client = GrpcEngineClient(grpc_host)
+        logger.info(f"worker starting (grpc): host={grpc_host} workerID={worker_id}")
+    else:
+        client = RestEngineClient(engine_url)
+        logger.info(f"worker starting (rest): engine={engine_url} workerID={worker_id}")
     registry = HandlerRegistry()
 
     # Linear scenario handlers
@@ -74,6 +81,28 @@ def main() -> None:
     # Chaining scenario handlers
     registry.register("python-chain-start", lambda ctx: {"applicantId": "123", "amount": 100.0})
     registry.register("python-chain-finalize", lambda ctx: {"finalized": True})
+
+    # Transformation scenario handler
+    registry.register("python-transform-init", lambda ctx: {"firstName": "Alice"})
+
+    # Retry-exhausted scenario handler: always fails to exhaust all retries
+    def _py_always_fail(ctx):
+        raise Exception("always fails")
+    registry.register("python-always-fail", _py_always_fail)
+
+    # Decision-no-match scenario handler: sets result to "rejected" so no branch matches
+    registry.register("python-prepare-no-match", lambda ctx: {"result": "rejected"})
+
+    # Parallel-user-task scenario handler
+    registry.register("python-put-svc-branch", lambda ctx: {"svcBranchDone": True})
+
+    # Timer-interrupting scenario handlers
+    def _py_slow_task(ctx: dict) -> dict:
+        import time
+        time.sleep(30)
+        return {}
+    registry.register("python-slow-task", _py_slow_task)
+    registry.register("python-timeout-handler", lambda ctx: {"timedOut": True})
 
     # Loan approval scenario handlers
     registry.register("validate-application", lambda ctx: {"applicationValidated": True})

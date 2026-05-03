@@ -1,0 +1,17 @@
+{
+  "id": "e2e-node-cancel",
+  "name": "E2E Node Cancel",
+  "steps": [
+    {
+      "id": "node-cancel-wait",
+      "name": "Wait For Cancel",
+      "type": "WAIT",
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

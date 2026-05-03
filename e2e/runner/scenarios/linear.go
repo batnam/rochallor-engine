@@ -41,7 +41,31 @@ func RunLinear(t TestReporter, client ClientIface, scenariosDir, prefix string) 
 
 	if inst.Status != "COMPLETED" {
 		t.Errorf("[%s/linear] want COMPLETED, got %s (failureReason: %q)", prefix, inst.Status, inst.FailureReason)
-	} else {
-		t.Logf("[%s/linear] COMPLETED ✓", prefix)
+		return
 	}
+	t.Logf("[%s/linear] COMPLETED ✓", prefix)
+
+	// Verify GetHistory returns COMPLETED entries for all expected steps.
+	history, err := client.GetHistory(ctx, instanceID)
+	if err != nil {
+		t.Errorf("[%s/linear] get history: %v", prefix, err)
+		return
+	}
+	wantSteps := map[string]bool{
+		"step-a": false,
+		"step-b": false,
+		"step-c": false,
+		"end":    false,
+	}
+	for _, se := range history {
+		if _, ok := wantSteps[se.StepID]; ok && se.Status == "COMPLETED" {
+			wantSteps[se.StepID] = true
+		}
+	}
+	for stepID, seen := range wantSteps {
+		if !seen {
+			t.Errorf("[%s/linear] history missing COMPLETED entry for step %q", prefix, stepID)
+		}
+	}
+	t.Logf("[%s/linear] history verified ✓", prefix)
 }

@@ -1,0 +1,30 @@
+{
+  "id": "e2e-go-transformation",
+  "name": "E2E Go Transformation",
+  "steps": [
+    {
+      "id": "go-transform-init",
+      "name": "Init",
+      "type": "SERVICE_TASK",
+      "jobType": "go-transform-init",
+      "retryCount": 0,
+      "nextStep": "go-transform-step"
+    },
+    {
+      "id": "go-transform-step",
+      "name": "Transform Variables",
+      "type": "TRANSFORMATION",
+      "transformations": {
+        "fullName": "${firstName}",
+        "greeting": "Hello",
+        "score": 42
+      },
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}
