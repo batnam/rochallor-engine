@@ -117,7 +117,7 @@ wait_for_engine
 
 echo "[e2e] running test suite (transport=$TRANSPORT)..."
 cd "$RUNNER_DIR"
-go run . \
+E2E_TIMER_INTERRUPTING=1 go run . \
   -engine="http://localhost:${ENGINE_REST_PORT}" \
   -grpc-engine="localhost:${ENGINE_GRPC_PORT}" \
   -sdk="$SDK" \

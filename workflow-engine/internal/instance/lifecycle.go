@@ -160,10 +160,10 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 	}
 
 	return pgstore.RunInTx(ctx, s.pool, "instance.complete_job", pgx.TxOptions{}, func(tx pgx.Tx) error {
-		// Check idempotency
+		// Check idempotency / cancellation: skip if job is already COMPLETED or was CANCELLED by an interrupting timer.
 		var status string
 		_ = tx.QueryRow(ctx, `SELECT status FROM job WHERE id = $1`, jobID).Scan(&status)
-		if status == "COMPLETED" {
+		if status == "COMPLETED" || status == "CANCELLED" {
 			return nil
 		}
 
@@ -241,6 +241,64 @@ func (s *Service) DispatchBoundaryStep(ctx context.Context, instanceID, targetSt
 			return fmt.Errorf("dispatch boundary: load def: %w", err)
 		}
 		// Non-interrupting: spawn the target step alongside current work
+		return s.dispatchStep(ctx, tx, &inst, def, targetStepID)
+	})
+}
+
+// InterruptStepAndDispatchBoundary cancels the running step (and its job), then
+// dispatches targetStepID. Called by the boundary sweeper for interrupting=true timers.
+func (s *Service) InterruptStepAndDispatchBoundary(ctx context.Context, instanceID, stepExecutionID, targetStepID string) error {
+	return pgstore.RunInTx(ctx, s.pool, "instance.interrupt_boundary", pgx.TxOptions{}, func(tx pgx.Tx) error {
+		var inst WorkflowInstance
+		err := pgstore.ObserveLockWait("instance.for_update", func() error {
+			return tx.QueryRow(ctx,
+				`SELECT id, definition_id, definition_version, status, current_step_ids, variables, started_at
+				  FROM workflow_instance WHERE id = $1 FOR UPDATE`,
+				instanceID,
+			).Scan(&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
+				&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt)
+		})
+		if err != nil {
+			return fmt.Errorf("interrupt boundary: load instance: %w", err)
+		}
+		if inst.Status == InstanceStatusCompleted || inst.Status == InstanceStatusFailed || inst.Status == InstanceStatusCancelled {
+			return nil // already terminal — boundary event is a no-op
+		}
+
+		// Resolve which step is being interrupted
+		var interruptedStepID string
+		if err := tx.QueryRow(ctx,
+			`SELECT step_id FROM step_execution WHERE id = $1`,
+			stepExecutionID,
+		).Scan(&interruptedStepID); err != nil {
+			return fmt.Errorf("interrupt boundary: load step_execution: %w", err)
+		}
+
+		// Mark the interrupted step_execution as FAILED
+		if _, err := tx.Exec(ctx,
+			`UPDATE step_execution SET status = 'FAILED', ended_at = now(), failure_reason = 'interrupted by boundary timer'
+			  WHERE id = $1`,
+			stepExecutionID,
+		); err != nil {
+			return fmt.Errorf("interrupt boundary: cancel step_execution: %w", err)
+		}
+
+		// Cancel the pending/locked job for this step_execution so the worker's
+		// eventual completeJob call is a no-op (job won't be found as LOCKED/UNLOCKED).
+		if _, err := tx.Exec(ctx,
+			`UPDATE job SET status = 'CANCELLED'
+			  WHERE step_execution_id = $1 AND status IN ('PENDING', 'UNLOCKED', 'LOCKED')`,
+			stepExecutionID,
+		); err != nil {
+			return fmt.Errorf("interrupt boundary: cancel job: %w", err)
+		}
+
+		removeFromCurrentSteps(&inst, interruptedStepID)
+
+		def, err := s.defRepo.GetVersion(ctx, inst.DefinitionID, inst.DefinitionVersion)
+		if err != nil {
+			return fmt.Errorf("interrupt boundary: load def: %w", err)
+		}
 		return s.dispatchStep(ctx, tx, &inst, def, targetStepID)
 	})
 }

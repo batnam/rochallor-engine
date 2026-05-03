@@ -96,6 +96,14 @@ def main() -> None:
     # Parallel-user-task scenario handler
     registry.register("python-put-svc-branch", lambda ctx: {"svcBranchDone": True})
 
+    # Timer-interrupting scenario handlers
+    def _py_slow_task(ctx: dict) -> dict:
+        import time
+        time.sleep(30)
+        return {}
+    registry.register("python-slow-task", _py_slow_task)
+    registry.register("python-timeout-handler", lambda ctx: {"timedOut": True})
+
     # Loan approval scenario handlers
     registry.register("validate-application", lambda ctx: {"applicationValidated": True})
     registry.register("credit-score", lambda ctx: {"creditScoreChecked": True})

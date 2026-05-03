@@ -65,6 +65,13 @@ registry.register('node-prepare-no-match', async () => ({ variablesToSet: { resu
 // Parallel-user-task scenario handler
 registry.register('node-put-svc-branch', async () => ({ variablesToSet: { svcBranchDone: true } }))
 
+// Timer-interrupting scenario handlers
+registry.register('node-slow-task', async () => {
+  await new Promise(resolve => setTimeout(resolve, 30_000))
+  return { variablesToSet: {} }
+})
+registry.register('node-timeout-handler', async () => ({ variablesToSet: { timedOut: true } }))
+
 // Loan approval scenario handlers
 registry.register('validate-application', async () => ({ variablesToSet: { applicationValidated: true } }))
 registry.register('credit-score', async () => ({ variablesToSet: { creditScoreChecked: true } }))

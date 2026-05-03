@@ -73,6 +73,13 @@ public class Worker {
         // Parallel-user-task scenario handler
         registry.register("java-put-svc-branch", ctx -> Map.of("svcBranchDone", true));
 
+        // Timer-interrupting scenario handlers
+        registry.register("java-slow-task", ctx -> {
+            try { Thread.sleep(30_000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            return Map.of();
+        });
+        registry.register("java-timeout-handler", ctx -> Map.of("timedOut", true));
+
         // Loan approval scenario handlers
         registry.register("validate-application", ctx -> Map.of("applicationValidated", true));
         registry.register("credit-score", ctx -> Map.of("creditScoreChecked", true));

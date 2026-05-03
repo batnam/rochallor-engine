@@ -47,6 +47,7 @@ jobs:
       # WORKER_TRANSPORT is derived from TRANSPORT inside run.sh.
       # Set it explicitly here so it appears clearly in the job environment.
       WORKER_TRANSPORT: ${{ matrix.transport }}
+      E2E_TIMER_INTERRUPTING: "1"
     steps:
       - uses: actions/checkout@v4
 
