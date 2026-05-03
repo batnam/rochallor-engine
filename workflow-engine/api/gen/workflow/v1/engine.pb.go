@@ -1720,6 +1720,134 @@ func (x *CancelInstanceResponse) GetInstance() *WorkflowInstance {
 	return nil
 }
 
+type ListInstancesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DefinitionId  string                 `protobuf:"bytes,1,opt,name=definition_id,json=definitionId,proto3" json:"definition_id,omitempty"`
+	Status        InstanceStatus         `protobuf:"varint,2,opt,name=status,proto3,enum=workflow.v1.InstanceStatus" json:"status,omitempty"` // INSTANCE_STATUS_UNSPECIFIED = all
+	BusinessKey   string                 `protobuf:"bytes,3,opt,name=business_key,json=businessKey,proto3" json:"business_key,omitempty"`
+	Page          int32                  `protobuf:"varint,4,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize      int32                  `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListInstancesRequest) Reset() {
+	*x = ListInstancesRequest{}
+	mi := &file_workflow_v1_engine_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListInstancesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListInstancesRequest) ProtoMessage() {}
+
+func (x *ListInstancesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_v1_engine_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListInstancesRequest.ProtoReflect.Descriptor instead.
+func (*ListInstancesRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ListInstancesRequest) GetDefinitionId() string {
+	if x != nil {
+		return x.DefinitionId
+	}
+	return ""
+}
+
+func (x *ListInstancesRequest) GetStatus() InstanceStatus {
+	if x != nil {
+		return x.Status
+	}
+	return InstanceStatus_INSTANCE_STATUS_UNSPECIFIED
+}
+
+func (x *ListInstancesRequest) GetBusinessKey() string {
+	if x != nil {
+		return x.BusinessKey
+	}
+	return ""
+}
+
+func (x *ListInstancesRequest) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *ListInstancesRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type ListInstancesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Instances     []*WorkflowInstance    `protobuf:"bytes,1,rep,name=instances,proto3" json:"instances,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListInstancesResponse) Reset() {
+	*x = ListInstancesResponse{}
+	mi := &file_workflow_v1_engine_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListInstancesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListInstancesResponse) ProtoMessage() {}
+
+func (x *ListInstancesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_v1_engine_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListInstancesResponse.ProtoReflect.Descriptor instead.
+func (*ListInstancesResponse) Descriptor() ([]byte, []int) {
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ListInstancesResponse) GetInstances() []*WorkflowInstance {
+	if x != nil {
+		return x.Instances
+	}
+	return nil
+}
+
+func (x *ListInstancesResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
 type PollJobsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkerId      string                 `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
@@ -1732,7 +1860,7 @@ type PollJobsRequest struct {
 
 func (x *PollJobsRequest) Reset() {
 	*x = PollJobsRequest{}
-	mi := &file_workflow_v1_engine_proto_msgTypes[21]
+	mi := &file_workflow_v1_engine_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1744,7 +1872,7 @@ func (x *PollJobsRequest) String() string {
 func (*PollJobsRequest) ProtoMessage() {}
 
 func (x *PollJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_v1_engine_proto_msgTypes[21]
+	mi := &file_workflow_v1_engine_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1757,7 +1885,7 @@ func (x *PollJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PollJobsRequest.ProtoReflect.Descriptor instead.
 func (*PollJobsRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{21}
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PollJobsRequest) GetWorkerId() string {
@@ -1797,7 +1925,7 @@ type PollJobsResponse struct {
 
 func (x *PollJobsResponse) Reset() {
 	*x = PollJobsResponse{}
-	mi := &file_workflow_v1_engine_proto_msgTypes[22]
+	mi := &file_workflow_v1_engine_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1809,7 +1937,7 @@ func (x *PollJobsResponse) String() string {
 func (*PollJobsResponse) ProtoMessage() {}
 
 func (x *PollJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_v1_engine_proto_msgTypes[22]
+	mi := &file_workflow_v1_engine_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1822,7 +1950,7 @@ func (x *PollJobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PollJobsResponse.ProtoReflect.Descriptor instead.
 func (*PollJobsResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{22}
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *PollJobsResponse) GetJobs() []*Job {
@@ -1843,7 +1971,7 @@ type CompleteJobRequest struct {
 
 func (x *CompleteJobRequest) Reset() {
 	*x = CompleteJobRequest{}
-	mi := &file_workflow_v1_engine_proto_msgTypes[23]
+	mi := &file_workflow_v1_engine_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1855,7 +1983,7 @@ func (x *CompleteJobRequest) String() string {
 func (*CompleteJobRequest) ProtoMessage() {}
 
 func (x *CompleteJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_v1_engine_proto_msgTypes[23]
+	mi := &file_workflow_v1_engine_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1868,7 +1996,7 @@ func (x *CompleteJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteJobRequest.ProtoReflect.Descriptor instead.
 func (*CompleteJobRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{23}
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *CompleteJobRequest) GetJobId() string {
@@ -1900,7 +2028,7 @@ type CompleteJobResponse struct {
 
 func (x *CompleteJobResponse) Reset() {
 	*x = CompleteJobResponse{}
-	mi := &file_workflow_v1_engine_proto_msgTypes[24]
+	mi := &file_workflow_v1_engine_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1912,7 +2040,7 @@ func (x *CompleteJobResponse) String() string {
 func (*CompleteJobResponse) ProtoMessage() {}
 
 func (x *CompleteJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_v1_engine_proto_msgTypes[24]
+	mi := &file_workflow_v1_engine_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1925,7 +2053,7 @@ func (x *CompleteJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteJobResponse.ProtoReflect.Descriptor instead.
 func (*CompleteJobResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{24}
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{26}
 }
 
 type FailJobRequest struct {
@@ -1940,7 +2068,7 @@ type FailJobRequest struct {
 
 func (x *FailJobRequest) Reset() {
 	*x = FailJobRequest{}
-	mi := &file_workflow_v1_engine_proto_msgTypes[25]
+	mi := &file_workflow_v1_engine_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1952,7 +2080,7 @@ func (x *FailJobRequest) String() string {
 func (*FailJobRequest) ProtoMessage() {}
 
 func (x *FailJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_v1_engine_proto_msgTypes[25]
+	mi := &file_workflow_v1_engine_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1965,7 +2093,7 @@ func (x *FailJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FailJobRequest.ProtoReflect.Descriptor instead.
 func (*FailJobRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{25}
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *FailJobRequest) GetJobId() string {
@@ -2004,7 +2132,7 @@ type FailJobResponse struct {
 
 func (x *FailJobResponse) Reset() {
 	*x = FailJobResponse{}
-	mi := &file_workflow_v1_engine_proto_msgTypes[26]
+	mi := &file_workflow_v1_engine_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2016,7 +2144,7 @@ func (x *FailJobResponse) String() string {
 func (*FailJobResponse) ProtoMessage() {}
 
 func (x *FailJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_v1_engine_proto_msgTypes[26]
+	mi := &file_workflow_v1_engine_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2029,7 +2157,7 @@ func (x *FailJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FailJobResponse.ProtoReflect.Descriptor instead.
 func (*FailJobResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{26}
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{28}
 }
 
 type CompleteUserTaskRequest struct {
@@ -2044,7 +2172,7 @@ type CompleteUserTaskRequest struct {
 
 func (x *CompleteUserTaskRequest) Reset() {
 	*x = CompleteUserTaskRequest{}
-	mi := &file_workflow_v1_engine_proto_msgTypes[27]
+	mi := &file_workflow_v1_engine_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2056,7 +2184,7 @@ func (x *CompleteUserTaskRequest) String() string {
 func (*CompleteUserTaskRequest) ProtoMessage() {}
 
 func (x *CompleteUserTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_v1_engine_proto_msgTypes[27]
+	mi := &file_workflow_v1_engine_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2069,7 +2197,7 @@ func (x *CompleteUserTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteUserTaskRequest.ProtoReflect.Descriptor instead.
 func (*CompleteUserTaskRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{27}
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CompleteUserTaskRequest) GetCompletedBy() string {
@@ -2108,7 +2236,7 @@ type CompleteUserTaskResponse struct {
 
 func (x *CompleteUserTaskResponse) Reset() {
 	*x = CompleteUserTaskResponse{}
-	mi := &file_workflow_v1_engine_proto_msgTypes[28]
+	mi := &file_workflow_v1_engine_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2120,7 +2248,7 @@ func (x *CompleteUserTaskResponse) String() string {
 func (*CompleteUserTaskResponse) ProtoMessage() {}
 
 func (x *CompleteUserTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_v1_engine_proto_msgTypes[28]
+	mi := &file_workflow_v1_engine_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2133,7 +2261,7 @@ func (x *CompleteUserTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteUserTaskResponse.ProtoReflect.Descriptor instead.
 func (*CompleteUserTaskResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{28}
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{30}
 }
 
 type SignalWaitRequest struct {
@@ -2147,7 +2275,7 @@ type SignalWaitRequest struct {
 
 func (x *SignalWaitRequest) Reset() {
 	*x = SignalWaitRequest{}
-	mi := &file_workflow_v1_engine_proto_msgTypes[29]
+	mi := &file_workflow_v1_engine_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2159,7 +2287,7 @@ func (x *SignalWaitRequest) String() string {
 func (*SignalWaitRequest) ProtoMessage() {}
 
 func (x *SignalWaitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_v1_engine_proto_msgTypes[29]
+	mi := &file_workflow_v1_engine_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2172,7 +2300,7 @@ func (x *SignalWaitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalWaitRequest.ProtoReflect.Descriptor instead.
 func (*SignalWaitRequest) Descriptor() ([]byte, []int) {
-	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{29}
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SignalWaitRequest) GetInstanceId() string {
@@ -2204,7 +2332,7 @@ type SignalWaitResponse struct {
 
 func (x *SignalWaitResponse) Reset() {
 	*x = SignalWaitResponse{}
-	mi := &file_workflow_v1_engine_proto_msgTypes[30]
+	mi := &file_workflow_v1_engine_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2216,7 +2344,7 @@ func (x *SignalWaitResponse) String() string {
 func (*SignalWaitResponse) ProtoMessage() {}
 
 func (x *SignalWaitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workflow_v1_engine_proto_msgTypes[30]
+	mi := &file_workflow_v1_engine_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2229,7 +2357,7 @@ func (x *SignalWaitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalWaitResponse.ProtoReflect.Descriptor instead.
 func (*SignalWaitResponse) Descriptor() ([]byte, []int) {
-	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{30}
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{32}
 }
 
 var File_workflow_v1_engine_proto protoreflect.FileDescriptor
@@ -2366,7 +2494,16 @@ const file_workflow_v1_engine_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"S\n" +
 	"\x16CancelInstanceResponse\x129\n" +
-	"\binstance\x18\x01 \x01(\v2\x1d.workflow.v1.WorkflowInstanceR\binstance\"\x8b\x01\n" +
+	"\binstance\x18\x01 \x01(\v2\x1d.workflow.v1.WorkflowInstanceR\binstance\"\xc4\x01\n" +
+	"\x14ListInstancesRequest\x12#\n" +
+	"\rdefinition_id\x18\x01 \x01(\tR\fdefinitionId\x123\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x1b.workflow.v1.InstanceStatusR\x06status\x12!\n" +
+	"\fbusiness_key\x18\x03 \x01(\tR\vbusinessKey\x12\x12\n" +
+	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"j\n" +
+	"\x15ListInstancesResponse\x12;\n" +
+	"\tinstances\x18\x01 \x03(\v2\x1d.workflow.v1.WorkflowInstanceR\tinstances\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"\x8b\x01\n" +
 	"\x0fPollJobsRequest\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x1b\n" +
 	"\tjob_types\x18\x02 \x03(\tR\bjobTypes\x12\x19\n" +
@@ -2424,7 +2561,7 @@ const file_workflow_v1_engine_proto_rawDesc = "" +
 	"\x1dSTEP_EXECUTION_STATUS_SKIPPED\x10\x04*W\n" +
 	"\x11BoundaryEventType\x12#\n" +
 	"\x1fBOUNDARY_EVENT_TYPE_UNSPECIFIED\x10\x00\x12\x1d\n" +
-	"\x19BOUNDARY_EVENT_TYPE_TIMER\x10\x012\xa4\b\n" +
+	"\x19BOUNDARY_EVENT_TYPE_TIMER\x10\x012\xfc\b\n" +
 	"\x0eWorkflowEngine\x12_\n" +
 	"\x10UploadDefinition\x12$.workflow.v1.UploadDefinitionRequest\x1a%.workflow.v1.UploadDefinitionResponse\x12V\n" +
 	"\rGetDefinition\x12!.workflow.v1.GetDefinitionRequest\x1a\".workflow.v1.GetDefinitionResponse\x12\\\n" +
@@ -2432,7 +2569,8 @@ const file_workflow_v1_engine_proto_rawDesc = "" +
 	"\rStartInstance\x12!.workflow.v1.StartInstanceRequest\x1a\".workflow.v1.StartInstanceResponse\x12P\n" +
 	"\vGetInstance\x12\x1f.workflow.v1.GetInstanceRequest\x1a .workflow.v1.GetInstanceResponse\x12e\n" +
 	"\x12GetInstanceHistory\x12&.workflow.v1.GetInstanceHistoryRequest\x1a'.workflow.v1.GetInstanceHistoryResponse\x12Y\n" +
-	"\x0eCancelInstance\x12\".workflow.v1.CancelInstanceRequest\x1a#.workflow.v1.CancelInstanceResponse\x12G\n" +
+	"\x0eCancelInstance\x12\".workflow.v1.CancelInstanceRequest\x1a#.workflow.v1.CancelInstanceResponse\x12V\n" +
+	"\rListInstances\x12!.workflow.v1.ListInstancesRequest\x1a\".workflow.v1.ListInstancesResponse\x12G\n" +
 	"\bPollJobs\x12\x1c.workflow.v1.PollJobsRequest\x1a\x1d.workflow.v1.PollJobsResponse\x12P\n" +
 	"\vCompleteJob\x12\x1f.workflow.v1.CompleteJobRequest\x1a .workflow.v1.CompleteJobResponse\x12D\n" +
 	"\aFailJob\x12\x1b.workflow.v1.FailJobRequest\x1a\x1c.workflow.v1.FailJobResponse\x12_\n" +
@@ -2454,7 +2592,7 @@ func file_workflow_v1_engine_proto_rawDescGZIP() []byte {
 }
 
 var file_workflow_v1_engine_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_workflow_v1_engine_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
+var file_workflow_v1_engine_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_workflow_v1_engine_proto_goTypes = []any{
 	(StepType)(0),                      // 0: workflow.v1.StepType
 	(InstanceStatus)(0),                // 1: workflow.v1.InstanceStatus
@@ -2481,84 +2619,90 @@ var file_workflow_v1_engine_proto_goTypes = []any{
 	(*GetInstanceHistoryResponse)(nil), // 22: workflow.v1.GetInstanceHistoryResponse
 	(*CancelInstanceRequest)(nil),      // 23: workflow.v1.CancelInstanceRequest
 	(*CancelInstanceResponse)(nil),     // 24: workflow.v1.CancelInstanceResponse
-	(*PollJobsRequest)(nil),            // 25: workflow.v1.PollJobsRequest
-	(*PollJobsResponse)(nil),           // 26: workflow.v1.PollJobsResponse
-	(*CompleteJobRequest)(nil),         // 27: workflow.v1.CompleteJobRequest
-	(*CompleteJobResponse)(nil),        // 28: workflow.v1.CompleteJobResponse
-	(*FailJobRequest)(nil),             // 29: workflow.v1.FailJobRequest
-	(*FailJobResponse)(nil),            // 30: workflow.v1.FailJobResponse
-	(*CompleteUserTaskRequest)(nil),    // 31: workflow.v1.CompleteUserTaskRequest
-	(*CompleteUserTaskResponse)(nil),   // 32: workflow.v1.CompleteUserTaskResponse
-	(*SignalWaitRequest)(nil),          // 33: workflow.v1.SignalWaitRequest
-	(*SignalWaitResponse)(nil),         // 34: workflow.v1.SignalWaitResponse
-	nil,                                // 35: workflow.v1.WorkflowStep.ConditionalNextStepsEntry
-	nil,                                // 36: workflow.v1.WorkflowStep.TransformationsEntry
-	(*structpb.Struct)(nil),            // 37: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),      // 38: google.protobuf.Timestamp
-	(*structpb.Value)(nil),             // 39: google.protobuf.Value
+	(*ListInstancesRequest)(nil),       // 25: workflow.v1.ListInstancesRequest
+	(*ListInstancesResponse)(nil),      // 26: workflow.v1.ListInstancesResponse
+	(*PollJobsRequest)(nil),            // 27: workflow.v1.PollJobsRequest
+	(*PollJobsResponse)(nil),           // 28: workflow.v1.PollJobsResponse
+	(*CompleteJobRequest)(nil),         // 29: workflow.v1.CompleteJobRequest
+	(*CompleteJobResponse)(nil),        // 30: workflow.v1.CompleteJobResponse
+	(*FailJobRequest)(nil),             // 31: workflow.v1.FailJobRequest
+	(*FailJobResponse)(nil),            // 32: workflow.v1.FailJobResponse
+	(*CompleteUserTaskRequest)(nil),    // 33: workflow.v1.CompleteUserTaskRequest
+	(*CompleteUserTaskResponse)(nil),   // 34: workflow.v1.CompleteUserTaskResponse
+	(*SignalWaitRequest)(nil),          // 35: workflow.v1.SignalWaitRequest
+	(*SignalWaitResponse)(nil),         // 36: workflow.v1.SignalWaitResponse
+	nil,                                // 37: workflow.v1.WorkflowStep.ConditionalNextStepsEntry
+	nil,                                // 38: workflow.v1.WorkflowStep.TransformationsEntry
+	(*structpb.Struct)(nil),            // 39: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),      // 40: google.protobuf.Timestamp
+	(*structpb.Value)(nil),             // 41: google.protobuf.Value
 }
 var file_workflow_v1_engine_proto_depIdxs = []int32{
 	5,  // 0: workflow.v1.WorkflowDefinition.steps:type_name -> workflow.v1.WorkflowStep
-	37, // 1: workflow.v1.WorkflowDefinition.metadata:type_name -> google.protobuf.Struct
+	39, // 1: workflow.v1.WorkflowDefinition.metadata:type_name -> google.protobuf.Struct
 	0,  // 2: workflow.v1.WorkflowStep.type:type_name -> workflow.v1.StepType
-	35, // 3: workflow.v1.WorkflowStep.conditional_next_steps:type_name -> workflow.v1.WorkflowStep.ConditionalNextStepsEntry
-	36, // 4: workflow.v1.WorkflowStep.transformations:type_name -> workflow.v1.WorkflowStep.TransformationsEntry
+	37, // 3: workflow.v1.WorkflowStep.conditional_next_steps:type_name -> workflow.v1.WorkflowStep.ConditionalNextStepsEntry
+	38, // 4: workflow.v1.WorkflowStep.transformations:type_name -> workflow.v1.WorkflowStep.TransformationsEntry
 	6,  // 5: workflow.v1.WorkflowStep.boundary_events:type_name -> workflow.v1.BoundaryEvent
 	3,  // 6: workflow.v1.BoundaryEvent.type:type_name -> workflow.v1.BoundaryEventType
 	1,  // 7: workflow.v1.WorkflowInstance.status:type_name -> workflow.v1.InstanceStatus
-	37, // 8: workflow.v1.WorkflowInstance.variables:type_name -> google.protobuf.Struct
-	38, // 9: workflow.v1.WorkflowInstance.started_at:type_name -> google.protobuf.Timestamp
-	38, // 10: workflow.v1.WorkflowInstance.completed_at:type_name -> google.protobuf.Timestamp
+	39, // 8: workflow.v1.WorkflowInstance.variables:type_name -> google.protobuf.Struct
+	40, // 9: workflow.v1.WorkflowInstance.started_at:type_name -> google.protobuf.Timestamp
+	40, // 10: workflow.v1.WorkflowInstance.completed_at:type_name -> google.protobuf.Timestamp
 	0,  // 11: workflow.v1.StepExecution.step_type:type_name -> workflow.v1.StepType
 	2,  // 12: workflow.v1.StepExecution.status:type_name -> workflow.v1.StepExecutionStatus
-	38, // 13: workflow.v1.StepExecution.started_at:type_name -> google.protobuf.Timestamp
-	38, // 14: workflow.v1.StepExecution.ended_at:type_name -> google.protobuf.Timestamp
-	37, // 15: workflow.v1.Job.variables:type_name -> google.protobuf.Struct
-	38, // 16: workflow.v1.Job.lock_expires_at:type_name -> google.protobuf.Timestamp
-	38, // 17: workflow.v1.JobDispatchEvent.created_at:type_name -> google.protobuf.Timestamp
+	40, // 13: workflow.v1.StepExecution.started_at:type_name -> google.protobuf.Timestamp
+	40, // 14: workflow.v1.StepExecution.ended_at:type_name -> google.protobuf.Timestamp
+	39, // 15: workflow.v1.Job.variables:type_name -> google.protobuf.Struct
+	40, // 16: workflow.v1.Job.lock_expires_at:type_name -> google.protobuf.Timestamp
+	40, // 17: workflow.v1.JobDispatchEvent.created_at:type_name -> google.protobuf.Timestamp
 	4,  // 18: workflow.v1.UploadDefinitionRequest.definition:type_name -> workflow.v1.WorkflowDefinition
-	38, // 19: workflow.v1.UploadDefinitionResponse.uploaded_at:type_name -> google.protobuf.Timestamp
+	40, // 19: workflow.v1.UploadDefinitionResponse.uploaded_at:type_name -> google.protobuf.Timestamp
 	4,  // 20: workflow.v1.GetDefinitionResponse.definition:type_name -> workflow.v1.WorkflowDefinition
 	4,  // 21: workflow.v1.ListDefinitionsResponse.definitions:type_name -> workflow.v1.WorkflowDefinition
-	37, // 22: workflow.v1.StartInstanceRequest.variables:type_name -> google.protobuf.Struct
+	39, // 22: workflow.v1.StartInstanceRequest.variables:type_name -> google.protobuf.Struct
 	7,  // 23: workflow.v1.StartInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
 	7,  // 24: workflow.v1.GetInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
 	8,  // 25: workflow.v1.GetInstanceHistoryResponse.executions:type_name -> workflow.v1.StepExecution
 	7,  // 26: workflow.v1.CancelInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
-	9,  // 27: workflow.v1.PollJobsResponse.jobs:type_name -> workflow.v1.Job
-	37, // 28: workflow.v1.CompleteJobRequest.variables_to_set:type_name -> google.protobuf.Struct
-	37, // 29: workflow.v1.CompleteUserTaskRequest.result:type_name -> google.protobuf.Struct
-	37, // 30: workflow.v1.SignalWaitRequest.variables:type_name -> google.protobuf.Struct
-	39, // 31: workflow.v1.WorkflowStep.TransformationsEntry.value:type_name -> google.protobuf.Value
-	11, // 32: workflow.v1.WorkflowEngine.UploadDefinition:input_type -> workflow.v1.UploadDefinitionRequest
-	13, // 33: workflow.v1.WorkflowEngine.GetDefinition:input_type -> workflow.v1.GetDefinitionRequest
-	15, // 34: workflow.v1.WorkflowEngine.ListDefinitions:input_type -> workflow.v1.ListDefinitionsRequest
-	17, // 35: workflow.v1.WorkflowEngine.StartInstance:input_type -> workflow.v1.StartInstanceRequest
-	19, // 36: workflow.v1.WorkflowEngine.GetInstance:input_type -> workflow.v1.GetInstanceRequest
-	21, // 37: workflow.v1.WorkflowEngine.GetInstanceHistory:input_type -> workflow.v1.GetInstanceHistoryRequest
-	23, // 38: workflow.v1.WorkflowEngine.CancelInstance:input_type -> workflow.v1.CancelInstanceRequest
-	25, // 39: workflow.v1.WorkflowEngine.PollJobs:input_type -> workflow.v1.PollJobsRequest
-	27, // 40: workflow.v1.WorkflowEngine.CompleteJob:input_type -> workflow.v1.CompleteJobRequest
-	29, // 41: workflow.v1.WorkflowEngine.FailJob:input_type -> workflow.v1.FailJobRequest
-	31, // 42: workflow.v1.WorkflowEngine.CompleteUserTask:input_type -> workflow.v1.CompleteUserTaskRequest
-	33, // 43: workflow.v1.WorkflowEngine.SignalWait:input_type -> workflow.v1.SignalWaitRequest
-	12, // 44: workflow.v1.WorkflowEngine.UploadDefinition:output_type -> workflow.v1.UploadDefinitionResponse
-	14, // 45: workflow.v1.WorkflowEngine.GetDefinition:output_type -> workflow.v1.GetDefinitionResponse
-	16, // 46: workflow.v1.WorkflowEngine.ListDefinitions:output_type -> workflow.v1.ListDefinitionsResponse
-	18, // 47: workflow.v1.WorkflowEngine.StartInstance:output_type -> workflow.v1.StartInstanceResponse
-	20, // 48: workflow.v1.WorkflowEngine.GetInstance:output_type -> workflow.v1.GetInstanceResponse
-	22, // 49: workflow.v1.WorkflowEngine.GetInstanceHistory:output_type -> workflow.v1.GetInstanceHistoryResponse
-	24, // 50: workflow.v1.WorkflowEngine.CancelInstance:output_type -> workflow.v1.CancelInstanceResponse
-	26, // 51: workflow.v1.WorkflowEngine.PollJobs:output_type -> workflow.v1.PollJobsResponse
-	28, // 52: workflow.v1.WorkflowEngine.CompleteJob:output_type -> workflow.v1.CompleteJobResponse
-	30, // 53: workflow.v1.WorkflowEngine.FailJob:output_type -> workflow.v1.FailJobResponse
-	32, // 54: workflow.v1.WorkflowEngine.CompleteUserTask:output_type -> workflow.v1.CompleteUserTaskResponse
-	34, // 55: workflow.v1.WorkflowEngine.SignalWait:output_type -> workflow.v1.SignalWaitResponse
-	44, // [44:56] is the sub-list for method output_type
-	32, // [32:44] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	1,  // 27: workflow.v1.ListInstancesRequest.status:type_name -> workflow.v1.InstanceStatus
+	7,  // 28: workflow.v1.ListInstancesResponse.instances:type_name -> workflow.v1.WorkflowInstance
+	9,  // 29: workflow.v1.PollJobsResponse.jobs:type_name -> workflow.v1.Job
+	39, // 30: workflow.v1.CompleteJobRequest.variables_to_set:type_name -> google.protobuf.Struct
+	39, // 31: workflow.v1.CompleteUserTaskRequest.result:type_name -> google.protobuf.Struct
+	39, // 32: workflow.v1.SignalWaitRequest.variables:type_name -> google.protobuf.Struct
+	41, // 33: workflow.v1.WorkflowStep.TransformationsEntry.value:type_name -> google.protobuf.Value
+	11, // 34: workflow.v1.WorkflowEngine.UploadDefinition:input_type -> workflow.v1.UploadDefinitionRequest
+	13, // 35: workflow.v1.WorkflowEngine.GetDefinition:input_type -> workflow.v1.GetDefinitionRequest
+	15, // 36: workflow.v1.WorkflowEngine.ListDefinitions:input_type -> workflow.v1.ListDefinitionsRequest
+	17, // 37: workflow.v1.WorkflowEngine.StartInstance:input_type -> workflow.v1.StartInstanceRequest
+	19, // 38: workflow.v1.WorkflowEngine.GetInstance:input_type -> workflow.v1.GetInstanceRequest
+	21, // 39: workflow.v1.WorkflowEngine.GetInstanceHistory:input_type -> workflow.v1.GetInstanceHistoryRequest
+	23, // 40: workflow.v1.WorkflowEngine.CancelInstance:input_type -> workflow.v1.CancelInstanceRequest
+	25, // 41: workflow.v1.WorkflowEngine.ListInstances:input_type -> workflow.v1.ListInstancesRequest
+	27, // 42: workflow.v1.WorkflowEngine.PollJobs:input_type -> workflow.v1.PollJobsRequest
+	29, // 43: workflow.v1.WorkflowEngine.CompleteJob:input_type -> workflow.v1.CompleteJobRequest
+	31, // 44: workflow.v1.WorkflowEngine.FailJob:input_type -> workflow.v1.FailJobRequest
+	33, // 45: workflow.v1.WorkflowEngine.CompleteUserTask:input_type -> workflow.v1.CompleteUserTaskRequest
+	35, // 46: workflow.v1.WorkflowEngine.SignalWait:input_type -> workflow.v1.SignalWaitRequest
+	12, // 47: workflow.v1.WorkflowEngine.UploadDefinition:output_type -> workflow.v1.UploadDefinitionResponse
+	14, // 48: workflow.v1.WorkflowEngine.GetDefinition:output_type -> workflow.v1.GetDefinitionResponse
+	16, // 49: workflow.v1.WorkflowEngine.ListDefinitions:output_type -> workflow.v1.ListDefinitionsResponse
+	18, // 50: workflow.v1.WorkflowEngine.StartInstance:output_type -> workflow.v1.StartInstanceResponse
+	20, // 51: workflow.v1.WorkflowEngine.GetInstance:output_type -> workflow.v1.GetInstanceResponse
+	22, // 52: workflow.v1.WorkflowEngine.GetInstanceHistory:output_type -> workflow.v1.GetInstanceHistoryResponse
+	24, // 53: workflow.v1.WorkflowEngine.CancelInstance:output_type -> workflow.v1.CancelInstanceResponse
+	26, // 54: workflow.v1.WorkflowEngine.ListInstances:output_type -> workflow.v1.ListInstancesResponse
+	28, // 55: workflow.v1.WorkflowEngine.PollJobs:output_type -> workflow.v1.PollJobsResponse
+	30, // 56: workflow.v1.WorkflowEngine.CompleteJob:output_type -> workflow.v1.CompleteJobResponse
+	32, // 57: workflow.v1.WorkflowEngine.FailJob:output_type -> workflow.v1.FailJobResponse
+	34, // 58: workflow.v1.WorkflowEngine.CompleteUserTask:output_type -> workflow.v1.CompleteUserTaskResponse
+	36, // 59: workflow.v1.WorkflowEngine.SignalWait:output_type -> workflow.v1.SignalWaitResponse
+	47, // [47:60] is the sub-list for method output_type
+	34, // [34:47] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_workflow_v1_engine_proto_init() }
@@ -2572,7 +2716,7 @@ func file_workflow_v1_engine_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workflow_v1_engine_proto_rawDesc), len(file_workflow_v1_engine_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   33,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

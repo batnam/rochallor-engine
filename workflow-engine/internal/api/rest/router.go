@@ -61,6 +61,7 @@ func NewRouter(
 	r.Get("/v1/definitions/{id}/versions/{version}", defH.GetVersion)
 
 	// Instances
+	r.Get("/v1/instances", instH.List)
 	r.Post("/v1/instances", instH.Start)
 	r.Get("/v1/instances/{id}", instH.Get)
 	r.Get("/v1/instances/{id}/history", instH.GetHistory)
