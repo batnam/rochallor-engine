@@ -154,6 +154,29 @@ func (s *EngineServer) CancelInstance(ctx context.Context, req *workflowv1.Cance
 	return &workflowv1.CancelInstanceResponse{Instance: internalInstToProto(inst)}, nil
 }
 
+func (s *EngineServer) ListInstances(ctx context.Context, req *workflowv1.ListInstancesRequest) (*workflowv1.ListInstancesResponse, error) {
+	pageSize := int(req.PageSize)
+	if pageSize == 0 {
+		pageSize = 20
+	}
+	statusStr := ""
+	if req.Status != workflowv1.InstanceStatus_INSTANCE_STATUS_UNSPECIFIED {
+		statusStr = req.Status.String()[len("INSTANCE_STATUS_"):]
+	}
+	result, err := s.instSvc.List(ctx, req.DefinitionId, statusStr, req.BusinessKey, int(req.Page), pageSize)
+	if err != nil {
+		return nil, engineapi.GRPCInternal(err)
+	}
+	var insts []*workflowv1.WorkflowInstance
+	for i := range result.Items {
+		insts = append(insts, internalInstToProto(&result.Items[i]))
+	}
+	return &workflowv1.ListInstancesResponse{
+		Instances: insts,
+		Total:     int32(result.Total),
+	}, nil
+}
+
 // ── Jobs ──────────────────────────────────────────────────────────────��───────
 
 func (s *EngineServer) PollJobs(ctx context.Context, req *workflowv1.PollJobsRequest) (*workflowv1.PollJobsResponse, error) {

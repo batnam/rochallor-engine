@@ -35,6 +35,7 @@ const (
 	WorkflowEngine_GetInstance_FullMethodName        = "/workflow.v1.WorkflowEngine/GetInstance"
 	WorkflowEngine_GetInstanceHistory_FullMethodName = "/workflow.v1.WorkflowEngine/GetInstanceHistory"
 	WorkflowEngine_CancelInstance_FullMethodName     = "/workflow.v1.WorkflowEngine/CancelInstance"
+	WorkflowEngine_ListInstances_FullMethodName      = "/workflow.v1.WorkflowEngine/ListInstances"
 	WorkflowEngine_PollJobs_FullMethodName           = "/workflow.v1.WorkflowEngine/PollJobs"
 	WorkflowEngine_CompleteJob_FullMethodName        = "/workflow.v1.WorkflowEngine/CompleteJob"
 	WorkflowEngine_FailJob_FullMethodName            = "/workflow.v1.WorkflowEngine/FailJob"
@@ -55,6 +56,7 @@ type WorkflowEngineClient interface {
 	GetInstance(ctx context.Context, in *GetInstanceRequest, opts ...grpc.CallOption) (*GetInstanceResponse, error)
 	GetInstanceHistory(ctx context.Context, in *GetInstanceHistoryRequest, opts ...grpc.CallOption) (*GetInstanceHistoryResponse, error)
 	CancelInstance(ctx context.Context, in *CancelInstanceRequest, opts ...grpc.CallOption) (*CancelInstanceResponse, error)
+	ListInstances(ctx context.Context, in *ListInstancesRequest, opts ...grpc.CallOption) (*ListInstancesResponse, error)
 	// Jobs (SDK-facing)
 	PollJobs(ctx context.Context, in *PollJobsRequest, opts ...grpc.CallOption) (*PollJobsResponse, error)
 	CompleteJob(ctx context.Context, in *CompleteJobRequest, opts ...grpc.CallOption) (*CompleteJobResponse, error)
@@ -143,6 +145,16 @@ func (c *workflowEngineClient) CancelInstance(ctx context.Context, in *CancelIns
 	return out, nil
 }
 
+func (c *workflowEngineClient) ListInstances(ctx context.Context, in *ListInstancesRequest, opts ...grpc.CallOption) (*ListInstancesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListInstancesResponse)
+	err := c.cc.Invoke(ctx, WorkflowEngine_ListInstances_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *workflowEngineClient) PollJobs(ctx context.Context, in *PollJobsRequest, opts ...grpc.CallOption) (*PollJobsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PollJobsResponse)
@@ -206,6 +218,7 @@ type WorkflowEngineServer interface {
 	GetInstance(context.Context, *GetInstanceRequest) (*GetInstanceResponse, error)
 	GetInstanceHistory(context.Context, *GetInstanceHistoryRequest) (*GetInstanceHistoryResponse, error)
 	CancelInstance(context.Context, *CancelInstanceRequest) (*CancelInstanceResponse, error)
+	ListInstances(context.Context, *ListInstancesRequest) (*ListInstancesResponse, error)
 	// Jobs (SDK-facing)
 	PollJobs(context.Context, *PollJobsRequest) (*PollJobsResponse, error)
 	CompleteJob(context.Context, *CompleteJobRequest) (*CompleteJobResponse, error)
@@ -244,6 +257,9 @@ func (UnimplementedWorkflowEngineServer) GetInstanceHistory(context.Context, *Ge
 }
 func (UnimplementedWorkflowEngineServer) CancelInstance(context.Context, *CancelInstanceRequest) (*CancelInstanceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelInstance not implemented")
+}
+func (UnimplementedWorkflowEngineServer) ListInstances(context.Context, *ListInstancesRequest) (*ListInstancesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListInstances not implemented")
 }
 func (UnimplementedWorkflowEngineServer) PollJobs(context.Context, *PollJobsRequest) (*PollJobsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PollJobs not implemented")
@@ -407,6 +423,24 @@ func _WorkflowEngine_CancelInstance_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkflowEngine_ListInstances_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInstancesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowEngineServer).ListInstances(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowEngine_ListInstances_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowEngineServer).ListInstances(ctx, req.(*ListInstancesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WorkflowEngine_PollJobs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PollJobsRequest)
 	if err := dec(in); err != nil {
@@ -531,6 +565,10 @@ var WorkflowEngine_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelInstance",
 			Handler:    _WorkflowEngine_CancelInstance_Handler,
+		},
+		{
+			MethodName: "ListInstances",
+			Handler:    _WorkflowEngine_ListInstances_Handler,
 		},
 		{
 			MethodName: "PollJobs",

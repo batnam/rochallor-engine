@@ -3,6 +3,7 @@ package rest
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	engineapi "github.com/batnam/rochallor-engine/workflow-engine/internal/api"
@@ -24,6 +25,27 @@ type startRequest struct {
 	DefinitionVersion int            `json:"definitionVersion,omitempty"`
 	Variables         map[string]any `json:"variables,omitempty"`
 	BusinessKey       string         `json:"businessKey,omitempty"`
+}
+
+// List handles GET /v1/instances.
+func (h *InstanceHandlers) List(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	definitionID := q.Get("definitionId")
+	status := q.Get("status")
+	businessKey := q.Get("businessKey")
+
+	page, _ := strconv.Atoi(q.Get("page"))
+	pageSize := 20
+	if ps, err := strconv.Atoi(q.Get("pageSize")); err == nil && ps > 0 {
+		pageSize = ps
+	}
+
+	result, err := h.svc.List(r.Context(), definitionID, status, businessKey, page, pageSize)
+	if err != nil {
+		engineapi.WriteInternalError(w, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // Start handles POST /v1/instances.

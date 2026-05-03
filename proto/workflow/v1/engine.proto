@@ -30,6 +30,7 @@ service WorkflowEngine {
   rpc GetInstance(GetInstanceRequest) returns (GetInstanceResponse);
   rpc GetInstanceHistory(GetInstanceHistoryRequest) returns (GetInstanceHistoryResponse);
   rpc CancelInstance(CancelInstanceRequest) returns (CancelInstanceResponse);
+  rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
 
   // Jobs (SDK-facing)
   rpc PollJobs(PollJobsRequest) returns (PollJobsResponse);
@@ -271,6 +272,19 @@ message CancelInstanceRequest {
 
 message CancelInstanceResponse {
   WorkflowInstance instance = 1;
+}
+
+message ListInstancesRequest {
+  string definition_id = 1;
+  InstanceStatus status = 2; // INSTANCE_STATUS_UNSPECIFIED = all
+  string business_key = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+}
+
+message ListInstancesResponse {
+  repeated WorkflowInstance instances = 1;
+  int32 total = 2;
 }
 
 message PollJobsRequest {

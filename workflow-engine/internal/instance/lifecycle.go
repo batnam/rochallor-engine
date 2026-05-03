@@ -371,6 +371,78 @@ func (s *Service) GetHistory(ctx context.Context, instanceID string) ([]StepExec
 	return execs, rows.Err()
 }
 
+// ListResult is the page returned by List.
+type ListResult struct {
+	Items []WorkflowInstance `json:"items"`
+	Total int                `json:"total"`
+}
+
+// List returns a page of instances, optionally filtered by definitionId, status, and businessKey.
+func (s *Service) List(ctx context.Context, definitionID, status, businessKey string, page, pageSize int) (ListResult, error) {
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	offset := page * pageSize
+
+	var conds []string
+	var args []any
+	n := 1
+
+	if definitionID != "" {
+		conds = append(conds, fmt.Sprintf("definition_id = $%d", n))
+		args = append(args, definitionID)
+		n++
+	}
+	if status != "" {
+		conds = append(conds, fmt.Sprintf("status = $%d", n))
+		args = append(args, status)
+		n++
+	}
+	if businessKey != "" {
+		conds = append(conds, fmt.Sprintf("business_key = $%d", n))
+		args = append(args, businessKey)
+		n++
+	}
+
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	itemArgs := append(append([]any{}, args...), pageSize, offset)
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, definition_id, definition_version, status, current_step_ids, variables,
+		        started_at, completed_at, failure_reason, business_key
+		  FROM workflow_instance`+where+fmt.Sprintf(" ORDER BY started_at DESC LIMIT $%d OFFSET $%d", n, n+1),
+		itemArgs...,
+	)
+	if err != nil {
+		return ListResult{}, fmt.Errorf("list instances: query: %w", err)
+	}
+	defer rows.Close()
+
+	var items []WorkflowInstance
+	for rows.Next() {
+		var inst WorkflowInstance
+		if err = rows.Scan(
+			&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
+			&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt, &inst.CompletedAt,
+			&inst.FailureReason, &inst.BusinessKey,
+		); err != nil {
+			return ListResult{}, fmt.Errorf("list instances: scan: %w", err)
+		}
+		items = append(items, inst)
+	}
+	if err = rows.Err(); err != nil {
+		return ListResult{}, fmt.Errorf("list instances: rows: %w", err)
+	}
+
+	var total int
+	_ = s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM workflow_instance"+where, args...).Scan(&total)
+
+	return ListResult{Items: items, Total: total}, nil
+}
+
 // ── internal step dispatch ────────────────────────────────────────────────────
 
 // dispatchStep creates a step_execution row and routes to the appropriate handler.
