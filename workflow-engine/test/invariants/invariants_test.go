@@ -74,7 +74,7 @@ func TestMain(m *testing.M) {
 
 	gDefRepo = definition.NewRepository(gPool)
 	rt := polling.New()
-	gInstSvc = instance.NewService(gPool, gDefRepo, rt.Dispatcher())
+	gInstSvc = instance.NewService(ctx, gPool, gDefRepo, rt.Dispatcher())
 
 	os.Exit(m.Run())
 }

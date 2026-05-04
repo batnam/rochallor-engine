@@ -26,6 +26,7 @@ import (
 
 // Service manages workflow instance lifecycle.
 type Service struct {
+	rootCtx    context.Context
 	pool       *pgxpool.Pool
 	defRepo    *defrepo.Repository
 	dispatcher dispatch.Dispatcher
@@ -37,11 +38,13 @@ func (s *Service) Dispatcher() dispatch.Dispatcher {
 }
 
 // NewService creates a Service backed by pool, defRepo, and dispatcher.
+// rootCtx is the engine's root context; it is used as the parent for any
+// goroutines spawned by Service (e.g. autoStartNextWorkflow) so they are
+// cancelled when the engine shuts down.
 // The dispatcher is invoked on every SERVICE_TASK job insert inside the same transaction.
-// In polling mode it is a no-op; in kafka_outbox
-// mode it writes a dispatch_outbox row.
-func NewService(pool *pgxpool.Pool, defRepo *defrepo.Repository, dispatcher dispatch.Dispatcher) *Service {
-	return &Service{pool: pool, defRepo: defRepo, dispatcher: dispatcher}
+// In polling mode it is a no-op; in kafka_outbox mode it writes a dispatch_outbox row.
+func NewService(rootCtx context.Context, pool *pgxpool.Pool, defRepo *defrepo.Repository, dispatcher dispatch.Dispatcher) *Service {
+	return &Service{rootCtx: rootCtx, pool: pool, defRepo: defRepo, dispatcher: dispatcher}
 }
 
 // Start creates a new workflow instance for the given definition, seeds
@@ -160,9 +163,17 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 	}
 
 	return pgstore.RunInTx(ctx, s.pool, "instance.complete_job", pgx.TxOptions{}, func(tx pgx.Tx) error {
-		// Check idempotency / cancellation: skip if job is already COMPLETED or was CANCELLED by an interrupting timer.
+		// Lock the job row and check idempotency / cancellation.
+		// FOR UPDATE serialises concurrent CompleteJobAndAdvance calls for the same
+		// job: the second caller blocks here until the first commits, then reads
+		// status=COMPLETED and short-circuits — preventing double-advance.
 		var status string
-		_ = tx.QueryRow(ctx, `SELECT status FROM job WHERE id = $1`, jobID).Scan(&status)
+		if err := tx.QueryRow(ctx,
+			`SELECT status FROM job WHERE id = $1 FOR UPDATE`,
+			jobID,
+		).Scan(&status); err != nil {
+			return fmt.Errorf("read job status: %w", err)
+		}
 		if status == "COMPLETED" || status == "CANCELLED" {
 			return nil
 		}
@@ -470,14 +481,15 @@ func (s *Service) dispatchStep(ctx context.Context, tx pgx.Tx, inst *WorkflowIns
 		return fmt.Errorf("create step_execution for %q: %w", stepID, err)
 	}
 
-	// Add to current_step_ids if not already present
-	addToCurrentSteps(inst, stepID)
+	// Compute the new step list, write to DB, then update in-memory only on success.
+	newIDs := withStep(inst.CurrentStepIDs, stepID)
 	if _, err := tx.Exec(ctx,
 		`UPDATE workflow_instance SET current_step_ids = $1 WHERE id = $2`,
-		inst.CurrentStepIDs, inst.ID,
+		newIDs, inst.ID,
 	); err != nil {
 		return fmt.Errorf("update current steps: %w", err)
 	}
+	inst.CurrentStepIDs = newIDs
 
 	// One log line per step entry — single chokepoint covers all workflow
 	// activity (service tasks, user tasks, waits, decisions, gateways, end).
@@ -583,7 +595,10 @@ func (s *Service) handleUserTask(ctx context.Context, tx pgx.Tx, inst *WorkflowI
 }
 
 func (s *Service) handleDecision(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep) error {
-	vars := variablesToMap(inst.Variables)
+	vars, err := variablesToMap(inst.Variables)
+	if err != nil {
+		return s.failInstance(ctx, tx, inst, step.ID, fmt.Sprintf("corrupt instance variables: %v", err))
+	}
 
 	// Evaluate in declaration order
 	for expr, target := range step.ConditionalNextSteps {
@@ -612,7 +627,10 @@ func (s *Service) handleDecision(ctx context.Context, tx pgx.Tx, inst *WorkflowI
 }
 
 func (s *Service) handleTransformation(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string) error {
-	vars := variablesToMap(inst.Variables)
+	vars, err := variablesToMap(inst.Variables)
+	if err != nil {
+		return fmt.Errorf("corrupt instance variables: %w", err)
+	}
 	delta := make(map[string]any, len(step.Transformations))
 
 	for k, rawVal := range step.Transformations {
@@ -700,9 +718,11 @@ func (s *Service) handleJoinGateway(ctx context.Context, tx pgx.Tx, inst *Workfl
 	}
 	expectedBranches := len(pgStep.ParallelNextSteps)
 
-	// Count completed branches that have reached this join step
+	// Count completed branch leaf steps using the transaction so that the current
+	// branch's step_execution — marked COMPLETED earlier in this same tx by
+	// CompleteJobAndAdvance — is visible without a compensating increment.
 	var arrivedBranches int
-	if err := s.pool.QueryRow(ctx,
+	if err := tx.QueryRow(ctx,
 		`SELECT COUNT(DISTINCT step_id) FROM step_execution
 		  WHERE instance_id = $1 AND step_id = ANY($2) AND status = 'COMPLETED'`,
 		inst.ID, branchLeafsFor(pgStep),
@@ -718,7 +738,6 @@ func (s *Service) handleJoinGateway(ctx context.Context, tx pgx.Tx, inst *Workfl
 	); err != nil {
 		return err
 	}
-	arrivedBranches++ // count this arrival too
 
 	if arrivedBranches < expectedBranches {
 		// Not all branches done yet; stay waiting
@@ -737,23 +756,34 @@ func (s *Service) handleEnd(ctx context.Context, tx pgx.Tx, inst *WorkflowInstan
 	); err != nil {
 		return err
 	}
-	removeFromCurrentSteps(inst, step.ID)
+	newIDs := withoutStep(inst.CurrentStepIDs, step.ID)
 
-	// Mark instance COMPLETED
+	// Mark instance COMPLETED — mutate in-memory only after the DB write succeeds.
 	if _, err := tx.Exec(ctx,
 		`UPDATE workflow_instance SET status = 'COMPLETED', completed_at = now(), current_step_ids = $1 WHERE id = $2`,
-		inst.CurrentStepIDs, inst.ID,
+		newIDs, inst.ID,
 	); err != nil {
 		return err
 	}
+	inst.CurrentStepIDs = newIDs
 	inst.Status = InstanceStatusCompleted
 
 	// autoStartNextWorkflow
 	if def.AutoStartNextWorkflow && def.NextWorkflowId != "" {
+		nextID := def.NextWorkflowId
+		vars, err := variablesToMap(inst.Variables)
+		if err != nil {
+			slog.Error("autoStartNextWorkflow: corrupt instance variables, skipping chain",
+				"instance_id", inst.ID, "next_workflow_id", nextID, "err", err)
+			return nil
+		}
 		go func() {
-			bgCtx := context.Background()
-			vars := variablesToMap(inst.Variables)
-			_, _ = s.Start(bgCtx, def.NextWorkflowId, 0, vars, "")
+			tCtx, cancel := context.WithTimeout(s.rootCtx, 30*time.Second)
+			defer cancel()
+			if _, err := s.Start(tCtx, nextID, 0, vars, ""); err != nil {
+				slog.Error("autoStartNextWorkflow: failed to start chained workflow",
+					"next_workflow_id", nextID, "err", err)
+			}
 		}()
 	}
 	return nil
@@ -827,23 +857,34 @@ func branchLeafsFor(pg *definition.WorkflowStep) []string {
 	return pg.ParallelNextSteps
 }
 
-func addToCurrentSteps(inst *WorkflowInstance, stepID string) {
-	for _, s := range inst.CurrentStepIDs {
-		if s == stepID {
-			return
-		}
-	}
-	inst.CurrentStepIDs = append(inst.CurrentStepIDs, stepID)
+func removeFromCurrentSteps(inst *WorkflowInstance, stepID string) {
+	inst.CurrentStepIDs = withoutStep(inst.CurrentStepIDs, stepID)
 }
 
-func removeFromCurrentSteps(inst *WorkflowInstance, stepID string) {
-	updated := make([]string, 0, len(inst.CurrentStepIDs))
-	for _, s := range inst.CurrentStepIDs {
-		if s != stepID {
-			updated = append(updated, s)
+// withStep returns a new slice containing all ids plus stepID if not already
+// present. It never mutates the input slice.
+func withStep(ids []string, stepID string) []string {
+	for _, s := range ids {
+		if s == stepID {
+			return ids
 		}
 	}
-	inst.CurrentStepIDs = updated
+	out := make([]string, len(ids)+1)
+	copy(out, ids)
+	out[len(ids)] = stepID
+	return out
+}
+
+// withoutStep returns a new slice with all ids except stepID.
+// It never mutates the input slice.
+func withoutStep(ids []string, stepID string) []string {
+	out := make([]string, 0, len(ids))
+	for _, s := range ids {
+		if s != stepID {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // recomputeInstanceStatus inspects the remaining current_step_ids and returns
@@ -877,18 +918,23 @@ func recomputeInstanceStatus(inst *WorkflowInstance, def *definition.WorkflowDef
 // If conditionalNextSteps is set but no branch matches, the instance is
 // failed with reason DecisionNoBranchMatched — consistent with handleDecision.
 func (s *Service) advancePastStep(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, completedStep *definition.WorkflowStep) error {
-	removeFromCurrentSteps(inst, completedStep.ID)
-	inst.Status = recomputeInstanceStatus(inst, def)
+	newIDs := withoutStep(inst.CurrentStepIDs, completedStep.ID)
+	newStatus := recomputeInstanceStatus(&WorkflowInstance{CurrentStepIDs: newIDs}, def)
 
 	if _, err := tx.Exec(ctx,
 		`UPDATE workflow_instance SET current_step_ids = $1, status = $2 WHERE id = $3`,
-		inst.CurrentStepIDs, string(inst.Status), inst.ID,
+		newIDs, string(newStatus), inst.ID,
 	); err != nil {
 		return fmt.Errorf("advance: update instance: %w", err)
 	}
+	inst.CurrentStepIDs = newIDs
+	inst.Status = newStatus
 
 	if len(completedStep.ConditionalNextSteps) > 0 {
-		vars := variablesToMap(inst.Variables)
+		vars, err := variablesToMap(inst.Variables)
+		if err != nil {
+			return s.failInstance(ctx, tx, inst, completedStep.ID, fmt.Sprintf("corrupt instance variables: %v", err))
+		}
 		for expr, target := range completedStep.ConditionalNextSteps {
 			result, err := evaluateExpr(expr, vars)
 			if err != nil {
@@ -972,12 +1018,14 @@ func mergeVariables(existing json.RawMessage, delta map[string]any) (json.RawMes
 	return json.Marshal(base)
 }
 
-func variablesToMap(raw json.RawMessage) map[string]any {
+func variablesToMap(raw json.RawMessage) (map[string]any, error) {
 	m := make(map[string]any)
 	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &m)
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return nil, fmt.Errorf("unmarshal instance variables: %w", err)
+		}
 	}
-	return m
+	return m, nil
 }
 
 // evaluateExpr is a thin adapter to the expression package to avoid import cycle.

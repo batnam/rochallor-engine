@@ -2,6 +2,7 @@ package instance
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
@@ -50,6 +51,50 @@ func TestRemoveFromCurrentSteps(t *testing.T) {
 		if s == "b" {
 			t.Errorf("b should have been removed; got %v", inst.CurrentStepIDs)
 		}
+	}
+}
+
+func TestWithStep_AddsNewID(t *testing.T) {
+	got := withStep([]string{"a", "b"}, "c")
+	if !slices.Equal(got, []string{"a", "b", "c"}) {
+		t.Fatalf("got %v, want [a b c]", got)
+	}
+}
+
+func TestWithStep_IsIdempotentWhenPresent(t *testing.T) {
+	got := withStep([]string{"a", "b"}, "b")
+	if !slices.Equal(got, []string{"a", "b"}) {
+		t.Fatalf("got %v, want [a b]", got)
+	}
+}
+
+func TestWithStep_DoesNotMutateInput(t *testing.T) {
+	ids := []string{"a", "b"}
+	_ = withStep(ids, "c")
+	if !slices.Equal(ids, []string{"a", "b"}) {
+		t.Fatalf("input was mutated: %v", ids)
+	}
+}
+
+func TestWithoutStep_RemovesID(t *testing.T) {
+	got := withoutStep([]string{"a", "b", "c"}, "b")
+	if !slices.Equal(got, []string{"a", "c"}) {
+		t.Fatalf("got %v, want [a c]", got)
+	}
+}
+
+func TestWithoutStep_NilSafe(t *testing.T) {
+	got := withoutStep(nil, "x")
+	if len(got) != 0 {
+		t.Fatalf("got %v, want empty", got)
+	}
+}
+
+func TestWithoutStep_DoesNotMutateInput(t *testing.T) {
+	ids := []string{"a", "b", "c"}
+	_ = withoutStep(ids, "b")
+	if !slices.Equal(ids, []string{"a", "b", "c"}) {
+		t.Fatalf("input was mutated: %v", ids)
 	}
 }
 
