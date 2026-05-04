@@ -119,7 +119,7 @@ func run() error {
 	// ── Services ──────────────────────────────────────────────────────────────
 	instance.SetExpressionEvaluator(expression.Evaluate)
 	defRepo := definition.NewRepository(pool)
-	instSvc := instance.NewService(pool, defRepo, dispatchRT.Dispatcher())
+	instSvc := instance.NewService(ctx, pool, defRepo, dispatchRT.Dispatcher())
 
 	// ── Background workers ────────────────────────────────────────────────────
 	job.StartLeaseSweeper(ctx, pool, dispatchRT.Dispatcher(), 15*time.Second)
