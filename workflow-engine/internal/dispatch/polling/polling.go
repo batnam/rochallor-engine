@@ -11,8 +11,7 @@ package polling
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch"
 )
 
@@ -21,7 +20,7 @@ type Dispatcher struct{}
 
 // Enqueue is a no-op in polling mode. The polling worker claims the job row
 // directly via the existing FOR UPDATE SKIP LOCKED poll path.
-func (Dispatcher) Enqueue(ctx context.Context, tx pgx.Tx, job dispatch.DispatchJob) error {
+func (Dispatcher) Enqueue(ctx context.Context, tx db.Tx, job dispatch.DispatchJob) error {
 	return nil
 }
 

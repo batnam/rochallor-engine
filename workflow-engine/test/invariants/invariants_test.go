@@ -25,6 +25,7 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"pgregory.net/rapid"
 
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch/polling"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/instance"
@@ -35,9 +36,11 @@ import (
 // ── Shared infrastructure (TestMain) ─────────────────────────────────────────
 
 var (
-	gPool    *pgxpool.Pool
-	gDefRepo *definition.Repository
-	gInstSvc *instance.Service
+	gPool     *pgxpool.Pool
+	gDefRepo  definition.DefinitionRepository
+	gInstSvc  *instance.Service
+	gJobStore job.JobStore
+	gDbConn   db.DB
 )
 
 func TestMain(m *testing.M) {
@@ -72,9 +75,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	gDefRepo = definition.NewRepository(gPool)
+	gDefRepo = pgstore.NewDefinitionStore(gPool)
+	gJobStore = pgstore.NewJobStore(gPool)
+	gDbConn = pgstore.NewDB(gPool)
 	rt := polling.New()
-	gInstSvc = instance.NewService(ctx, gPool, gDefRepo, rt.Dispatcher())
+	instStore := pgstore.NewInstanceStore(gPool)
+	gInstSvc = instance.NewService(ctx, gDbConn, instStore, gDefRepo, rt.Dispatcher())
 
 	os.Exit(m.Run())
 }
@@ -147,7 +153,7 @@ func runChaosWorker(ctx context.Context, jobTypes []string) {
 			return
 		default:
 		}
-		jobs, err := job.Poll(ctx, gPool, "chaos-worker", jobTypes, 10)
+		jobs, err := job.Poll(ctx, gJobStore, "chaos-worker", jobTypes, 10)
 		if err != nil {
 			time.Sleep(20 * time.Millisecond)
 			continue
@@ -158,9 +164,9 @@ func runChaosWorker(ctx context.Context, jobTypes []string) {
 				_ = gInstSvc.CompleteJobAndAdvance(ctx, j.ID, "chaos-worker",
 					map[string]any{"chaosStep": j.JobType})
 			case roll < 9:
-				_ = job.Fail(ctx, gPool, disp, j.ID, "chaos-worker", "chaos retryable", true)
+				_ = job.Fail(ctx, gDbConn, gJobStore, disp, j.ID, "chaos-worker", "chaos retryable", true)
 			default:
-				_ = job.Fail(ctx, gPool, disp, j.ID, "chaos-worker", "chaos terminal", false)
+				_ = job.Fail(ctx, gDbConn, gJobStore, disp, j.ID, "chaos-worker", "chaos terminal", false)
 			}
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -264,7 +270,7 @@ func TestInvariant_CompletedInstanceHasNoDanglingCurrentSteps(t *testing.T) {
 					return
 				default:
 				}
-				jobs, _ := job.Poll(workerCtx, gPool, "det-worker", jobTypesFromDef(def), 10)
+				jobs, _ := job.Poll(workerCtx, gJobStore, "det-worker", jobTypesFromDef(def), 10)
 				for _, j := range jobs {
 					_ = gInstSvc.CompleteJobAndAdvance(workerCtx, j.ID, "det-worker", nil)
 				}
@@ -435,7 +441,7 @@ func TestInvariant_DuplicateJobCompletionIsIdempotent(t *testing.T) {
 		var firstJob instance.Job
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
-			jobs, _ := job.Poll(ctx, gPool, "idem-worker", []string{"pbt-idem-" + uid}, 1)
+			jobs, _ := job.Poll(ctx, gJobStore, "idem-worker", []string{"pbt-idem-" + uid}, 1)
 			if len(jobs) > 0 {
 				firstJob = jobs[0]
 				break
@@ -501,9 +507,9 @@ func TestInvariant_FailedInstanceAlwaysHasFailureReason(t *testing.T) {
 					return
 				default:
 				}
-				jobs, _ := job.Poll(workerCtx, gPool, "failing-worker", jobTypesFromDef(def), 10)
+				jobs, _ := job.Poll(workerCtx, gJobStore, "failing-worker", jobTypesFromDef(def), 10)
 				for _, j := range jobs {
-					_ = job.Fail(workerCtx, gPool, disp, j.ID, "failing-worker", "deliberate failure", false)
+					_ = job.Fail(workerCtx, gDbConn, gJobStore, disp, j.ID, "failing-worker", "deliberate failure", false)
 				}
 				time.Sleep(10 * time.Millisecond)
 			}

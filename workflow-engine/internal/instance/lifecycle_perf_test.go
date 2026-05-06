@@ -22,7 +22,7 @@
 // On completion it prints exactly one parseable line of plain text to stdout:
 //
 //	signals_processed_per_sec=<float>
-package instance
+package instance_test
 
 import (
 	"context"
@@ -39,6 +39,7 @@ import (
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch/polling"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/expression"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/instance"
 	pgstore "github.com/batnam/rochallor-engine/workflow-engine/internal/storage/postgres"
 )
 
@@ -69,9 +70,11 @@ func TestSignalThroughputBaseline(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	SetExpressionEvaluator(expression.Evaluate)
-	defRepo := definition.NewRepository(pool)
-	svc := NewService(pool, defRepo, polling.Dispatcher{})
+	instance.SetExpressionEvaluator(expression.Evaluate)
+	defRepo := pgstore.NewDefinitionStore(pool)
+	store := pgstore.NewInstanceStore(pool)
+	dbConn := pgstore.NewDB(pool)
+	svc := instance.NewService(ctx, dbConn, store, defRepo, polling.Dispatcher{})
 
 	def := buildWaitChainDefinition(sc001ChainLength)
 	if _, err := defRepo.Upload(ctx, def); err != nil {
@@ -119,8 +122,7 @@ func TestSignalThroughputBaseline(t *testing.T) {
 }
 
 // buildWaitChainDefinition constructs a definition with n sequential WAIT
-// steps followed by an END. Each signal advances one hop; N concurrent
-// senders serialize on the workflow_instance FOR UPDATE.
+// steps followed by an END.
 func buildWaitChainDefinition(n int) *definition.WorkflowDefinition {
 	steps := make([]definition.WorkflowStep, 0, n+1)
 	for i := 0; i < n; i++ {
@@ -160,7 +162,7 @@ func peekCurrentWaitStep(ctx context.Context, pool *pgxpool.Pool, instanceID str
 	if err != nil {
 		return "", false
 	}
-	if status != string(InstanceStatusActive) && status != string(InstanceStatusWaiting) {
+	if status != string(instance.InstanceStatusActive) && status != string(instance.InstanceStatusWaiting) {
 		return "", false
 	}
 	if len(current) == 0 {

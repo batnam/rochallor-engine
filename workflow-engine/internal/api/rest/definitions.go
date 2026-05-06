@@ -27,11 +27,11 @@ func pathID(r *http.Request) string {
 
 // DefinitionHandlers exposes the definition endpoints.
 type DefinitionHandlers struct {
-	repo *definition.Repository
+	repo definition.DefinitionRepository
 }
 
 // NewDefinitionHandlers creates DefinitionHandlers backed by repo.
-func NewDefinitionHandlers(repo *definition.Repository) *DefinitionHandlers {
+func NewDefinitionHandlers(repo definition.DefinitionRepository) *DefinitionHandlers {
 	return &DefinitionHandlers{repo: repo}
 }
 

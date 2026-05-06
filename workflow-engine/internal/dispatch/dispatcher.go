@@ -16,7 +16,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 )
 
 // DispatchJob is the narrow subset of job fields the dispatcher needs at
@@ -45,7 +45,7 @@ type DispatchJob struct {
 // network. Any network activity belongs to the relay goroutine, which runs
 // separately and operates on committed outbox rows.
 type Dispatcher interface {
-	Enqueue(ctx context.Context, tx pgx.Tx, job DispatchJob) error
+	Enqueue(ctx context.Context, tx db.Tx, job DispatchJob) error
 }
 
 // Runtime is the per-mode startup/shutdown lifecycle. For polling mode it is

@@ -82,7 +82,7 @@ func TestInvariant_JoinGatewayDoesNotFireEarly(t *testing.T) {
 		t.Helper()
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
-			jobs, err := job.Poll(ctx, gPool, "test-worker", []string{jobType}, 1)
+			jobs, err := job.Poll(ctx, gJobStore, "test-worker", []string{jobType}, 1)
 			if err != nil {
 				t.Fatalf("poll %s: %v", jobType, err)
 			}
@@ -116,7 +116,7 @@ func TestInvariant_JoinGatewayDoesNotFireEarly(t *testing.T) {
 
 	// After first branch: join must NOT have fired. The after-join job must not
 	// exist yet; the instance must still be active (or waiting on the right branch).
-	noJobs, _ := job.Poll(ctx, gPool, "test-worker", []string{"inv-join-after"}, 1)
+	noJobs, _ := job.Poll(ctx, gJobStore, "test-worker", []string{"inv-join-after"}, 1)
 	if len(noJobs) > 0 {
 		t.Fatalf("join fired after only one branch — after-join job appeared prematurely")
 	}
@@ -206,7 +206,7 @@ func TestAutoStartNextWorkflow_ErrorIsLogged(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	var j instance.Job
 	for time.Now().Before(deadline) {
-		jobs, _ := job.Poll(ctx, gPool, "test-worker", []string{"inv-autostart-task"}, 1)
+		jobs, _ := job.Poll(ctx, gJobStore, "test-worker", []string{"inv-autostart-task"}, 1)
 		if len(jobs) > 0 {
 			j = jobs[0]
 			break
