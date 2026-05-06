@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -307,35 +306,24 @@ func (s *InstanceStore) UpdateInstanceVariablesPartial(ctx context.Context, tx d
 	if len(patch) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(patch))
-	for k := range patch {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 
-	// The innermost operand must be a JSONB object — jsonb_set raises
-	// "cannot set path in scalar" (SQLSTATE 22023) on scalars such as the
-	// JSONB `null` that older instances may carry. Coerce anything that is
-	// not an object to {} before applying the chained jsonb_set calls.
-	expr := "CASE WHEN jsonb_typeof(variables) = 'object' THEN variables ELSE '{}'::jsonb END"
-	args := make([]any, 0, len(patch)*2+1)
-	for _, k := range keys {
-		valJSON, err := json.Marshal(patch[k])
-		if err != nil {
-			return fmt.Errorf("marshal variable %q: %w", k, err)
-		}
-		pathIdx := len(args) + 1
-		valIdx := pathIdx + 1
-		expr = fmt.Sprintf("jsonb_set(%s, $%d, $%d::jsonb, true)", expr, pathIdx, valIdx)
-		args = append(args, []string{k}, string(valJSON))
+	patchJSON, err := json.Marshal(patch)
+	if err != nil {
+		return fmt.Errorf("marshal patch: %w", err)
 	}
-	idIdx := len(args) + 1
-	args = append(args, instanceID)
 
-	sql := fmt.Sprintf("UPDATE workflow_instance SET variables = %s WHERE id = $%d", expr, idIdx)
-	if _, err := Unwrap(tx).Exec(ctx, sql, args...); err != nil {
+	sql := `
+        UPDATE workflow_instance 
+        SET variables = (
+            CASE WHEN jsonb_typeof(variables) = 'object' THEN variables ELSE '{}'::jsonb END
+        ) || $1::jsonb 
+        WHERE id = $2
+    `
+
+	if _, err := Unwrap(tx).Exec(ctx, sql, string(patchJSON), instanceID); err != nil {
 		return fmt.Errorf("update variables (partial): %w", err)
 	}
+
 	return nil
 }
 
