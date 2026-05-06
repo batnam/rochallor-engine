@@ -20,7 +20,6 @@ import (
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/api/rest"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/boundary"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/config"
-	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch"
 	kafkaoutbox "github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch/kafka_outbox"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch/polling"
@@ -69,7 +68,7 @@ func run() error {
 		return fmt.Errorf("migrate: %w", err)
 	}
 
-	// ── Dispatch runtime (mode switch per FR-001) ────────────────────────────
+	// ── Dispatch runtime (mode switch) ────────────────────────────
 	// cfg.DispatchMode has already been validated in config.Load; this switch
 	// is the wiring seam that chooses which Runtime + Dispatcher pair is live
 	// for this process. No silent fallback: unknown modes fail startup loudly.
@@ -78,11 +77,11 @@ func run() error {
 	case config.DispatchModePolling:
 		dispatchRT = polling.New()
 		obs.RegisterPollingMetrics(prometheus.DefaultRegisterer)
-	case config.DispatchModeKafkaOutbox:
 
-		// Pre-fetch all registered job types for topic validation (R-008).
+	case config.DispatchModeKafkaOutbox:
+		// Pre-fetch all registered job types for topic validation.
 		// We use a temporary repository just for this query.
-		jobTypes, err := definition.NewRepository(pool).ListAllJobTypes(ctx)
+		jobTypes, err := postgres.NewDefinitionStore(pool).ListAllJobTypes(ctx)
 		if err != nil {
 			return fmt.Errorf("list job types for validation: %w", err)
 		}
@@ -118,14 +117,20 @@ func run() error {
 
 	// ── Services ──────────────────────────────────────────────────────────────
 	instance.SetExpressionEvaluator(expression.Evaluate)
-	defRepo := definition.NewRepository(pool)
-	instSvc := instance.NewService(ctx, pool, defRepo, dispatchRT.Dispatcher())
+
+	dbConn := postgres.NewDB(pool)
+	instStore := postgres.NewInstanceStore(pool)
+	jobStore := postgres.NewJobStore(pool)
+	bndStore := postgres.NewBoundaryStore(pool)
+	defRepo := postgres.NewDefinitionStore(pool)
+
+	instSvc := instance.NewService(ctx, dbConn, instStore, defRepo, dispatchRT.Dispatcher())
 
 	// ── Background workers ────────────────────────────────────────────────────
-	job.StartLeaseSweeper(ctx, pool, dispatchRT.Dispatcher(), 15*time.Second)
-	boundary.StartTimerSweeper(ctx, pool, instSvc, 5*time.Second)
+	job.StartLeaseSweeper(ctx, dbConn, jobStore, dispatchRT.Dispatcher(), 15*time.Second)
+	boundary.StartTimerSweeper(ctx, dbConn, bndStore, instSvc, 5*time.Second)
 	// ── REST server ───────────────────────────────────────────────────────────
-	restHandler := rest.NewRouter(pool, defRepo, instSvc, cfg.DispatchMode)
+	restHandler := rest.NewRouter(dbConn, jobStore, defRepo, instSvc, dispatchRT.Dispatcher(), cfg.DispatchMode)
 	restServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.RESTPort),
 		Handler:      restHandler,
@@ -148,7 +153,7 @@ func run() error {
 	grpcSrv := grpc.NewServer(
 		grpc.UnaryInterceptor(grpcserver.LoggingUnaryInterceptor()),
 	)
-	grpcserver.NewEngineServer(defRepo, instSvc, pool, cfg.DispatchMode).Register(grpcSrv)
+	grpcserver.NewEngineServer(defRepo, instSvc, dbConn, jobStore, dispatchRT.Dispatcher(), cfg.DispatchMode).Register(grpcSrv)
 
 	// ── Start all servers ─────────────────────────────────────────────────────
 	errCh := make(chan error, 3)

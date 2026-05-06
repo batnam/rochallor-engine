@@ -5,22 +5,26 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	engineapi "github.com/batnam/rochallor-engine/workflow-engine/internal/api"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/instance"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/job"
 )
 
 // JobHandlers exposes the job poll/complete/fail endpoints.
 type JobHandlers struct {
-	pool    *pgxpool.Pool
-	instSvc *instance.Service
+	db         db.DB
+	jobStore   job.JobStore
+	instSvc    *instance.Service
+	dispatcher dispatch.Dispatcher
 }
 
-// NewJobHandlers creates JobHandlers backed by pool and instSvc.
-func NewJobHandlers(pool *pgxpool.Pool, instSvc *instance.Service) *JobHandlers {
-	return &JobHandlers{pool: pool, instSvc: instSvc}
+// NewJobHandlers creates JobHandlers backed by the storage abstractions and
+// the instance service.
+func NewJobHandlers(dbConn db.DB, jobStore job.JobStore, instSvc *instance.Service, dispatcher dispatch.Dispatcher) *JobHandlers {
+	return &JobHandlers{db: dbConn, jobStore: jobStore, instSvc: instSvc, dispatcher: dispatcher}
 }
 
 type pollRequest struct {
@@ -49,7 +53,7 @@ func (h *JobHandlers) Poll(w http.ResponseWriter, r *http.Request) {
 		max = 10
 	}
 
-	jobs, err := job.Poll(r.Context(), h.pool, req.WorkerID, req.JobTypes, max)
+	jobs, err := job.Poll(r.Context(), h.jobStore, req.WorkerID, req.JobTypes, max)
 	if err != nil {
 		engineapi.WriteInternalError(w, err.Error())
 		return
@@ -72,7 +76,6 @@ func (h *JobHandlers) Complete(w http.ResponseWriter, r *http.Request) {
 		engineapi.WriteBadRequest(w, "invalid request body: "+err.Error())
 		return
 	}
-
 	if err := h.instSvc.CompleteJobAndAdvance(r.Context(), id, req.WorkerID, req.Variables); err != nil {
 		engineapi.WriteInternalError(w, err.Error())
 		return
@@ -94,8 +97,7 @@ func (h *JobHandlers) Fail(w http.ResponseWriter, r *http.Request) {
 		engineapi.WriteBadRequest(w, "invalid request body: "+err.Error())
 		return
 	}
-
-	if err := job.Fail(r.Context(), h.pool, h.instSvc.Dispatcher(), id, req.WorkerID, req.ErrorMessage, req.Retryable); err != nil {
+	if err := job.Fail(r.Context(), h.db, h.jobStore, h.dispatcher, id, req.WorkerID, req.ErrorMessage, req.Retryable); err != nil {
 		engineapi.WriteInternalError(w, err.Error())
 		return
 	}

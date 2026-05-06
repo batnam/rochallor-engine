@@ -7,19 +7,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Advisory-lock keys used for sweeper leader-election across engine replicas.
-// Each sweeper must use a distinct key so they don't contend.
-// Keys are arbitrary int64 values chosen to avoid collision with any other
-// pg_advisory_lock usage in the database.
-const (
-	// LeaseSweeperLockKey gates the job lease-expiry sweeper
-	// (internal/job/lease_sweeper.go).
-	LeaseSweeperLockKey int64 = 0x6C756F6E_676C7331 // "luonglse" low bits
-
-	// TimerSweeperLockKey gates the boundary-event timer sweeper
-	// (internal/boundary/timer_sweeper.go).
-	TimerSweeperLockKey int64 = 0x6C756F6E_676C7473 // "luonglts" low bits
-)
+// Advisory-lock keys for sweeper leader-election live in the domain packages:
+//   - LeaseSweeperLockKey → internal/job/lease_sweeper.go
+//   - TimerSweeperLockKey → internal/boundary/timer_sweeper.go
 
 // TryAcquireAdvisoryLock attempts a non-blocking session-level advisory lock
 // via pg_try_advisory_lock. On success it returns (true, release, nil) where

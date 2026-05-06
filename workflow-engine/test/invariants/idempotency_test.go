@@ -40,7 +40,7 @@ func pollJob(ctx context.Context, t *testing.T, jobType string) instance.Job {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		jobs, err := job.Poll(ctx, gPool, "idem-worker", []string{jobType}, 1)
+		jobs, err := job.Poll(ctx, gJobStore, "idem-worker", []string{jobType}, 1)
 		if err != nil {
 			t.Fatalf("poll %s: %v", jobType, err)
 		}

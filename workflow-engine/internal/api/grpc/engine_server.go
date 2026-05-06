@@ -15,26 +15,43 @@ import (
 
 	workflowv1 "github.com/batnam/rochallor-engine/workflow-engine/api/gen/workflow/v1"
 	engineapi "github.com/batnam/rochallor-engine/workflow-engine/internal/api"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/instance"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/job"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // EngineServer implements workflowv1.WorkflowEngineServer.
 type EngineServer struct {
 	workflowv1.UnimplementedWorkflowEngineServer
-	defRepo      *definition.Repository
+	defRepo      definition.DefinitionRepository
 	instSvc      *instance.Service
-	pool         *pgxpool.Pool
+	db           db.DB
+	jobStore     job.JobStore
+	dispatcher   dispatch.Dispatcher
 	dispatchMode string
 }
 
 // NewEngineServer creates an EngineServer. dispatchMode is the current
 // engine dispatch mode (polling / kafka_outbox); when set to kafka_outbox
 // the PollJobs RPC is disabled per FR-004.
-func NewEngineServer(defRepo *definition.Repository, instSvc *instance.Service, pool *pgxpool.Pool, dispatchMode string) *EngineServer {
-	return &EngineServer{defRepo: defRepo, instSvc: instSvc, pool: pool, dispatchMode: dispatchMode}
+func NewEngineServer(
+	defRepo definition.DefinitionRepository,
+	instSvc *instance.Service,
+	dbConn db.DB,
+	jobStore job.JobStore,
+	dispatcher dispatch.Dispatcher,
+	dispatchMode string,
+) *EngineServer {
+	return &EngineServer{
+		defRepo:      defRepo,
+		instSvc:      instSvc,
+		db:           dbConn,
+		jobStore:     jobStore,
+		dispatcher:   dispatcher,
+		dispatchMode: dispatchMode,
+	}
 }
 
 // Register registers the server with a gRPC server instance.
@@ -191,7 +208,7 @@ func (s *EngineServer) PollJobs(ctx context.Context, req *workflowv1.PollJobsReq
 	if max <= 0 {
 		max = 1
 	}
-	jobs, err := job.Poll(ctx, s.pool, req.WorkerId, req.JobTypes, max)
+	jobs, err := job.Poll(ctx, s.jobStore, req.WorkerId, req.JobTypes, max)
 	if err != nil {
 		return nil, engineapi.GRPCInternal(err)
 	}
@@ -221,7 +238,7 @@ func (s *EngineServer) CompleteJob(ctx context.Context, req *workflowv1.Complete
 }
 
 func (s *EngineServer) FailJob(ctx context.Context, req *workflowv1.FailJobRequest) (*workflowv1.FailJobResponse, error) {
-	if err := job.Fail(ctx, s.pool, s.instSvc.Dispatcher(), req.JobId, req.WorkerId, req.ErrorMessage, req.Retryable); err != nil {
+	if err := job.Fail(ctx, s.db, s.jobStore, s.dispatcher, req.JobId, req.WorkerId, req.ErrorMessage, req.Retryable); err != nil {
 		return nil, engineapi.GRPCInternal(err)
 	}
 	return &workflowv1.FailJobResponse{}, nil

@@ -8,13 +8,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/oklog/ulid/v2"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	workflowv1 "github.com/batnam/rochallor-engine/workflow-engine/api/gen/workflow/v1"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch"
+	pgstore "github.com/batnam/rochallor-engine/workflow-engine/internal/storage/postgres"
 )
 
 // schemaVersion is written into JobDispatchEvent.schema_version. Consumers
@@ -31,7 +32,12 @@ type Dispatcher struct{}
 // Enqueue writes one pending dispatch row. It is safe to call multiple times
 // for the same tx (e.g., parallel branches emitting several jobs) — each call
 // uses a fresh ULID so the rows coexist without conflicting.
-func (Dispatcher) Enqueue(ctx context.Context, tx pgx.Tx, job dispatch.DispatchJob) error {
+//
+// Internally it unwraps db.Tx to pgx.Tx via pgstore.Unwrap. kafka_outbox is
+// the only domain-package consumer permitted to do this — the unwrap is the
+// reason this implementation lives outside `dispatch/`, which has no pgx dep.
+func (Dispatcher) Enqueue(ctx context.Context, tx db.Tx, job dispatch.DispatchJob) error {
+	pgTx := pgstore.Unwrap(tx)
 	outboxID := ulid.Make().String()
 	event := &workflowv1.JobDispatchEvent{
 		SchemaVersion:    schemaVersion,
@@ -48,7 +54,7 @@ func (Dispatcher) Enqueue(ctx context.Context, tx pgx.Tx, job dispatch.DispatchJ
 	if err != nil {
 		return fmt.Errorf("marshal JobDispatchEvent: %w", err)
 	}
-	if _, err := tx.Exec(ctx,
+	if _, err := pgTx.Exec(ctx,
 		`INSERT INTO dispatch_outbox (id, job_id, instance_id, job_type, payload)
 		 VALUES ($1, $2, $3, $4, $5)`,
 		outboxID, job.ID, job.InstanceID, job.JobType, payload,

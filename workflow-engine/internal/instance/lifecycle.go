@@ -1,5 +1,5 @@
 // Package instance manages the runtime lifecycle of workflow instances.
-// All state mutations happen inside PostgreSQL transactions so observers never see partial state.
+// All state mutations happen inside transactions so observers never see partial state.
 package instance
 
 import (
@@ -8,49 +8,57 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
 	defrepo "github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/id"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/obs"
-	pgstore "github.com/batnam/rochallor-engine/workflow-engine/internal/storage/postgres"
 )
 
 // Service manages workflow instance lifecycle.
 type Service struct {
 	rootCtx    context.Context
-	pool       *pgxpool.Pool
-	defRepo    *defrepo.Repository
+	db         db.DB
+	store      Store
+	defRepo    defrepo.DefinitionRepository
 	dispatcher dispatch.Dispatcher
 }
 
 // Dispatcher returns the configured dispatcher.
-func (s *Service) Dispatcher() dispatch.Dispatcher {
-	return s.dispatcher
-}
+func (s *Service) Dispatcher() dispatch.Dispatcher { return s.dispatcher }
 
-// NewService creates a Service backed by pool, defRepo, and dispatcher.
+// NewService creates a Service backed by the supplied dependencies.
+//
 // rootCtx is the engine's root context; it is used as the parent for any
 // goroutines spawned by Service (e.g. autoStartNextWorkflow) so they are
 // cancelled when the engine shuts down.
-// The dispatcher is invoked on every SERVICE_TASK job insert inside the same transaction.
-// In polling mode it is a no-op; in kafka_outbox mode it writes a dispatch_outbox row.
-func NewService(rootCtx context.Context, pool *pgxpool.Pool, defRepo *defrepo.Repository, dispatcher dispatch.Dispatcher) *Service {
-	return &Service{rootCtx: rootCtx, pool: pool, defRepo: defRepo, dispatcher: dispatcher}
+//
+// The dispatcher is invoked on every SERVICE_TASK job insert inside the same
+// transaction. In polling mode it is a no-op; in kafka_outbox mode it writes
+// a dispatch_outbox row.
+func NewService(
+	rootCtx context.Context,
+	dbConn db.DB,
+	store Store,
+	defRepo defrepo.DefinitionRepository,
+	dispatcher dispatch.Dispatcher,
+) *Service {
+	return &Service{
+		rootCtx:    rootCtx,
+		db:         dbConn,
+		store:      store,
+		defRepo:    defRepo,
+		dispatcher: dispatcher,
+	}
 }
 
 // Start creates a new workflow instance for the given definition, seeds
 // variables, and dispatches the first step.
 func (s *Service) Start(ctx context.Context, definitionID string, definitionVersion int, variables map[string]any, businessKey string) (*WorkflowInstance, error) {
-	// Load the definition
 	var def *definition.WorkflowDefinition
 	var err error
 	if definitionVersion <= 0 {
@@ -61,14 +69,13 @@ func (s *Service) Start(ctx context.Context, definitionID string, definitionVers
 	if err != nil {
 		return nil, fmt.Errorf("start: load definition %q: %w", definitionID, err)
 	}
-
 	if len(def.Steps) == 0 {
 		return nil, errors.New("start: definition has no steps")
 	}
 
 	// Normalize nil/empty variables to {} so the JSONB column never holds the
 	// scalar `null` — jsonb_set() refuses to set a path in a scalar and all
-	// later partial updates (US2) would fail with SQLSTATE 22023.
+	// later partial updates would fail with SQLSTATE 22023.
 	if variables == nil {
 		variables = map[string]any{}
 	}
@@ -80,78 +87,48 @@ func (s *Service) Start(ctx context.Context, definitionID string, definitionVers
 	instanceID := id.NewInstance()
 	firstStep := def.Steps[0].ID
 
-	var inst WorkflowInstance
-	err = pgstore.RunInTx(ctx, s.pool, "instance.start", pgx.TxOptions{}, func(tx pgx.Tx) error {
-		var bk any
+	var inst *WorkflowInstance
+	err = s.db.RunInTx(ctx, "instance.start", func(tx db.Tx) error {
+		var bkPtr *string
 		if businessKey != "" {
-			bk = businessKey
+			bk := businessKey
+			bkPtr = &bk
 		}
-
-		var startedAt time.Time
-		err = tx.QueryRow(ctx,
-			`INSERT INTO workflow_instance
-			  (id, definition_id, definition_version, status, current_step_ids, variables, business_key)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)
-			 RETURNING id, definition_id, definition_version, status, current_step_ids, variables, started_at, business_key`,
-			instanceID, def.ID, def.Version, string(InstanceStatusActive),
-			[]string{firstStep}, varJSON, bk,
-		).Scan(
-			&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
-			&inst.CurrentStepIDs, &inst.Variables, &startedAt, &inst.BusinessKey,
-		)
-		inst.StartedAt = startedAt
-		if err != nil {
-			return fmt.Errorf("insert instance: %w", err)
+		var insErr error
+		inst, insErr = s.store.InsertInstance(ctx, tx, instanceID, def.ID, def.Version,
+			InstanceStatusActive, []string{firstStep}, varJSON, bkPtr)
+		if insErr != nil {
+			return insErr
 		}
-
-		// Dispatch the first step
-		return s.dispatchStep(ctx, tx, &inst, def, firstStep)
+		return s.dispatchStep(ctx, tx, inst, def, firstStep)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start: %w", err)
 	}
-	return &inst, nil
+	return inst, nil
 }
 
-// CompleteJobAndAdvance marks a SERVICE_TASK job as COMPLETED, merges variablesToSet
-// into the instance variables, and dispatches the step's nextStep.
-// This is the normal execution path when a worker calls CompleteJob via REST/gRPC.
+// CompleteJobAndAdvance marks a SERVICE_TASK job COMPLETED, merges
+// variablesToSet into the instance variables, and dispatches the step's
+// nextStep. It is the normal execution path when a worker calls CompleteJob
+// via REST/gRPC.
 func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID string, variablesToSet map[string]any) error {
-	// Load the job row to resolve instance + step information
-	var instanceID, stepExecID string
-	if err := s.pool.QueryRow(ctx,
-		`SELECT instance_id, step_execution_id FROM job WHERE id = $1`,
-		jobID,
-	).Scan(&instanceID, &stepExecID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("job %q not found", jobID)
-		}
-		return fmt.Errorf("load job: %w", err)
+	instanceID, stepExecID, err := s.store.GetJobInstanceAndStepExec(ctx, jobID)
+	if err != nil {
+		return err
 	}
-
-	// Load the completed step's ID from step_execution
-	var completedStepID string
-	if err := s.pool.QueryRow(ctx,
-		`SELECT step_id FROM step_execution WHERE id = $1`,
-		stepExecID,
-	).Scan(&completedStepID); err != nil {
-		return fmt.Errorf("load step_execution: %w", err)
+	completedStepID, err := s.store.GetStepExecutionStepIDByID(ctx, stepExecID)
+	if err != nil {
+		return err
 	}
 
 	// Pre-tx: peek the instance's definition_version (immutable per-instance) and
 	// load the definition + resolve the completed step — all outside the
 	// FOR UPDATE window, so the hot-path lock is held strictly for the state
-	// transition write (US1 narrowing).
-	var instDefID string
-	var instDefVersion int
-	if err := s.pool.QueryRow(ctx,
-		`SELECT definition_id, definition_version FROM workflow_instance WHERE id = $1`,
-		instanceID,
-	).Scan(&instDefID, &instDefVersion); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("instance %q not found", instanceID)
-		}
-		return fmt.Errorf("peek instance: %w", err)
+	// transition write.
+	instDefID, instDefVersion, err := s.store.GetInstanceDefinitionInfo(ctx, instanceID)
+	if err != nil {
+		return err
 	}
 	def, err := s.defRepo.GetVersion(ctx, instDefID, instDefVersion)
 	if err != nil {
@@ -162,61 +139,43 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 		return fmt.Errorf("step %q not found in definition", completedStepID)
 	}
 
-	return pgstore.RunInTx(ctx, s.pool, "instance.complete_job", pgx.TxOptions{}, func(tx pgx.Tx) error {
-		// Lock the job row and check idempotency / cancellation.
-		// FOR UPDATE serialises concurrent CompleteJobAndAdvance calls for the same
-		// job: the second caller blocks here until the first commits, then reads
+	return s.db.RunInTx(ctx, "instance.complete_job", func(tx db.Tx) error {
+		// Lock the job row and check idempotency / cancellation. FOR UPDATE
+		// serialises concurrent CompleteJobAndAdvance calls for the same job:
+		// the second caller blocks here until the first commits, then reads
 		// status=COMPLETED and short-circuits — preventing double-advance.
-		var status string
-		if err := tx.QueryRow(ctx,
-			`SELECT status FROM job WHERE id = $1 FOR UPDATE`,
-			jobID,
-		).Scan(&status); err != nil {
-			return fmt.Errorf("read job status: %w", err)
+		status, err := s.store.GetJobStatusForUpdate(ctx, tx, jobID)
+		if err != nil {
+			return err
 		}
 		if status == "COMPLETED" || status == "CANCELLED" {
 			return nil
 		}
 
-		// Mark job and step_execution COMPLETED
-		if _, err := tx.Exec(ctx,
-			`UPDATE job SET status = 'COMPLETED', worker_id = $1 WHERE id = $2`,
-			workerID, jobID,
-		); err != nil {
-			return fmt.Errorf("mark job completed: %w", err)
+		if err := s.store.MarkJobCompleted(ctx, tx, jobID, workerID); err != nil {
+			return err
 		}
 		outputJSON, _ := json.Marshal(variablesToSet)
-		if _, err := tx.Exec(ctx,
-			`UPDATE step_execution SET status = 'COMPLETED', ended_at = now(), output_snapshot = $1 WHERE id = $2`,
-			outputJSON, stepExecID,
-		); err != nil {
-			return fmt.Errorf("mark step_execution completed: %w", err)
+		if err := s.store.CompleteStepExecutionByID(ctx, tx, stepExecID, outputJSON); err != nil {
+			return err
 		}
 
-		// Load instance
-		var inst WorkflowInstance
-		if err := pgstore.ObserveLockWait("instance.for_update", func() error {
-			return tx.QueryRow(ctx,
-				`SELECT id, definition_id, definition_version, status, current_step_ids, variables, started_at
-				  FROM workflow_instance WHERE id = $1 FOR UPDATE`,
-				instanceID,
-			).Scan(&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
-				&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt)
-		}); err != nil {
-			return fmt.Errorf("load instance: %w", err)
+		inst, err := s.store.GetInstanceForUpdate(ctx, tx, instanceID)
+		if err != nil {
+			return err
 		}
 		if inst.Status == InstanceStatusCompleted || inst.Status == InstanceStatusFailed || inst.Status == InstanceStatusCancelled {
 			return nil // already terminal
 		}
 
-		// Merge variables in memory + partial jsonb_set on the DB (US2).
+		// Merge variables in memory + partial jsonb_set on the DB.
 		if len(variablesToSet) > 0 {
 			merged, err := mergeVariables(inst.Variables, variablesToSet)
 			if err != nil {
 				return err
 			}
 			inst.Variables = merged
-			if err := updateInstanceVariablesPartial(ctx, tx, inst.ID, variablesToSet); err != nil {
+			if err := s.store.UpdateInstanceVariablesPartial(ctx, tx, inst.ID, variablesToSet); err != nil {
 				return err
 			}
 		}
@@ -227,159 +186,78 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 		if completedStep.NextStep == "" && len(completedStep.ConditionalNextSteps) == 0 {
 			return nil
 		}
-		return s.advancePastStep(ctx, tx, &inst, def, completedStep)
+		return s.advancePastStep(ctx, tx, inst, def, completedStep)
 	})
 }
 
-// DispatchBoundaryStep routes an instance to targetStepID from a non-interrupting
-// TIMER boundary event (called by the boundary sweeper).
+// DispatchBoundaryStep routes an instance to targetStepID from a
+// non-interrupting TIMER boundary event (called by the boundary sweeper).
 func (s *Service) DispatchBoundaryStep(ctx context.Context, instanceID, targetStepID string) error {
-	return pgstore.RunInTx(ctx, s.pool, "instance.dispatch_boundary", pgx.TxOptions{}, func(tx pgx.Tx) error {
-		var inst WorkflowInstance
-		err := pgstore.ObserveLockWait("instance.for_update", func() error {
-			return tx.QueryRow(ctx,
-				`SELECT id, definition_id, definition_version, status, current_step_ids, variables, started_at
-				  FROM workflow_instance WHERE id = $1 FOR UPDATE`,
-				instanceID,
-			).Scan(&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
-				&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt)
-		})
+	return s.db.RunInTx(ctx, "instance.dispatch_boundary", func(tx db.Tx) error {
+		inst, err := s.store.GetInstanceForUpdate(ctx, tx, instanceID)
 		if err != nil {
-			return fmt.Errorf("dispatch boundary: load instance: %w", err)
+			return fmt.Errorf("dispatch boundary: %w", err)
 		}
 		def, err := s.defRepo.GetVersion(ctx, inst.DefinitionID, inst.DefinitionVersion)
 		if err != nil {
 			return fmt.Errorf("dispatch boundary: load def: %w", err)
 		}
-		// Non-interrupting: spawn the target step alongside current work
-		return s.dispatchStep(ctx, tx, &inst, def, targetStepID)
+		// Non-interrupting: spawn the target step alongside current work.
+		return s.dispatchStep(ctx, tx, inst, def, targetStepID)
 	})
 }
 
-// InterruptStepAndDispatchBoundary cancels the running step (and its job), then
-// dispatches targetStepID. Called by the boundary sweeper for interrupting=true timers.
+// InterruptStepAndDispatchBoundary cancels the running step (and its job),
+// then dispatches targetStepID. Called by the boundary sweeper for
+// interrupting=true timers.
 func (s *Service) InterruptStepAndDispatchBoundary(ctx context.Context, instanceID, stepExecutionID, targetStepID string) error {
-	return pgstore.RunInTx(ctx, s.pool, "instance.interrupt_boundary", pgx.TxOptions{}, func(tx pgx.Tx) error {
-		var inst WorkflowInstance
-		err := pgstore.ObserveLockWait("instance.for_update", func() error {
-			return tx.QueryRow(ctx,
-				`SELECT id, definition_id, definition_version, status, current_step_ids, variables, started_at
-				  FROM workflow_instance WHERE id = $1 FOR UPDATE`,
-				instanceID,
-			).Scan(&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
-				&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt)
-		})
+	return s.db.RunInTx(ctx, "instance.interrupt_boundary", func(tx db.Tx) error {
+		inst, err := s.store.GetInstanceForUpdate(ctx, tx, instanceID)
 		if err != nil {
-			return fmt.Errorf("interrupt boundary: load instance: %w", err)
+			return fmt.Errorf("interrupt boundary: %w", err)
 		}
 		if inst.Status == InstanceStatusCompleted || inst.Status == InstanceStatusFailed || inst.Status == InstanceStatusCancelled {
 			return nil // already terminal — boundary event is a no-op
 		}
 
-		// Resolve which step is being interrupted
-		var interruptedStepID string
-		if err := tx.QueryRow(ctx,
-			`SELECT step_id FROM step_execution WHERE id = $1`,
-			stepExecutionID,
-		).Scan(&interruptedStepID); err != nil {
-			return fmt.Errorf("interrupt boundary: load step_execution: %w", err)
+		interruptedStepID, err := s.store.GetStepExecutionStepID(ctx, tx, stepExecutionID)
+		if err != nil {
+			return fmt.Errorf("interrupt boundary: %w", err)
 		}
 
-		// Mark the interrupted step_execution as FAILED
-		if _, err := tx.Exec(ctx,
-			`UPDATE step_execution SET status = 'FAILED', ended_at = now(), failure_reason = 'interrupted by boundary timer'
-			  WHERE id = $1`,
-			stepExecutionID,
-		); err != nil {
+		if err := s.store.FailStepExecutionByID(ctx, tx, stepExecutionID, "interrupted by boundary timer"); err != nil {
 			return fmt.Errorf("interrupt boundary: cancel step_execution: %w", err)
 		}
 
-		// Cancel the pending/locked job for this step_execution so the worker's
-		// eventual completeJob call is a no-op (job won't be found as LOCKED/UNLOCKED).
-		if _, err := tx.Exec(ctx,
-			`UPDATE job SET status = 'CANCELLED'
-			  WHERE step_execution_id = $1 AND status IN ('PENDING', 'UNLOCKED', 'LOCKED')`,
-			stepExecutionID,
-		); err != nil {
+		// Cancel the pending/locked job for this step_execution so the
+		// worker's eventual completeJob call is a no-op.
+		if err := s.store.CancelJobByStepExecution(ctx, tx, stepExecutionID); err != nil {
 			return fmt.Errorf("interrupt boundary: cancel job: %w", err)
 		}
 
-		removeFromCurrentSteps(&inst, interruptedStepID)
+		removeFromCurrentSteps(inst, interruptedStepID)
 
 		def, err := s.defRepo.GetVersion(ctx, inst.DefinitionID, inst.DefinitionVersion)
 		if err != nil {
 			return fmt.Errorf("interrupt boundary: load def: %w", err)
 		}
-		return s.dispatchStep(ctx, tx, &inst, def, targetStepID)
+		return s.dispatchStep(ctx, tx, inst, def, targetStepID)
 	})
 }
 
 // Get returns the current state of an instance.
 func (s *Service) Get(ctx context.Context, instanceID string) (*WorkflowInstance, error) {
-	row := s.pool.QueryRow(ctx,
-		`SELECT id, definition_id, definition_version, status, current_step_ids, variables,
-		        started_at, completed_at, failure_reason, business_key
-		  FROM workflow_instance WHERE id = $1`,
-		instanceID,
-	)
-	var inst WorkflowInstance
-	if err := row.Scan(
-		&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
-		&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt, &inst.CompletedAt,
-		&inst.FailureReason, &inst.BusinessKey,
-	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("instance %q not found", instanceID)
-		}
-		return nil, fmt.Errorf("get instance: %w", err)
-	}
-	return &inst, nil
+	return s.store.GetInstance(ctx, instanceID)
 }
 
 // Cancel transitions an instance to CANCELLED.
 func (s *Service) Cancel(ctx context.Context, instanceID, reason string) (*WorkflowInstance, error) {
-	row := s.pool.QueryRow(ctx,
-		`UPDATE workflow_instance
-		  SET status = $1, failure_reason = $2, completed_at = now()
-		  WHERE id = $3 AND status IN ('ACTIVE','WAITING')
-		  RETURNING id, definition_id, definition_version, status, current_step_ids, variables, started_at, failure_reason`,
-		string(InstanceStatusCancelled), reason, instanceID,
-	)
-	var inst WorkflowInstance
-	if err := row.Scan(
-		&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
-		&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt, &inst.FailureReason,
-	); err != nil {
-		return nil, fmt.Errorf("cancel: %w", err)
-	}
-	return &inst, nil
+	return s.store.CancelInstance(ctx, instanceID, reason)
 }
 
 // GetHistory returns all step executions for an instance ordered by start time.
 func (s *Service) GetHistory(ctx context.Context, instanceID string) ([]StepExecution, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT id, instance_id, step_id, step_type, attempt_number, status,
-		        started_at, ended_at, failure_reason
-		  FROM step_execution WHERE instance_id = $1 ORDER BY started_at`,
-		instanceID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get history: %w", err)
-	}
-	defer rows.Close()
-
-	var execs []StepExecution
-	for rows.Next() {
-		var se StepExecution
-		if err = rows.Scan(
-			&se.ID, &se.InstanceID, &se.StepID, &se.StepType, &se.AttemptNumber, &se.Status,
-			&se.StartedAt, &se.EndedAt, &se.FailureReason,
-		); err != nil {
-			return nil, fmt.Errorf("scan step execution: %w", err)
-		}
-		execs = append(execs, se)
-	}
-	return execs, rows.Err()
+	return s.store.GetHistory(ctx, instanceID)
 }
 
 // ListResult is the page returned by List.
@@ -390,109 +268,38 @@ type ListResult struct {
 
 // List returns a page of instances, optionally filtered by definitionId, status, and businessKey.
 func (s *Service) List(ctx context.Context, definitionID, status, businessKey string, page, pageSize int) (ListResult, error) {
-	if pageSize <= 0 {
-		pageSize = 20
-	}
-	offset := page * pageSize
-
-	var conds []string
-	var args []any
-	n := 1
-
-	if definitionID != "" {
-		conds = append(conds, fmt.Sprintf("definition_id = $%d", n))
-		args = append(args, definitionID)
-		n++
-	}
-	if status != "" {
-		conds = append(conds, fmt.Sprintf("status = $%d", n))
-		args = append(args, status)
-		n++
-	}
-	if businessKey != "" {
-		conds = append(conds, fmt.Sprintf("business_key = $%d", n))
-		args = append(args, businessKey)
-		n++
-	}
-
-	where := ""
-	if len(conds) > 0 {
-		where = " WHERE " + strings.Join(conds, " AND ")
-	}
-
-	itemArgs := append(append([]any{}, args...), pageSize, offset)
-	rows, err := s.pool.Query(ctx,
-		`SELECT id, definition_id, definition_version, status, current_step_ids, variables,
-		        started_at, completed_at, failure_reason, business_key
-		  FROM workflow_instance`+where+fmt.Sprintf(" ORDER BY started_at DESC LIMIT $%d OFFSET $%d", n, n+1),
-		itemArgs...,
-	)
-	if err != nil {
-		return ListResult{}, fmt.Errorf("list instances: query: %w", err)
-	}
-	defer rows.Close()
-
-	var items []WorkflowInstance
-	for rows.Next() {
-		var inst WorkflowInstance
-		if err = rows.Scan(
-			&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
-			&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt, &inst.CompletedAt,
-			&inst.FailureReason, &inst.BusinessKey,
-		); err != nil {
-			return ListResult{}, fmt.Errorf("list instances: scan: %w", err)
-		}
-		items = append(items, inst)
-	}
-	if err = rows.Err(); err != nil {
-		return ListResult{}, fmt.Errorf("list instances: rows: %w", err)
-	}
-
-	var total int
-	_ = s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM workflow_instance"+where, args...).Scan(&total)
-
-	return ListResult{Items: items, Total: total}, nil
+	return s.store.ListInstances(ctx, definitionID, status, businessKey, page, pageSize)
 }
 
-// ── internal step dispatch ────────────────────────────────────────────────────
+// ─── internal step dispatch ───────────────────────────────────────────────────
 
-// dispatchStep creates a step_execution row and routes to the appropriate handler.
-// Called within a transaction.
-func (s *Service) dispatchStep(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, stepID string) error {
+// dispatchStep creates a step_execution row and routes to the appropriate
+// handler. Called within a transaction.
+func (s *Service) dispatchStep(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, stepID string) error {
 	step := findStep(def, stepID)
 	if step == nil {
 		return fmt.Errorf("step %q not found in definition", stepID)
 	}
 
-	// Attempt number: count existing executions for this step
-	var prevAttempts int
-	_ = tx.QueryRow(ctx,
-		`SELECT COUNT(*) FROM step_execution WHERE instance_id = $1 AND step_id = $2`,
-		inst.ID, stepID,
-	).Scan(&prevAttempts)
+	prevAttempts, err := s.store.CountStepAttempts(ctx, tx, inst.ID, stepID)
+	if err != nil {
+		return err
+	}
 	attempt := prevAttempts + 1
 
 	seID := id.NewStepExecution()
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO step_execution (id, instance_id, step_id, step_type, attempt_number, status, input_snapshot)
-		 VALUES ($1, $2, $3, $4, $5, 'RUNNING', $6)`,
-		seID, inst.ID, stepID, string(step.Type), attempt, inst.Variables,
-	); err != nil {
+	if err := s.store.InsertStepExecution(ctx, tx, seID, inst.ID, stepID, string(step.Type), attempt, inst.Variables); err != nil {
 		return fmt.Errorf("create step_execution for %q: %w", stepID, err)
 	}
 
 	// Compute the new step list, write to DB, then update in-memory only on success.
 	newIDs := withStep(inst.CurrentStepIDs, stepID)
-	if _, err := tx.Exec(ctx,
-		`UPDATE workflow_instance SET current_step_ids = $1 WHERE id = $2`,
-		newIDs, inst.ID,
-	); err != nil {
-		return fmt.Errorf("update current steps: %w", err)
+	if err := s.store.UpdateInstanceCurrentSteps(ctx, tx, inst.ID, newIDs); err != nil {
+		return err
 	}
 	inst.CurrentStepIDs = newIDs
 
-	// One log line per step entry — single chokepoint covers all workflow
-	// activity (service tasks, user tasks, waits, decisions, gateways, end).
+	// One log line per step entry — single chokepoint covers all workflow activity.
 	obs.FromContext(ctx).LogAttrs(ctx, slog.LevelInfo, "step dispatched",
 		slog.String("instance_id", inst.ID),
 		slog.String("definition_id", def.ID),
@@ -503,62 +310,45 @@ func (s *Service) dispatchStep(ctx context.Context, tx pgx.Tx, inst *WorkflowIns
 		slog.Int("attempt", attempt),
 	)
 
-	// Route to step-type handler
 	return s.routeStep(ctx, tx, inst, def, step, seID, attempt)
 }
 
 // routeStep dispatches the step to its type handler.
-func (s *Service) routeStep(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string, attempt int) error {
+func (s *Service) routeStep(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string, attempt int) error {
 	switch step.Type {
 	case definition.StepTypeServiceTask:
 		return s.handleServiceTask(ctx, tx, inst, step, seID, attempt)
-
 	case definition.StepTypeUserTask:
 		return s.handleUserTask(ctx, tx, inst, step, seID)
-
 	case definition.StepTypeDecision:
 		return s.handleDecision(ctx, tx, inst, def, step)
-
 	case definition.StepTypeTransformation:
 		return s.handleTransformation(ctx, tx, inst, def, step, seID)
-
 	case definition.StepTypeWait:
 		return s.handleWait(ctx, tx, inst, step, seID)
-
 	case definition.StepTypeParallelGateway:
 		return s.handleParallelGateway(ctx, tx, inst, def, step)
-
 	case definition.StepTypeJoinGateway:
 		return s.handleJoinGateway(ctx, tx, inst, def, step, seID)
-
 	case definition.StepTypeEnd:
 		return s.handleEnd(ctx, tx, inst, def, step, seID)
-
 	default:
 		return fmt.Errorf("unsupported step type %q", step.Type)
 	}
 }
 
-// ── step type handlers ────────────────────────────────────────────────────────
+// ─── step type handlers ───────────────────────────────────────────────────────
 
-func (s *Service) handleServiceTask(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string, attempt int) error {
+func (s *Service) handleServiceTask(ctx context.Context, tx db.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string, attempt int) error {
 	jobType := step.JobType
 	if jobType == "" {
-		jobType = step.ID // R-010
+		jobType = step.ID
 	}
 	retryCount := step.RetryCount
 	jobID := id.NewJob()
-	_, err := tx.Exec(ctx,
-		`INSERT INTO job (id, instance_id, step_execution_id, job_type, status, retries_remaining, payload)
-		 VALUES ($1, $2, $3, $4, 'UNLOCKED', $5, $6)`,
-		jobID, inst.ID, seID, jobType, retryCount, inst.Variables,
-	)
-	if err != nil {
+	if err := s.store.InsertJob(ctx, tx, jobID, inst.ID, seID, jobType, retryCount, inst.Variables); err != nil {
 		return fmt.Errorf("create job for step %q: %w", step.ID, err)
 	}
-	// Hand the new job to the configured dispatcher inside the same tx
-	// (FR-002, INV-1). Polling mode: no-op. kafka_outbox mode: writes a
-	// dispatch_outbox row so the relay can publish it once the tx commits.
 	if err := s.dispatcher.Enqueue(ctx, tx, dispatch.DispatchJob{
 		ID:               jobID,
 		InstanceID:       inst.ID,
@@ -570,37 +360,26 @@ func (s *Service) handleServiceTask(ctx context.Context, tx pgx.Tx, inst *Workfl
 	}); err != nil {
 		return fmt.Errorf("dispatch enqueue for step %q: %w", step.ID, err)
 	}
-	// Schedule boundary events (TIMER)
 	return s.scheduleBoundaryEvents(ctx, tx, inst, step, seID)
 }
 
-func (s *Service) handleUserTask(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string) error {
+func (s *Service) handleUserTask(ctx context.Context, tx db.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string) error {
 	utID := id.NewUserTask()
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO user_task (id, instance_id, step_execution_id, step_id, status, payload)
-		 VALUES ($1, $2, $3, $4, 'OPEN', $5)`,
-		utID, inst.ID, seID, step.ID, inst.Variables,
-	); err != nil {
+	if err := s.store.InsertUserTask(ctx, tx, utID, inst.ID, seID, step.ID, inst.Variables); err != nil {
 		return fmt.Errorf("create user_task for step %q: %w", step.ID, err)
 	}
-	// Transition instance to WAITING
-	if _, err := tx.Exec(ctx,
-		`UPDATE workflow_instance SET status = 'WAITING' WHERE id = $1`,
-		inst.ID,
-	); err != nil {
+	if err := s.store.UpdateInstanceStatus(ctx, tx, inst.ID, InstanceStatusWaiting); err != nil {
 		return err
 	}
 	inst.Status = InstanceStatusWaiting
 	return s.scheduleBoundaryEvents(ctx, tx, inst, step, seID)
 }
 
-func (s *Service) handleDecision(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep) error {
+func (s *Service) handleDecision(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep) error {
 	vars, err := variablesToMap(inst.Variables)
 	if err != nil {
 		return s.failInstance(ctx, tx, inst, step.ID, fmt.Sprintf("corrupt instance variables: %v", err))
 	}
-
-	// Evaluate in declaration order
 	for expr, target := range step.ConditionalNextSteps {
 		result, err := evaluateExpr(expr, vars)
 		if err != nil {
@@ -611,12 +390,7 @@ func (s *Service) handleDecision(ctx context.Context, tx pgx.Tx, inst *WorkflowI
 			return s.failInstance(ctx, tx, inst, step.ID, fmt.Sprintf("expression %q: result is %T, not bool", expr, result))
 		}
 		if matched {
-			// Complete current step execution
-			if _, err := tx.Exec(ctx,
-				`UPDATE step_execution SET status = 'COMPLETED', ended_at = now()
-				  WHERE instance_id = $1 AND step_id = $2 AND status = 'RUNNING'`,
-				inst.ID, step.ID,
-			); err != nil {
+			if err := s.store.CompleteStepExecutionByStepNoOutput(ctx, tx, inst.ID, step.ID); err != nil {
 				return err
 			}
 			removeFromCurrentSteps(inst, step.ID)
@@ -626,19 +400,17 @@ func (s *Service) handleDecision(ctx context.Context, tx pgx.Tx, inst *WorkflowI
 	return s.failInstance(ctx, tx, inst, step.ID, "no conditionalNextSteps branch matched (DecisionNoBranchMatched)")
 }
 
-func (s *Service) handleTransformation(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string) error {
+func (s *Service) handleTransformation(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string) error {
 	vars, err := variablesToMap(inst.Variables)
 	if err != nil {
 		return fmt.Errorf("corrupt instance variables: %w", err)
 	}
 	delta := make(map[string]any, len(step.Transformations))
-
 	for k, rawVal := range step.Transformations {
 		var v any
 		if err := json.Unmarshal(rawVal, &v); err != nil {
 			return fmt.Errorf("transformation %q: unmarshal value: %w", k, err)
 		}
-		// Resolve ${...} expressions
 		if strVal, ok := v.(string); ok && strings.HasPrefix(strVal, "${") && strings.HasSuffix(strVal, "}") {
 			inner := strings.TrimSpace(strVal[2 : len(strVal)-1])
 			if inner == "now()" {
@@ -661,17 +433,10 @@ func (s *Service) handleTransformation(ctx context.Context, tx pgx.Tx, inst *Wor
 	}
 	inst.Variables = merged
 
-	// Persist only the changed keys via jsonb_set (US2). step_execution still
-	// receives the full merged snapshot for audit fidelity.
-	if err := updateInstanceVariablesPartial(ctx, tx, inst.ID, delta); err != nil {
+	if err := s.store.UpdateInstanceVariablesPartial(ctx, tx, inst.ID, delta); err != nil {
 		return err
 	}
-
-	if _, err := tx.Exec(ctx,
-		`UPDATE step_execution SET status = 'COMPLETED', ended_at = now(), output_snapshot = $1
-		  WHERE id = $2`,
-		merged, seID,
-	); err != nil {
+	if err := s.store.CompleteStepExecutionByID(ctx, tx, seID, merged); err != nil {
 		return err
 	}
 
@@ -679,29 +444,19 @@ func (s *Service) handleTransformation(ctx context.Context, tx pgx.Tx, inst *Wor
 	return s.dispatchStep(ctx, tx, inst, def, step.NextStep)
 }
 
-func (s *Service) handleWait(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string) error {
-	if _, err := tx.Exec(ctx,
-		`UPDATE workflow_instance SET status = 'WAITING' WHERE id = $1`,
-		inst.ID,
-	); err != nil {
+func (s *Service) handleWait(ctx context.Context, tx db.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string) error {
+	if err := s.store.UpdateInstanceStatus(ctx, tx, inst.ID, InstanceStatusWaiting); err != nil {
 		return err
 	}
 	inst.Status = InstanceStatusWaiting
 	return s.scheduleBoundaryEvents(ctx, tx, inst, step, seID)
 }
 
-func (s *Service) handleParallelGateway(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep) error {
-	// Complete the gateway step execution
-	if _, err := tx.Exec(ctx,
-		`UPDATE step_execution SET status = 'COMPLETED', ended_at = now()
-		  WHERE instance_id = $1 AND step_id = $2 AND status = 'RUNNING'`,
-		inst.ID, step.ID,
-	); err != nil {
+func (s *Service) handleParallelGateway(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep) error {
+	if err := s.store.CompleteStepExecutionByStepNoOutput(ctx, tx, inst.ID, step.ID); err != nil {
 		return err
 	}
 	removeFromCurrentSteps(inst, step.ID)
-
-	// Spawn each branch
 	for _, branchID := range step.ParallelNextSteps {
 		if err := s.dispatchStep(ctx, tx, inst, def, branchID); err != nil {
 			return fmt.Errorf("parallel branch %q: %w", branchID, err)
@@ -710,65 +465,44 @@ func (s *Service) handleParallelGateway(ctx context.Context, tx pgx.Tx, inst *Wo
 	return nil
 }
 
-func (s *Service) handleJoinGateway(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string) error {
-	// Find the matching PARALLEL_GATEWAY to determine expected branch count
+func (s *Service) handleJoinGateway(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string) error {
 	pgStep := findParallelGatewayFor(def, step.ID)
 	if pgStep == nil {
 		return fmt.Errorf("join step %q: no matching PARALLEL_GATEWAY found", step.ID)
 	}
 	expectedBranches := len(pgStep.ParallelNextSteps)
 
-	// Count completed branch leaf steps using the transaction so that the current
-	// branch's step_execution — marked COMPLETED earlier in this same tx by
-	// CompleteJobAndAdvance — is visible without a compensating increment.
-	var arrivedBranches int
-	if err := tx.QueryRow(ctx,
-		`SELECT COUNT(DISTINCT step_id) FROM step_execution
-		  WHERE instance_id = $1 AND step_id = ANY($2) AND status = 'COMPLETED'`,
-		inst.ID, branchLeafsFor(pgStep),
-	).Scan(&arrivedBranches); err != nil {
+	// Count completed branch leaf steps using the transaction so that the
+	// current branch's step_execution — marked COMPLETED earlier in this same
+	// tx by CompleteJobAndAdvance — is visible without a compensating increment.
+	arrivedBranches, err := s.store.CountCompletedBranchLeafs(ctx, tx, inst.ID, branchLeafsFor(pgStep))
+	if err != nil {
 		return fmt.Errorf("join count branches: %w", err)
 	}
 
-	// Mark this arrival
-	if _, err := tx.Exec(ctx,
-		`UPDATE step_execution SET status = 'COMPLETED', ended_at = now()
-		  WHERE id = $1`,
-		seID,
-	); err != nil {
+	if err := s.store.CompleteStepExecutionByID(ctx, tx, seID, nil); err != nil {
 		return err
 	}
 
 	if arrivedBranches < expectedBranches {
-		// Not all branches done yet; stay waiting
-		return nil
+		return nil // not all branches done yet
 	}
 
-	// All branches arrived — advance past the join
 	removeFromCurrentSteps(inst, step.ID)
 	return s.dispatchStep(ctx, tx, inst, def, step.NextStep)
 }
 
-func (s *Service) handleEnd(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string) error {
-	if _, err := tx.Exec(ctx,
-		`UPDATE step_execution SET status = 'COMPLETED', ended_at = now() WHERE id = $1`,
-		seID,
-	); err != nil {
+func (s *Service) handleEnd(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string) error {
+	if err := s.store.CompleteStepExecutionByID(ctx, tx, seID, nil); err != nil {
 		return err
 	}
 	newIDs := withoutStep(inst.CurrentStepIDs, step.ID)
-
-	// Mark instance COMPLETED — mutate in-memory only after the DB write succeeds.
-	if _, err := tx.Exec(ctx,
-		`UPDATE workflow_instance SET status = 'COMPLETED', completed_at = now(), current_step_ids = $1 WHERE id = $2`,
-		newIDs, inst.ID,
-	); err != nil {
+	if err := s.store.CompleteInstance(ctx, tx, inst.ID, newIDs); err != nil {
 		return err
 	}
 	inst.CurrentStepIDs = newIDs
 	inst.Status = InstanceStatusCompleted
 
-	// autoStartNextWorkflow
 	if def.AutoStartNextWorkflow && def.NextWorkflowId != "" {
 		nextID := def.NextWorkflowId
 		vars, err := variablesToMap(inst.Variables)
@@ -789,18 +523,11 @@ func (s *Service) handleEnd(ctx context.Context, tx pgx.Tx, inst *WorkflowInstan
 	return nil
 }
 
-func (s *Service) failInstance(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, stepID, reason string) error {
-	if _, err := tx.Exec(ctx,
-		`UPDATE step_execution SET status = 'FAILED', ended_at = now(), failure_reason = $1
-		  WHERE instance_id = $2 AND step_id = $3 AND status = 'RUNNING'`,
-		reason, inst.ID, stepID,
-	); err != nil {
+func (s *Service) failInstance(ctx context.Context, tx db.Tx, inst *WorkflowInstance, stepID, reason string) error {
+	if err := s.store.FailStepExecutionByStep(ctx, tx, inst.ID, stepID, reason); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx,
-		`UPDATE workflow_instance SET status = 'FAILED', failure_reason = $1, completed_at = now() WHERE id = $2`,
-		reason, inst.ID,
-	); err != nil {
+	if err := s.store.FailInstance(ctx, tx, inst.ID, reason); err != nil {
 		return err
 	}
 	inst.Status = InstanceStatusFailed
@@ -809,7 +536,7 @@ func (s *Service) failInstance(ctx context.Context, tx pgx.Tx, inst *WorkflowIns
 
 // scheduleBoundaryEvents creates boundary_event_schedule rows for any TIMER
 // events attached to step.
-func (s *Service) scheduleBoundaryEvents(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string) error {
+func (s *Service) scheduleBoundaryEvents(ctx context.Context, tx db.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string) error {
 	for _, be := range step.BoundaryEvents {
 		if be.Type != definition.BoundaryEventTypeTimer {
 			continue
@@ -820,18 +547,14 @@ func (s *Service) scheduleBoundaryEvents(ctx context.Context, tx pgx.Tx, inst *W
 		}
 		fireAt := time.Now().Add(dur)
 		besID := id.NewBoundaryEvent()
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO boundary_event_schedule (id, instance_id, step_execution_id, target_step_id, fire_at, interrupting)
-			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			besID, inst.ID, seID, be.TargetStepId, fireAt, be.Interrupting,
-		); err != nil {
+		if err := s.store.InsertBoundaryEventSchedule(ctx, tx, besID, inst.ID, seID, be.TargetStepId, fireAt, be.Interrupting); err != nil {
 			return fmt.Errorf("create boundary_event_schedule: %w", err)
 		}
 	}
 	return nil
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
 func findStep(def *definition.WorkflowDefinition, id string) *definition.WorkflowStep {
 	for i := range def.Steps {
@@ -851,8 +574,8 @@ func findParallelGatewayFor(def *definition.WorkflowDefinition, joinStepID strin
 	return nil
 }
 
-// branchLeafsFor returns the IDs of the steps immediately before the join
-// (the last step in each parallel branch chain before reaching joinStep).
+// branchLeafsFor returns the step IDs whose COMPLETED rows count as branch
+// arrivals at the matching join.
 func branchLeafsFor(pg *definition.WorkflowStep) []string {
 	return pg.ParallelNextSteps
 }
@@ -875,8 +598,8 @@ func withStep(ids []string, stepID string) []string {
 	return out
 }
 
-// withoutStep returns a new slice with all ids except stepID.
-// It never mutates the input slice.
+// withoutStep returns a new slice with all ids except stepID. It never
+// mutates the input slice.
 func withoutStep(ids []string, stepID string) []string {
 	out := make([]string, 0, len(ids))
 	for _, s := range ids {
@@ -888,11 +611,7 @@ func withoutStep(ids []string, stepID string) []string {
 }
 
 // recomputeInstanceStatus inspects the remaining current_step_ids and returns
-// WAITING when any remaining step is USER_TASK or WAIT (still parked awaiting
-// external resume), otherwise ACTIVE.
-// Callers should not invoke this when current_step_ids is empty — in that case
-// the instance will either be COMPLETED via handleEnd or about to receive a
-// new step via dispatchStep.
+// WAITING when any remaining step is USER_TASK or WAIT, otherwise ACTIVE.
 func recomputeInstanceStatus(inst *WorkflowInstance, def *definition.WorkflowDefinition) InstanceStatus {
 	for _, sid := range inst.CurrentStepIDs {
 		st := findStep(def, sid)
@@ -907,25 +626,14 @@ func recomputeInstanceStatus(inst *WorkflowInstance, def *definition.WorkflowDef
 }
 
 // advancePastStep is the shared tail used by CompleteJobAndAdvance,
-// CompleteUserTaskAndAdvance, and SignalWaitAndAdvance after they have
-// closed the completed step's records. It:
-//  1. removes completedStepID from inst.CurrentStepIDs,
-//  2. recomputes status (WAITING ↔ ACTIVE) based on remaining parked steps,
-//  3. persists both columns on workflow_instance, and
-//  4. dispatches the next step: conditionalNextSteps take precedence; else
-//     step.NextStep; else the branch ends (no dispatch).
-//
-// If conditionalNextSteps is set but no branch matches, the instance is
-// failed with reason DecisionNoBranchMatched — consistent with handleDecision.
-func (s *Service) advancePastStep(ctx context.Context, tx pgx.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, completedStep *definition.WorkflowStep) error {
+// CompleteUserTaskAndAdvance, and SignalWaitAndAdvance after they have closed
+// the completed step's records.
+func (s *Service) advancePastStep(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, completedStep *definition.WorkflowStep) error {
 	newIDs := withoutStep(inst.CurrentStepIDs, completedStep.ID)
 	newStatus := recomputeInstanceStatus(&WorkflowInstance{CurrentStepIDs: newIDs}, def)
 
-	if _, err := tx.Exec(ctx,
-		`UPDATE workflow_instance SET current_step_ids = $1, status = $2 WHERE id = $3`,
-		newIDs, string(newStatus), inst.ID,
-	); err != nil {
-		return fmt.Errorf("advance: update instance: %w", err)
+	if err := s.store.UpdateInstanceStatusAndSteps(ctx, tx, inst.ID, newStatus, newIDs); err != nil {
+		return fmt.Errorf("advance: %w", err)
 	}
 	inst.CurrentStepIDs = newIDs
 	inst.Status = newStatus
@@ -957,51 +665,6 @@ func (s *Service) advancePastStep(ctx context.Context, tx pgx.Tx, inst *Workflow
 	return nil
 }
 
-// updateInstanceVariablesPartial writes a WAL-efficient partial update to
-// workflow_instance.variables, emitting chained jsonb_set(…) calls — one per
-// top-level key in patch — so only the patch values travel over the wire
-// instead of the full `variables` payload.
-//
-// Keys are sorted for deterministic SQL output (stable prepared-statement
-// cache keys). Caller is responsible for the in-memory merge if they need an
-// up-to-date WorkflowInstance.Variables (typically via mergeVariables).
-// Safe to call with an empty patch — returns nil without issuing any SQL.
-func updateInstanceVariablesPartial(ctx context.Context, tx pgx.Tx, instanceID string, patch map[string]any) error {
-	if len(patch) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(patch))
-	for k := range patch {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	// The innermost operand must be a JSONB object — jsonb_set raises
-	// "cannot set path in scalar" (SQLSTATE 22023) on scalars such as the
-	// JSONB `null` that older instances may carry. Coerce anything that is
-	// not an object to {} before applying the chained jsonb_set calls.
-	expr := "CASE WHEN jsonb_typeof(variables) = 'object' THEN variables ELSE '{}'::jsonb END"
-	args := make([]any, 0, len(patch)*2+1)
-	for _, k := range keys {
-		valJSON, err := json.Marshal(patch[k])
-		if err != nil {
-			return fmt.Errorf("marshal variable %q: %w", k, err)
-		}
-		pathIdx := len(args) + 1
-		valIdx := pathIdx + 1
-		expr = fmt.Sprintf("jsonb_set(%s, $%d, $%d::jsonb, true)", expr, pathIdx, valIdx)
-		args = append(args, []string{k}, string(valJSON))
-	}
-	idIdx := len(args) + 1
-	args = append(args, instanceID)
-
-	sql := fmt.Sprintf("UPDATE workflow_instance SET variables = %s WHERE id = $%d", expr, idIdx)
-	if _, err := tx.Exec(ctx, sql, args...); err != nil {
-		return fmt.Errorf("update variables (partial): %w", err)
-	}
-	return nil
-}
-
 func mergeVariables(existing json.RawMessage, delta map[string]any) (json.RawMessage, error) {
 	base := make(map[string]any)
 	if len(existing) > 0 {
@@ -1028,8 +691,8 @@ func variablesToMap(raw json.RawMessage) (map[string]any, error) {
 	return m, nil
 }
 
-// evaluateExpr is a thin adapter to the expression package to avoid import cycle.
-// The import is done via the top-level package.
+// evaluateExpr is a thin adapter to the expression package, injected at
+// startup to avoid an import cycle.
 var evaluateExpr func(expr string, vars map[string]any) (any, error)
 
 // SetExpressionEvaluator injects the expression evaluator (called from main).
@@ -1042,10 +705,9 @@ func parseDuration(iso string) (time.Duration, error) {
 	if len(iso) < 3 || iso[0] != 'P' {
 		return 0, fmt.Errorf("invalid ISO-8601 duration: %q", iso)
 	}
-	// Simplified parser: only handles PT<n>S, PT<n>M, PT<n>H
-	rest := iso[1:] // strip 'P'
+	rest := iso[1:]
 	if len(rest) > 0 && rest[0] == 'T' {
-		rest = rest[1:] // strip 'T'
+		rest = rest[1:]
 	}
 	var total time.Duration
 	i := 0

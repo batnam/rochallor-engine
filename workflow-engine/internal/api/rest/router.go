@@ -4,15 +4,18 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
-	"github.com/batnam/rochallor-engine/workflow-engine/internal/instance"
-	"github.com/batnam/rochallor-engine/workflow-engine/internal/obs"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/instance"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/job"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/obs"
 )
 
 // NewRouter builds the chi router with all handlers wired.
@@ -23,9 +26,11 @@ import (
 // mode the handler is replaced with a 410 Gone stub that tells workers to
 // consume directly from Kafka.
 func NewRouter(
-	pool *pgxpool.Pool,
-	defRepo *definition.Repository,
+	dbConn db.DB,
+	jobStore job.JobStore,
+	defRepo definition.DefinitionRepository,
 	instSvc *instance.Service,
+	dispatcher dispatch.Dispatcher,
 	dispatchMode string,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -50,7 +55,7 @@ func NewRouter(
 
 	defH := NewDefinitionHandlers(defRepo)
 	instH := NewInstanceHandlers(instSvc)
-	jobH := NewJobHandlers(pool, instSvc)
+	jobH := NewJobHandlers(dbConn, jobStore, instSvc, dispatcher)
 	utH := NewUserTaskHandlers(instSvc)
 	sigH := NewSignalHandlers(instSvc)
 

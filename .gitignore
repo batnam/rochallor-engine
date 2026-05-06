@@ -11,11 +11,12 @@ vendor/
 #AI
 .claude
 .specify
-specs
+docs/superpowers/
 .gemini
 CLAUDE.md
 GEMINI.md
 .claudeignore
+
 
 # Build artifacts
 workflow-engine/bin
