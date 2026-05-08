@@ -1,0 +1,59 @@
+# Kafka overlay for kafka_outbox dispatch mode.
+# Activated automatically by run.sh --kafka; do not invoke directly.
+# Stacks on top of docker-compose.yml via: -f docker-compose.yml -f docker-compose.kafka.yml
+services:
+  kafka:
+    image: apache/kafka:3.7.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  # One-shot container that pre-creates all topics used by perf scenarios.
+  # Auto-creation is disabled on the broker (R-002); topics must exist before
+  # the engine starts its kafka_outbox runtime.
+  kafka-init:
+    image: apache/kafka:3.7.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        for t in workflow.jobs.go-step-a workflow.jobs.go-step-b workflow.jobs.go-step-c workflow.jobs.go-before-wait workflow.jobs.go-before-review workflow.jobs.go-after-review workflow.jobs.go-slow-task workflow.jobs.go-timeout-handler workflow.jobs.validate-application workflow.jobs.credit-score workflow.jobs.fraud-screen workflow.jobs.escalate-review workflow.jobs.approve-loan workflow.jobs.notify-approval-overdue workflow.jobs.prepare-disbursement workflow.jobs.transfer-funds workflow.jobs.notify-disbursement; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$t" --partitions 8 --replication-factor 1
+          echo "[kafka-init] $$t ready"
+        done
+    restart: "no"
+
+  engine:
+    environment:
+      WE_DISPATCH_MODE: kafka_outbox
+      WE_KAFKA_SEED_BROKERS: kafka:9092
+      WE_KAFKA_TRANSPORT: plaintext
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+
+  worker-go:
+    environment:
+      WE_DISPATCH_MODE: kafka_outbox
+      WE_KAFKA_SEED_BROKERS: kafka:9092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully

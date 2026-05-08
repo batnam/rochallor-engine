@@ -1,0 +1,125 @@
+{
+  "id": "LOS::loan-application-full",
+  "name": "Full Loan Application Workflow",
+  "description": "Validates, scores, and approves/rejects a loan application with parallel checks.",
+  "autoStartNextWorkflow": true,
+  "nextWorkflowId": "LOS::loan-disbursement-workflow",
+  "steps": [
+    {
+      "id": "validate-application",
+      "name": "Validate Application Data",
+      "type": "SERVICE_TASK",
+      "jobType": "validate-application",
+      "retryCount": 2,
+      "nextStep": "parallel-risk-checks"
+    },
+    {
+      "id": "parallel-risk-checks",
+      "name": "Parallel Risk Checks",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": ["credit-score-check", "fraud-screening"],
+      "joinStep": "merge-risk-results"
+    },
+    {
+      "id": "credit-score-check",
+      "name": "Credit Score Check",
+      "type": "SERVICE_TASK",
+      "jobType": "credit-score",
+      "retryCount": 3,
+      "nextStep": "merge-risk-results"
+    },
+    {
+      "id": "fraud-screening",
+      "name": "Fraud Screening",
+      "type": "SERVICE_TASK",
+      "jobType": "fraud-screen",
+      "retryCount": 3,
+      "nextStep": "merge-risk-results"
+    },
+    {
+      "id": "merge-risk-results",
+      "name": "Merge Risk Results",
+      "type": "JOIN_GATEWAY",
+      "nextStep": "compute-risk-band"
+    },
+    {
+      "id": "compute-risk-band",
+      "name": "Compute Risk Band",
+      "type": "TRANSFORMATION",
+      "transformations": {
+        "highRisk": "${creditScore < 500 || fraudScore > 0.8}",
+        "requiresManualReview": "${creditScore >= 500 && creditScore < 650}"
+      },
+      "nextStep": "route-application"
+    },
+    {
+      "id": "route-application",
+      "name": "Route Application",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#highRisk == true": "end-rejected",
+        "#requiresManualReview == true": "manual-review-task",
+        "#creditScore >= 650": "auto-approve"
+      }
+    },
+    {
+      "id": "manual-review-task",
+      "name": "Manual Review by Underwriter",
+      "type": "USER_TASK",
+      "nextStep": "process-review-decision",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT48H",
+          "interrupting": false,
+          "targetStepId": "escalate-review"
+        }
+      ]
+    },
+    {
+      "id": "escalate-review",
+      "name": "Escalate Overdue Review",
+      "type": "SERVICE_TASK",
+      "jobType": "escalate-review",
+      "nextStep": "end-escalated"
+    },
+    {
+      "id": "process-review-decision",
+      "name": "Process Review Decision",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#reviewDecision == 'APPROVED'": "auto-approve",
+        "#reviewDecision == 'REJECTED'": "end-rejected"
+      }
+    },
+    {
+      "id": "auto-approve",
+      "name": "Auto-Approve Application",
+      "type": "SERVICE_TASK",
+      "jobType": "approve-loan",
+      "retryCount": 3,
+      "nextStep": "end-approved"
+    },
+    {
+      "id": "end-approved",
+      "name": "Application Approved",
+      "type": "END"
+    },
+    {
+      "id": "end-rejected",
+      "name": "Application Rejected",
+      "type": "END"
+    },
+    {
+      "id": "end-escalated",
+      "name": "Review Escalated",
+      "type": "END"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "category": "LOAN_PROCESSING",
+    "tags": ["loan", "credit-check", "fraud", "manual-review"],
+    "complexity": "HIGH"
+  }
+}
