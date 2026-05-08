@@ -1,0 +1,65 @@
+# Isolated SUT for the perf load test (specs/003-performance-load-testing).
+# Boots a fresh engine + Postgres + a Go worker pool. Each run uses an
+# anonymous Postgres volume (no persistence between runs) so prior state
+# cannot influence the next run.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: workflow
+      POSTGRES_PASSWORD: workflow
+      POSTGRES_DB: workflow
+    ports:
+      - "${PERF_POSTGRES_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workflow -d workflow"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+
+  engine:
+    build:
+      context: ../workflow-engine
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      WE_POSTGRES_DSN: postgres://workflow:workflow@postgres:5432/workflow?sslmode=disable
+      WE_DISPATCH_MODE: polling
+      WE_LOG_LEVEL: ${PERF_ENGINE_LOG_LEVEL:-warn}
+    ports:
+      - "${PERF_ENGINE_REST_PORT:-18080}:8080"
+      - "${PERF_ENGINE_GRPC_PORT:-19090}:9090"
+      - "${PERF_ENGINE_METRICS_PORT:-19091}:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # 8 worker replicas, no-op handlers for go-step-a/b/c (defined in
+  # e2e/workers/go/main.go). Workers are intentionally over-provisioned
+  # so the engine, not the worker pool, is the bottleneck.
+  worker-go:
+    build:
+      context: ..
+      dockerfile: e2e/workers/go/Dockerfile
+    restart: unless-stopped
+    environment:
+      ENGINE_REST_URL: http://engine:8080
+      ENGINE_GRPC_HOST: engine:9090
+      WORKER_TRANSPORT: ${PERF_WORKER_TRANSPORT:-rest}
+      WE_DISPATCH_MODE: polling
+      WE_LOG_LEVEL: warn
+    depends_on:
+      engine:
+        condition: service_healthy
+    deploy:
+      replicas: 10
+
+networks:
+  default:
+    name: perf-net
