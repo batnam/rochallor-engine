@@ -1,0 +1,15 @@
+{
+  "id": "wf",
+  "name": "empty rules table",
+  "steps": [
+    {
+      "id": "dt",
+      "name": "DT",
+      "type": "DECISION_TABLE",
+      "hitPolicy": "F",
+      "nextStep": "e",
+      "decisionTable": { "rules": [] }
+    },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}

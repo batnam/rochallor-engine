@@ -177,6 +177,37 @@ const runner = new KafkaRunner(
 await runner.start()
 ```
 
+### At-least-once delivery and idempotent handlers
+
+`KafkaRunner` delivers jobs with **at-least-once** semantics. An in-process dedup window (default 10 min) absorbs most duplicates transparently — but a handler **can** be invoked more than once for the same `jobId` when:
+
+- The relay was down longer than `dedupWindowMs` before republishing.
+- This runner restarted between the original message and a relay-republished duplicate.
+
+**Handlers must be idempotent.** Use `job.jobId` as the idempotency key for every external side-effect:
+
+```typescript
+registry.register('send-invoice', async (job) => {
+  // Guard: skip if this jobId was already processed.
+  if (await db.invoiceAlreadySent(job.jobId)) {
+    return {}
+  }
+  return sendInvoiceToCustomer(job.variables, { idempotencyKey: job.jobId })
+})
+```
+
+Common patterns:
+
+| Side-effect | Idempotency approach |
+|-------------|----------------------|
+| DB write | Upsert on a `job_id` unique column or check-before-insert |
+| HTTP call | Pass `job.jobId` as `Idempotency-Key` header (Stripe, Adyen, etc.) |
+| Email / push | Insert into `notifications_sent(job_id)` with UNIQUE; skip if row exists |
+
+The engine's `completeJob` / `failJob` calls are already idempotent — a second call with the same `jobId` is a no-op. Only your external side-effects need to be guarded.
+
+---
+
 ### KafkaRunner configuration reference
 
 | Field | Type | Default | Description |

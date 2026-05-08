@@ -1,0 +1,43 @@
+{
+  "id": "LOS::loan-tier-routing-007",
+  "name": "Loan Tier Routing — 007 canonical pattern",
+  "description": "Canonical pattern: DECISION_TABLE classifies (sets `tier`), DECISION routes on it. The table has hit policy First and a linear nextStep that points at the DECISION step. Input variables `creditScore` and `loanAmount` are supplied at instance start.",
+  "steps": [
+    {
+      "id": "classify-tier",
+      "name": "Classify Tier",
+      "type": "DECISION_TABLE",
+      "hitPolicy": "F",
+      "nextStep": "route-by-tier",
+      "decisionTable": {
+        "rules": [
+          {
+            "when":    { "creditScore": "creditScore >= 750" },
+            "outputs": { "tier": "GOLD",   "feePercent": 0.5 }
+          },
+          {
+            "when":    { "creditScore": "creditScore >= 700" },
+            "outputs": { "tier": "SILVER", "feePercent": 0.7 }
+          },
+          {
+            "when":    {},
+            "outputs": { "tier": "BRONZE", "feePercent": 1.0 }
+          }
+        ]
+      }
+    },
+    {
+      "id": "route-by-tier",
+      "name": "Route by Tier",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "tier == \"GOLD\"":   "gold-end",
+        "tier == \"SILVER\"": "silver-end",
+        "tier == \"BRONZE\"": "bronze-end"
+      }
+    },
+    { "id": "gold-end",   "name": "Approved (Gold)",   "type": "END" },
+    { "id": "silver-end", "name": "Approved (Silver)", "type": "END" },
+    { "id": "bronze-end", "name": "Approved (Bronze)", "type": "END" }
+  ]
+}

@@ -1,8 +1,6 @@
 # Tradeoffs: Polling vs Event-Driven (Kafka + Outbox)
 
 **Feature**: Event-Driven Job Dispatch via Kafka + Transaction Outbox (Opt-In)
-**Branch**: `006-kafka-outbox-dispatch`
-**Companion to**: `spec.md`, `research.md`
 **Purpose**: An honest comparison of the two dispatch modes this feature makes available. Readers should come away understanding **when each mode wins** and **what they are signing up for** if they opt into event-driven mode.
 
 ---

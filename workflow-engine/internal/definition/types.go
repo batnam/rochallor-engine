@@ -1,7 +1,7 @@
 // Package definition provides the Go representation of the JSON workflow
 // definition format. These types match the legacy fixture shape exactly
-// (see data-model §1) so any *.json file from legacy-workflow-engine can
-// be unmarshalled directly into WorkflowDefinition without transformation.
+//
+//	so any *.json file from legacy-workflow-engine can be unmarshalled directly into WorkflowDefinition without transformation.
 //
 // The delegateClass field is preserved as an advisory string per R-010 —
 // the Engine never loads or instantiates it.
@@ -13,14 +13,15 @@ import "encoding/json"
 type StepType string
 
 const (
-	StepTypeServiceTask      StepType = "SERVICE_TASK"
-	StepTypeUserTask         StepType = "USER_TASK"
-	StepTypeDecision         StepType = "DECISION"
-	StepTypeTransformation   StepType = "TRANSFORMATION"
-	StepTypeWait             StepType = "WAIT"
-	StepTypeParallelGateway  StepType = "PARALLEL_GATEWAY"
-	StepTypeJoinGateway      StepType = "JOIN_GATEWAY"
-	StepTypeEnd              StepType = "END"
+	StepTypeServiceTask     StepType = "SERVICE_TASK"
+	StepTypeUserTask        StepType = "USER_TASK"
+	StepTypeDecision        StepType = "DECISION"
+	StepTypeTransformation  StepType = "TRANSFORMATION"
+	StepTypeWait            StepType = "WAIT"
+	StepTypeParallelGateway StepType = "PARALLEL_GATEWAY"
+	StepTypeJoinGateway     StepType = "JOIN_GATEWAY"
+	StepTypeEnd             StepType = "END"
+	StepTypeDecisionTable   StepType = "DECISION_TABLE"
 )
 
 // BoundaryEventType discriminates boundary-event behaviour.
@@ -58,15 +59,30 @@ type WorkflowStep struct {
 	Description string   `json:"description,omitempty"`
 
 	// Sequencing
-	NextStep         string   `json:"nextStep,omitempty"`
+	NextStep          string   `json:"nextStep,omitempty"`
 	ParallelNextSteps []string `json:"parallelNextSteps,omitempty"`
-	JoinStep         string   `json:"joinStep,omitempty"`
+	JoinStep          string   `json:"joinStep,omitempty"`
 
-	// DECISION: keys are R-003 expressions, values are target step IDs.
-	ConditionalNextSteps map[string]string `json:"conditionalNextSteps,omitempty"`
+	// DECISION: keys are expressions, values are target step IDs.
+	// Insertion order is preserved at JSON decode time, so the engine
+	// evaluates expressions in the order the author wrote them (per
+	// docs/workflow-format.md → Expression Reference).
+	ConditionalNextSteps *ConditionalBranches `json:"conditionalNextSteps,omitempty"`
 
 	// TRANSFORMATION: variable name → literal or ${expression}.
 	Transformations map[string]json.RawMessage `json:"transformations,omitempty"`
+
+	// DECISION_TABLE: tabular rule grid. Populated only when Type == StepTypeDecisionTable.
+	// The table produces output variables (per rule.Outputs) and unconditionally
+	// advances to NextStep (the step-level field above) once a hit policy has
+	// determined which matched rules contribute. Routing is the downstream
+	// DECISION step's job, not the table's. See specs/007-decision-table-outputs/.
+	DecisionTable *DecisionTable `json:"decisionTable,omitempty"`
+
+	// DECISION_TABLE: hit policy code. One of "U", "F", "A", "R", "C",
+	// "C+", "C#", "C>", "C<". Omitted/empty defaults to "U" (Unique) at
+	// runtime per specs/007-decision-table-outputs/research.md R2.
+	HitPolicy string `json:"hitPolicy,omitempty"`
 
 	// SERVICE_TASK / USER_TASK
 	JobType       string `json:"jobType,omitempty"`
@@ -75,6 +91,38 @@ type WorkflowStep struct {
 
 	// Boundary events (SERVICE_TASK, USER_TASK, WAIT)
 	BoundaryEvents []BoundaryEvent `json:"boundaryEvents,omitempty"`
+}
+
+// DecisionTable is the payload for a DECISION_TABLE step. Rules are
+// evaluated against pre-step instance variables; which matched rules
+// contribute to the output variables is governed by the step-level
+// HitPolicy (one of U, F, A, R, C, C+, C#, C>, C<). After outputs are
+// merged into the variable map, the instance unconditionally advances to
+// the step-level NextStep. No-match under any policy fails the step with
+// the error string "DecisionTableNoRuleMatched"; authors who want
+// fallback behaviour write a catch-all rule (empty When map) at the
+// bottom of the rules list. See specs/007-decision-table-outputs/
+// data-model.md §1.
+type DecisionTable struct {
+	// Rules is the ordered list of rule rows. Must be non-empty.
+	Rules []DecisionTableRule `json:"rules"`
+}
+
+// DecisionTableRule is one row of a decision table.
+type DecisionTableRule struct {
+	// When maps an input column name to a boolean cell expression in the
+	// existing expression dialect. Empty/missing cells are wildcards
+	// (always match). An empty When map matches everything (catch-all).
+	When map[string]string `json:"when,omitempty"`
+
+	// Outputs is an optional map of variable name → JSON literal or
+	// "${expression}" string, using the same encoding as
+	// TRANSFORMATION.transformations. Whether and how each rule's
+	// Outputs contribute to the final variable map depends on the
+	// step-level HitPolicy. Rules omitting an output column that other
+	// rules in the same match set declare contribute null for that
+	// column under R/C policies.
+	Outputs map[string]json.RawMessage `json:"outputs,omitempty"`
 }
 
 // MarshalJSON is provided so tests can call it directly; encoding/json handles the rest.

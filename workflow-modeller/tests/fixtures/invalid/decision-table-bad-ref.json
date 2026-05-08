@@ -1,0 +1,17 @@
+{
+  "id": "wf",
+  "name": "bad ref table",
+  "steps": [
+    {
+      "id": "dt",
+      "name": "DT",
+      "type": "DECISION_TABLE",
+      "hitPolicy": "F",
+      "nextStep": "ghost-step",
+      "decisionTable": {
+        "rules": [{ "when": {}, "outputs": { "tier": "GOLD" } }]
+      }
+    },
+    { "id": "e", "name": "End", "type": "END" }
+  ]
+}

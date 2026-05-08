@@ -165,7 +165,10 @@ func TestDefinitionRoundTrip(t *testing.T) {
 	// ── §1.2 DECISION step ───────────────────────────────────────────────────
 	d := def.Steps[1]
 	assertEqual(t, "step[1].type", definition.StepTypeDecision, d.Type)
-	assertLenMap(t, "step[1].conditionalNextSteps", 2, d.ConditionalNextSteps)
+	if d.ConditionalNextSteps == nil {
+		t.Fatalf("step[1].conditionalNextSteps is nil")
+	}
+	assertLenMap(t, "step[1].conditionalNextSteps", 2, d.ConditionalNextSteps.Targets)
 
 	// ── §1.2 TRANSFORMATION step ─────────────────────────────────────────────
 	tr := def.Steps[2]

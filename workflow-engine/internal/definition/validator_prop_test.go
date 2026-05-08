@@ -213,9 +213,9 @@ func TestValidate_DecisionTargetMustExist(t *testing.T) {
 					ID:   "decide",
 					Name: "Decide",
 					Type: definition.StepTypeDecision,
-					ConditionalNextSteps: map[string]string{
-						"status == 'ok'": "nonexistent-step", // dangling
-					},
+					ConditionalNextSteps: definition.NewConditionalBranches(
+						"status == 'ok'", "nonexistent-step", // dangling
+					),
 				},
 				{ID: "end", Name: "End", Type: definition.StepTypeEnd},
 			},

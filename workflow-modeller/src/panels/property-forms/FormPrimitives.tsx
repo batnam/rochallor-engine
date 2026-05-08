@@ -76,6 +76,7 @@ interface StepPickerProps {
   filter?: (step: Step) => boolean;
   excludeIds?: string[];
   allowEmpty?: boolean;
+  ariaLabel?: string;
 }
 
 export function StepPicker({
@@ -84,11 +85,17 @@ export function StepPicker({
   filter,
   excludeIds,
   allowEmpty,
+  ariaLabel,
 }: StepPickerProps): ReactNode {
   const steps = useWorkflowStore((s) => s.definition.steps);
   const candidates = steps.filter((s) => (!filter || filter(s)) && !excludeIds?.includes(s.id));
   return (
-    <select className="wm-input" value={value} onChange={(e) => onCommit(e.target.value)}>
+    <select
+      className="wm-input"
+      value={value}
+      onChange={(e) => onCommit(e.target.value)}
+      {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
+    >
       {allowEmpty && <option value="">(none)</option>}
       {candidates.map((s) => (
         <option key={s.id} value={s.id}>

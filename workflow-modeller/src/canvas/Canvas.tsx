@@ -25,6 +25,7 @@ import { ParallelEdge } from './edges/ParallelEdge';
 import { SequentialEdge } from './edges/SequentialEdge';
 import { layoutWithElk } from './layout';
 import { DecisionNode } from './nodes/DecisionNode';
+import { DecisionTableNode } from './nodes/DecisionTableNode';
 import { EndNode } from './nodes/EndNode';
 import { JoinGatewayNode } from './nodes/JoinGatewayNode';
 import type { NodeData } from './nodes/NodeShell';
@@ -38,6 +39,7 @@ const nodeTypes: NodeTypes = {
   SERVICE_TASK: ServiceTaskNode,
   USER_TASK: UserTaskNode,
   DECISION: DecisionNode,
+  DECISION_TABLE: DecisionTableNode,
   TRANSFORMATION: TransformationNode,
   WAIT: WaitNode,
   PARALLEL_GATEWAY: ParallelGatewayNode,
@@ -108,6 +110,7 @@ const STEP_TYPE_SET = new Set<StepType>([
   'SERVICE_TASK',
   'USER_TASK',
   'DECISION',
+  'DECISION_TABLE',
   'TRANSFORMATION',
   'WAIT',
   'PARALLEL_GATEWAY',
@@ -166,6 +169,23 @@ function CanvasInner(): ReactNode {
         state.updateStepProperty(source, 'conditionalNextSteps', {
           ...src.conditionalNextSteps,
           [expr]: target,
+        });
+        break;
+      }
+      case 'DECISION_TABLE': {
+        const column = window.prompt('Input column name (leave empty for catch-all rule):', '');
+        if (column === null) return;
+        const expr = column
+          ? window.prompt(`Cell expression for "${column}" (boolean):`, 'value == "X"')
+          : '';
+        if (expr === null) return;
+        const newRule = {
+          when: column ? { [column]: expr } : {},
+          then: target,
+        };
+        state.updateStepProperty(source, 'decisionTable', {
+          ...src.decisionTable,
+          rules: [...src.decisionTable.rules, newRule],
         });
         break;
       }

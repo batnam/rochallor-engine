@@ -73,6 +73,7 @@ proto/workflow/v1/engine.proto   (canonical wire contract)
 | `SERVICE_TASK` | Creates a job that SDK workers poll and execute. Supports retries. |
 | `USER_TASK` | Pauses the workflow until `POST /v1/instances/{instanceId}/user-tasks/{userTaskId}/complete` is called, where `userTaskId` is the stable step id from the workflow definition. |
 | `DECISION` | Evaluates boolean expressions against workflow variables; routes to the first match. |
+| `DECISION_TABLE` | Evaluates a tabular rule grid against the current variables; produces output variables per a `hitPolicy` (`U`/`F`/`A`/`R`/`C` with optional `+`/`#`/`>`/`<` aggregators) and advances linearly to `nextStep`. Pair with a downstream `DECISION` to route on the outputs. |
 | `TRANSFORMATION` | Sets or rewrites variables inline — no worker needed, completes instantly. |
 | `WAIT` | Parks the instance until a boundary timer fires or a signal arrives via `POST /v1/instances/{instanceId}/signals/{waitStepId}`. The signal body (optional) is shallow-merged into the instance variables on resume. |
 | `PARALLEL_GATEWAY` | Fans out to multiple branches that execute concurrently. |
@@ -230,4 +231,4 @@ For full setup instructions, available scripts, and the spec docs, see **[workfl
 | [Go SDK](docs/sdk/go.md) | REST + gRPC + Event | `workflow-sdk-go/` |
 | [Java SDK](docs/sdk/java.md) | REST + gRPC + Event | `workflow-sdk-java/` |
 | [Node / TypeScript SDK](docs/sdk/node.md) | REST + gRPC + Event | `workflow-sdk-node/` |
-| [Python SDK](docs/sdk/python.md) | REST + Event        | `workflow-sdk-python/` |
+| [Python SDK](docs/sdk/python.md) | REST + gRPC + Event | `workflow-sdk-python/` |

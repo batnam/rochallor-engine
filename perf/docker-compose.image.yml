@@ -1,0 +1,7 @@
+# Compose override for --engine-image (T036 / Phase 6).
+# Used by run.sh when PERF_ENGINE_IMAGE is set to avoid building from source.
+# docker compose -f docker-compose.yml -f docker-compose.image.yml up ...
+services:
+  engine:
+    build: !reset null
+    image: ${PERF_ENGINE_IMAGE}

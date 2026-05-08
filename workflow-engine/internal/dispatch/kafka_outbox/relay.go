@@ -136,8 +136,7 @@ func (r *relay) drainOnce(ctx context.Context) (int, error) {
 	results := r.kafkaClient.ProduceSync(ctx, records...)
 	if err := results.FirstErr(); err != nil {
 		// Record per-error code in the producer-errors counter, then fail
-		// the whole cycle. INV-2: leave rows in place so the next cycle
-		// retries them.
+		// the whole cycle. leave rows in place so the next cycle retries them.
 		kafkaProducerErrors.WithLabelValues(classifyKafkaErr(err)).Inc()
 		relayPublishTotal.WithLabelValues("error").Add(float64(len(batch)))
 		return 0, fmt.Errorf("relay: kafka publish: %w", err)

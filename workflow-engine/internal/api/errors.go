@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// errorBody is the canonical JSON error envelope (per R-011).
+// errorBody is the canonical JSON error envelope.
 //
 //	{
 //	  "error":  "unsupported-format",

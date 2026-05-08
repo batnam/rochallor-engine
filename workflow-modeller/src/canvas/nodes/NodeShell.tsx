@@ -7,6 +7,7 @@ const STEP_ACCENT: Record<StepType, string> = {
   SERVICE_TASK: '#3b82f6',
   USER_TASK: '#22c55e',
   DECISION: '#ef4444',
+  DECISION_TABLE: '#f97316',
   TRANSFORMATION: '#a855f7',
   WAIT: '#64748b',
   PARALLEL_GATEWAY: '#06b6d4',

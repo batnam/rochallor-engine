@@ -2,9 +2,10 @@ import type { Step, StepId, WorkflowDefinition } from './types';
 
 /**
  * Return a fresh definition where every occurrence of `oldId` — in the step
- * array, `nextStep`, `conditionalNextSteps` targets, `parallelNextSteps`,
- * `joinStep`, and `boundaryEvents[].targetStepId` — has been replaced with
- * `newId`. Throws if `newId` already exists on another step.
+ * array, `nextStep` (incl. DECISION_TABLE.nextStep), `conditionalNextSteps`
+ * targets, `parallelNextSteps`, `joinStep`, and `boundaryEvents[].targetStepId`
+ * — has been replaced with `newId`. Throws if `newId` already exists on
+ * another step.
  */
 export function renameStepId(
   def: WorkflowDefinition,
@@ -48,6 +49,8 @@ function remapStep(step: Step, oldId: StepId, newId: StepId, remap: (id: string)
       }
       return { ...base, conditionalNextSteps: remapped };
     }
+    case 'DECISION_TABLE':
+      return { ...base, nextStep: remap(base.nextStep) };
     case 'PARALLEL_GATEWAY':
       return {
         ...base,

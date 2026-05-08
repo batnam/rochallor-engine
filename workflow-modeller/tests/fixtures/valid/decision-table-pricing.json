@@ -1,0 +1,38 @@
+{
+  "id": "loan-pricing",
+  "name": "Loan pricing",
+  "description": "Decision Table fixture: 3 rules x 2 input columns x 1 output column (007 shape).",
+  "steps": [
+    {
+      "id": "score-tier",
+      "name": "Tier from score and amount",
+      "type": "DECISION_TABLE",
+      "hitPolicy": "F",
+      "nextStep": "handle-tier",
+      "decisionTable": {
+        "rules": [
+          {
+            "when": { "score": "value >= 750", "amount": "value < 50000" },
+            "outputs": { "tier": "GOLD" }
+          },
+          {
+            "when": { "score": "value >= 650", "amount": "value < 100000" },
+            "outputs": { "tier": "SILVER" }
+          },
+          {
+            "when": { "score": "value < 650" },
+            "outputs": { "tier": "NONE" }
+          }
+        ]
+      }
+    },
+    {
+      "id": "handle-tier",
+      "name": "Handle tier",
+      "type": "SERVICE_TASK",
+      "jobType": "handle-tier",
+      "nextStep": "end"
+    },
+    { "id": "end", "name": "End", "type": "END" }
+  ]
+}

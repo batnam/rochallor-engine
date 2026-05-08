@@ -1,0 +1,35 @@
+{
+  "id": "LOS::applicable-fees-total-007",
+  "name": "Applicable Fees Total — Collect+sum",
+  "description": "DECISION_TABLE with hit policy C+ sums the per-rule fee values into a scalar variable `fee`. Seeds wireTransfer=true, internationalTx=true, amount=15000, expedited=false → three matching rules (fees 25 + 15 + 10 = 50).",
+  "steps": [
+    {
+      "id": "seed",
+      "name": "Seed Tx Variables",
+      "type": "TRANSFORMATION",
+      "nextStep": "applicable-fees-total",
+      "transformations": {
+        "wireTransfer":    true,
+        "internationalTx": true,
+        "amount":          15000,
+        "expedited":       false
+      }
+    },
+    {
+      "id": "applicable-fees-total",
+      "name": "Total Applicable Fees",
+      "type": "DECISION_TABLE",
+      "hitPolicy": "C+",
+      "nextStep": "end",
+      "decisionTable": {
+        "rules": [
+          { "when": { "wireTransfer":    "wireTransfer == true" },    "outputs": { "fee": 25.0 } },
+          { "when": { "internationalTx": "internationalTx == true" }, "outputs": { "fee": 15.0 } },
+          { "when": { "amount":          "amount > 10000" },          "outputs": { "fee": 10.0 } },
+          { "when": { "expedited":       "expedited == true" },       "outputs": { "fee": 5.0  } }
+        ]
+      }
+    },
+    { "id": "end", "name": "End", "type": "END" }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "id": "LOS::loan-disbursement-workflow",
+  "name": "Loan Disbursement Workflow",
+  "description": "Computes disbursement fees, routes large amounts through senior approval, transfers funds, and notifies the customer.",
+  "steps": [
+    {
+      "id": "compute-disbursement",
+      "name": "Compute Disbursement Details",
+      "type": "TRANSFORMATION",
+      "transformations": {
+        "disbursementFee": "${loanAmount * 0.01}",
+        "netAmount": "${loanAmount - loanAmount * 0.01}",
+        "requiresSeniorApproval": "${loanAmount > 500000000}"
+      },
+      "nextStep": "route-disbursement"
+    },
+    {
+      "id": "route-disbursement",
+      "name": "Route by Amount",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#requiresSeniorApproval == true": "senior-approval-task",
+        "#requiresSeniorApproval == false": "prepare-disbursement"
+      }
+    },
+    {
+      "id": "senior-approval-task",
+      "name": "Senior Officer Approval",
+      "type": "USER_TASK",
+      "nextStep": "check-senior-decision",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT8H",
+          "interrupting": false,
+          "targetStepId": "notify-approval-overdue"
+        }
+      ]
+    },
+    {
+      "id": "notify-approval-overdue",
+      "name": "Notify Approval Overdue",
+      "type": "SERVICE_TASK",
+      "jobType": "notify-approval-overdue",
+      "nextStep": "end-disbursement-timeout"
+    },
+    {
+      "id": "check-senior-decision",
+      "name": "Check Senior Decision",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#seniorDecision == 'APPROVED'": "prepare-disbursement",
+        "#seniorDecision == 'REJECTED'": "end-disbursement-rejected"
+      }
+    },
+    {
+      "id": "prepare-disbursement",
+      "name": "Prepare Disbursement Record",
+      "type": "SERVICE_TASK",
+      "jobType": "prepare-disbursement",
+      "retryCount": 3,
+      "nextStep": "transfer-funds"
+    },
+    {
+      "id": "transfer-funds",
+      "name": "Transfer Funds to Customer",
+      "type": "SERVICE_TASK",
+      "jobType": "transfer-funds",
+      "retryCount": 5,
+      "nextStep": "notify-customer"
+    },
+    {
+      "id": "notify-customer",
+      "name": "Notify Customer of Disbursement",
+      "type": "SERVICE_TASK",
+      "jobType": "notify-disbursement",
+      "retryCount": 2,
+      "nextStep": "end-disbursed"
+    },
+    {
+      "id": "end-disbursed",
+      "name": "Disbursement Complete",
+      "type": "END"
+    },
+    {
+      "id": "end-disbursement-rejected",
+      "name": "Disbursement Rejected by Senior",
+      "type": "END"
+    },
+    {
+      "id": "end-disbursement-timeout",
+      "name": "Disbursement Timed Out",
+      "type": "END"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "category": "LOAN_PROCESSING",
+    "tags": ["loan", "disbursement", "fund-transfer"],
+    "complexity": "MEDIUM"
+  }
+}

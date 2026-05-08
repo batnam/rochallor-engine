@@ -1,0 +1,58 @@
+{
+  "id": "e2e-node-decision-table",
+  "name": "E2E Node Decision Table",
+  "steps": [
+    {
+      "id": "node-seed-vars",
+      "name": "Seed Vars",
+      "type": "TRANSFORMATION",
+      "transformations": {
+        "score": 720,
+        "amount": 30000000
+      },
+      "nextStep": "node-tier-table"
+    },
+    {
+      "id": "node-tier-table",
+      "name": "Tier Table",
+      "type": "DECISION_TABLE",
+      "hitPolicy": "F",
+      "nextStep": "node-route-by-tier",
+      "decisionTable": {
+        "rules": [
+          {
+            "when": { "score": "score >= 750", "amount": "amount >= 50000000" },
+            "outputs": { "tier": "PLATINUM", "feePercent": 0.25 }
+          },
+          {
+            "when": { "score": "score >= 700", "amount": "amount >= 10000000" },
+            "outputs": { "tier": "GOLD", "feePercent": "${amount > 100000000 ? 0.5 : 0.4}" }
+          },
+          {
+            "when": { "score": "score >= 600", "amount": "amount >= 1000000" },
+            "outputs": { "tier": "SILVER", "feePercent": 0.6 }
+          },
+          {
+            "when": {},
+            "outputs": { "tier": "OTHER", "feePercent": 1.0 }
+          }
+        ]
+      }
+    },
+    {
+      "id": "node-route-by-tier",
+      "name": "Route by Tier",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "tier == \"PLATINUM\"": "node-end-platinum",
+        "tier == \"GOLD\"":     "node-end-gold",
+        "tier == \"SILVER\"":   "node-end-silver",
+        "tier == \"OTHER\"":    "node-end-other"
+      }
+    },
+    { "id": "node-end-platinum", "name": "End Platinum", "type": "END" },
+    { "id": "node-end-gold",     "name": "End Gold",     "type": "END" },
+    { "id": "node-end-silver",   "name": "End Silver",   "type": "END" },
+    { "id": "node-end-other",    "name": "End Other",    "type": "END" }
+  ]
+}

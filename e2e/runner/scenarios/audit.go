@@ -27,6 +27,20 @@ func SetLogDir(dir string) {
 	logDir = dir
 }
 
+// sanitizeFilename replaces characters that are illegal in filenames on NTFS /
+// rejected by actions/upload-artifact (`" : < > | * ? \r \n`) plus path
+// separators with `_`, so logs from workflow names like `LOS::foo` can be
+// uploaded as CI artifacts.
+func sanitizeFilename(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '"', ':', '<', '>', '|', '*', '?', '\r', '\n', '/', '\\':
+			return '_'
+		}
+		return r
+	}, s)
+}
+
 // LogEvent appends a lifecycle event to the per-instance audit log.
 // It is the low-level primitive for writing to the file.
 func LogEvent(instanceID string, eventType string, message string) {
@@ -40,9 +54,9 @@ func LogEvent(instanceID string, eventType string, message string) {
 
 	var filename string
 	if wfName != "" {
-		filename = filepath.Join(logDir, fmt.Sprintf("audit-%s-%s.log", wfName, instanceID))
+		filename = filepath.Join(logDir, fmt.Sprintf("audit-%s-%s.log", sanitizeFilename(wfName), sanitizeFilename(instanceID)))
 	} else {
-		filename = filepath.Join(logDir, fmt.Sprintf("audit-%s.log", instanceID))
+		filename = filepath.Join(logDir, fmt.Sprintf("audit-%s.log", sanitizeFilename(instanceID)))
 	}
 
 	// Ensure directory exists

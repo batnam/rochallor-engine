@@ -188,6 +188,38 @@ func main() {
 }
 ```
 
+### At-least-once delivery and idempotent handlers
+
+`kafkarunner` delivers jobs with **at-least-once** semantics. An in-process dedup window (default 10 min) absorbs most duplicates transparently — but a handler **can** be invoked more than once for the same `JobID` when:
+
+- The relay was down longer than `DedupWindow` before republishing.
+- This runner restarted between the original message and a relay-republished duplicate.
+
+**Handlers must be idempotent.** Use `job.JobID` as the idempotency key for every external side-effect:
+
+```go
+registry.Register("send-invoice", func(ctx context.Context, job handler.JobContext) (handler.Result, error) {
+    // Guard: skip if this JobID was already processed.
+    if sent, _ := db.InvoiceAlreadySent(ctx, job.JobID); sent {
+        return handler.Result{}, nil
+    }
+    return handler.Result{}, sendInvoice(ctx, job.Variables, job.JobID)
+})
+```
+
+Common patterns:
+
+| Side-effect | Idempotency approach |
+|-------------|----------------------|
+| DB write | Upsert on a `job_id` unique column or check-before-insert |
+| HTTP call | Pass `job.JobID` as `Idempotency-Key` header (Stripe, Adyen, etc.) |
+| Email / push | Insert into `notifications_sent(job_id)` with UNIQUE; skip if row exists |
+| File write | Write to `<job_id>.tmp`, rename; check existence before starting |
+
+The engine's `CompleteJob` / `FailJob` calls are already idempotent — a second call with the same `JobID` is a no-op. Only your external side-effects need to be guarded.
+
+---
+
 ### Kafka Configuration Reference
 
 When using `kafkarunner`, the following configuration fields are available:

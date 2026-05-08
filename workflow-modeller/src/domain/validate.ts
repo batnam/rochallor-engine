@@ -6,6 +6,17 @@ import type { Diagnostic, Step, StepId, WorkflowDefinition } from './types';
 const ID_PATTERN = /^[A-Za-z0-9_:\-]+$/;
 const ISO_DURATION_PATTERN =
   /^P(?!$)(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+(?:\.\d+)?S)?)?$/;
+const HIT_POLICIES: ReadonlySet<string> = new Set([
+  'U',
+  'F',
+  'A',
+  'R',
+  'C',
+  'C+',
+  'C#',
+  'C>',
+  'C<',
+]);
 
 export function validate(def: WorkflowDefinition): Diagnostic[] {
   const out: Diagnostic[] = [];
@@ -149,6 +160,114 @@ function checkStepVariantShape(step: Step, out: Diagnostic[]): void {
         });
       }
       break;
+    case 'DECISION_TABLE': {
+      const rules = step.decisionTable.rules;
+      if (rules.length === 0) {
+        out.push({
+          code: 'DECISION_TABLE_HAS_RULES',
+          severity: 'error',
+          message: `DECISION_TABLE "${step.id}" must declare at least one rule.`,
+          nodeId: step.id,
+          field: 'decisionTable.rules',
+        });
+      }
+      if (!step.nextStep || step.nextStep.trim() === '') {
+        out.push({
+          code: 'DECISION_TABLE_HAS_NEXT',
+          severity: 'error',
+          message: `DECISION_TABLE "${step.id}" must declare nextStep.`,
+          nodeId: step.id,
+          field: 'nextStep',
+        });
+      }
+      const hitPolicy = step.hitPolicy;
+      if (hitPolicy !== undefined && !HIT_POLICIES.has(hitPolicy)) {
+        out.push({
+          code: 'DECISION_TABLE_HIT_POLICY_UNKNOWN',
+          severity: 'error',
+          message: `DECISION_TABLE "${step.id}" has unknown hitPolicy "${hitPolicy}". Allowed: U, F, A, R, C, C+, C#, C>, C<.`,
+          nodeId: step.id,
+          field: 'hitPolicy',
+        });
+      }
+      // V6: aggregator suffix only valid on the C policy.
+      if (
+        typeof hitPolicy === 'string' &&
+        hitPolicy.length > 1 &&
+        hitPolicy[0] !== 'C' &&
+        ['+', '#', '>', '<'].includes(hitPolicy[1] ?? '')
+      ) {
+        out.push({
+          code: 'DECISION_TABLE_AGGREGATOR_ON_NON_C',
+          severity: 'error',
+          message: `DECISION_TABLE "${step.id}" hitPolicy "${hitPolicy}" applies an aggregator to a non-Collect policy.`,
+          nodeId: step.id,
+          field: 'hitPolicy',
+        });
+      }
+      const stepRecord = step as unknown as Record<string, unknown>;
+      rules.forEach((rule, i) => {
+        const ruleRecord = rule as unknown as Record<string, unknown>;
+        if (ruleRecord.then !== undefined) {
+          out.push({
+            code: 'DECISION_TABLE_LEGACY_THEN',
+            severity: 'error',
+            message: `DECISION_TABLE "${step.id}" rule ${i + 1} carries legacy "then" field — use the step-level "nextStep" plus per-rule "outputs" (see workflow-format.md, "Migration from 005").`,
+            nodeId: step.id,
+            field: 'decisionTable.rules',
+            ruleIndex: i,
+          });
+        }
+      });
+      const tableRecord = step.decisionTable as unknown as Record<string, unknown>;
+      if (tableRecord.defaultNextStep !== undefined) {
+        out.push({
+          code: 'DECISION_TABLE_LEGACY_DEFAULT_NEXT_STEP',
+          severity: 'error',
+          message: `DECISION_TABLE "${step.id}" carries legacy "defaultNextStep" field — no-match is a runtime failure now (see workflow-format.md, "Migration from 005").`,
+          nodeId: step.id,
+          field: 'decisionTable.defaultNextStep',
+        });
+      }
+      const forbiddenFields: readonly string[] = [
+        'conditionalNextSteps',
+        'transformations',
+        'parallelNextSteps',
+        'joinStep',
+        'jobType',
+        'delegateClass',
+        'retryCount',
+        'boundaryEvents',
+      ];
+      for (const f of forbiddenFields) {
+        if (stepRecord[f] !== undefined) {
+          out.push({
+            code: 'STEP_FIELD_INVALID',
+            severity: 'error',
+            message: `Field "${f}" is not valid on a DECISION_TABLE step.`,
+            nodeId: step.id,
+            field: f,
+          });
+        }
+      }
+      let firstCatchAllIndex = -1;
+      rules.forEach((rule, i) => {
+        const isCatchAll = Object.keys(rule.when).length === 0;
+        if (firstCatchAllIndex >= 0 && i > firstCatchAllIndex) {
+          out.push({
+            code: 'DECISION_TABLE_UNREACHABLE_RULE',
+            severity: 'warning',
+            message: `Rule ${i + 1} is unreachable: rule ${firstCatchAllIndex + 1} is a catch-all and matches first.`,
+            nodeId: step.id,
+            field: 'decisionTable.rules',
+            ruleIndex: i,
+          });
+        } else if (isCatchAll && firstCatchAllIndex === -1) {
+          firstCatchAllIndex = i;
+        }
+      });
+      break;
+    }
     case 'TRANSFORMATION':
       if (!step.nextStep || step.nextStep.trim() === '') {
         out.push({
@@ -245,6 +364,9 @@ function checkRefsResolve(step: Step, index: Map<StepId, Step>, out: Diagnostic[
         if (!index.has(target)) missing(target, 'conditionalNextSteps', expr);
       }
       break;
+    case 'DECISION_TABLE':
+      if (step.nextStep && !index.has(step.nextStep)) missing(step.nextStep, 'nextStep');
+      break;
     case 'PARALLEL_GATEWAY':
       for (const target of step.parallelNextSteps) {
         if (!index.has(target)) missing(target, 'parallelNextSteps');
@@ -334,6 +456,55 @@ function checkExpressions(step: Step, def: WorkflowDefinition, out: Diagnostic[]
         );
       }
     }
+  } else if (step.type === 'DECISION_TABLE') {
+    const knownVars = collectKnownVariables(def);
+    step.decisionTable.rules.forEach((rule, i) => {
+      for (const [column, expr] of Object.entries(rule.when)) {
+        if (!expr || expr.trim() === '') continue;
+        const cellDiags = lintDecisionExpression(expr, knownVars, {
+          nodeId: step.id,
+          field: 'decisionTable.rules',
+        });
+        for (const d of cellDiags) {
+          out.push({
+            ...d,
+            code: remapCellCode(d.code),
+            ruleIndex: i,
+            cellColumn: column,
+          });
+        }
+      }
+      if (rule.outputs) {
+        for (const [key, value] of Object.entries(rule.outputs)) {
+          if (typeof value !== 'string') continue;
+          const outDiags = lintTransformationExpression(value, {
+            nodeId: step.id,
+            field: 'decisionTable.rules',
+            branchKey: key,
+          });
+          for (const d of outDiags) {
+            out.push({
+              ...d,
+              code: d.code === 'TRANSFORMATION_EXPR_SYNTAX' ? 'DT_OUTPUT_EXPR_SYNTAX' : d.code,
+              ruleIndex: i,
+            });
+          }
+        }
+      }
+    });
+  }
+}
+
+function remapCellCode(code: Diagnostic['code']): Diagnostic['code'] {
+  switch (code) {
+    case 'DECISION_EXPR_SYNTAX':
+      return 'DT_CELL_EXPR_SYNTAX';
+    case 'DECISION_EXPR_NON_BOOLEAN':
+      return 'DT_CELL_EXPR_NON_BOOLEAN';
+    case 'DECISION_EXPR_UNKNOWN_IDENT':
+      return 'DT_CELL_EXPR_UNKNOWN_IDENT';
+    default:
+      return code;
   }
 }
 
@@ -381,6 +552,8 @@ function outgoingTargets(step: Step): StepId[] {
       return [step.nextStep];
     case 'DECISION':
       return Object.values(step.conditionalNextSteps);
+    case 'DECISION_TABLE':
+      return step.nextStep ? [step.nextStep] : [];
     case 'PARALLEL_GATEWAY':
       return [...step.parallelNextSteps];
     case 'END':

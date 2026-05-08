@@ -227,6 +227,17 @@ type jsonStep struct {
 	DelegateClass        string                     `json:"delegateClass"`
 	RetryCount           int32                      `json:"retryCount"`
 	BoundaryEvents       []jsonBoundaryEvent        `json:"boundaryEvents"`
+	HitPolicy            string                     `json:"hitPolicy"`
+	DecisionTable        *jsonDecisionTable         `json:"decisionTable"`
+}
+
+type jsonDecisionTable struct {
+	Rules []jsonDecisionTableRule `json:"rules"`
+}
+
+type jsonDecisionTableRule struct {
+	When    map[string]string          `json:"when"`
+	Outputs map[string]json.RawMessage `json:"outputs"`
 }
 
 type jsonBoundaryEvent struct {
@@ -245,6 +256,7 @@ var stepTypeByName = map[string]workflowv1.StepType{
 	"PARALLEL_GATEWAY": workflowv1.StepType_STEP_TYPE_PARALLEL_GATEWAY,
 	"JOIN_GATEWAY":     workflowv1.StepType_STEP_TYPE_JOIN_GATEWAY,
 	"END":              workflowv1.StepType_STEP_TYPE_END,
+	"DECISION_TABLE":   workflowv1.StepType_STEP_TYPE_DECISION_TABLE,
 }
 
 func parseJSONDefinition(defJSON []byte) (*workflowv1.WorkflowDefinition, error) {
@@ -278,6 +290,29 @@ func parseJSONDefinition(defJSON []byte) (*workflowv1.WorkflowDefinition, error)
 			JobType:              js.JobType,
 			DelegateClass:        js.DelegateClass,
 			RetryCount:           js.RetryCount,
+			HitPolicy:            js.HitPolicy,
+		}
+		if js.DecisionTable != nil {
+			dt := &workflowv1.DecisionTable{}
+			for _, jr := range js.DecisionTable.Rules {
+				pr := &workflowv1.DecisionTableRule{When: jr.When}
+				if len(jr.Outputs) > 0 {
+					pr.Outputs = make(map[string]*structpb.Value, len(jr.Outputs))
+					for k, raw := range jr.Outputs {
+						var v any
+						if err := json.Unmarshal(raw, &v); err != nil {
+							return nil, fmt.Errorf("step %q decisionTable output %q: %w", js.ID, k, err)
+						}
+						sv, err := structpb.NewValue(v)
+						if err != nil {
+							return nil, fmt.Errorf("step %q decisionTable output %q: convert to proto: %w", js.ID, k, err)
+						}
+						pr.Outputs[k] = sv
+					}
+				}
+				dt.Rules = append(dt.Rules, pr)
+			}
+			ps.DecisionTable = dt
 		}
 		if len(js.Transformations) > 0 {
 			ps.Transformations = make(map[string]*structpb.Value, len(js.Transformations))

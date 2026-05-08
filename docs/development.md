@@ -31,7 +31,7 @@ rochallor-engine/
 ├── workflow-sdk-go/                    # Go SDK (REST + gRPC)
 ├── workflow-sdk-java/                  # Java SDK (REST + gRPC)
 ├── workflow-sdk-node/                  # Node/TypeScript SDK (REST + gRPC)
-└── workflow-sdk-python/                # Python SDK (REST only)
+└── workflow-sdk-python/                # Python SDK (REST + gRPC)
 ```
 
 ---

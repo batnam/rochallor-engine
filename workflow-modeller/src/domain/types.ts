@@ -2,7 +2,11 @@ import type { z } from 'zod';
 import type {
   zBoundaryEvent,
   zDecision,
+  zDecisionTable,
+  zDecisionTableRule,
+  zDecisionTableStep,
   zEnd,
+  zHitPolicy,
   zJoinGateway,
   zParallelGateway,
   zServiceTask,
@@ -17,6 +21,7 @@ export type StepType =
   | 'SERVICE_TASK'
   | 'USER_TASK'
   | 'DECISION'
+  | 'DECISION_TABLE'
   | 'TRANSFORMATION'
   | 'WAIT'
   | 'PARALLEL_GATEWAY'
@@ -28,6 +33,10 @@ export type StepId = string;
 export type ServiceTaskStep = z.infer<typeof zServiceTask>;
 export type UserTaskStep = z.infer<typeof zUserTask>;
 export type DecisionStep = z.infer<typeof zDecision>;
+export type DecisionTableStep = z.infer<typeof zDecisionTableStep>;
+export type DecisionTable = z.infer<typeof zDecisionTable>;
+export type DecisionTableRule = z.infer<typeof zDecisionTableRule>;
+export type HitPolicy = z.infer<typeof zHitPolicy>;
 export type TransformationStep = z.infer<typeof zTransformation>;
 export type WaitStep = z.infer<typeof zWait>;
 export type ParallelGatewayStep = z.infer<typeof zParallelGateway>;
@@ -75,16 +84,30 @@ export type DiagnosticCode =
   | 'DECISION_EXPR_REFS'
   | 'TRANSFORMATION_EXPR_SYNTAX'
   | 'UNKNOWN_FIELDS_PRESENT'
-  | 'GRAPH_CYCLE';
+  | 'GRAPH_CYCLE'
+  | 'DECISION_TABLE_HAS_RULES'
+  | 'DECISION_TABLE_HAS_NEXT'
+  | 'DECISION_TABLE_HIT_POLICY_UNKNOWN'
+  | 'DECISION_TABLE_AGGREGATOR_ON_NON_C'
+  | 'DECISION_TABLE_LEGACY_THEN'
+  | 'DECISION_TABLE_LEGACY_DEFAULT_NEXT_STEP'
+  | 'DECISION_TABLE_UNREACHABLE_RULE'
+  | 'DT_CELL_EXPR_SYNTAX'
+  | 'DT_CELL_EXPR_NON_BOOLEAN'
+  | 'DT_CELL_EXPR_UNKNOWN_IDENT'
+  | 'DT_OUTPUT_EXPR_SYNTAX'
+  | 'STEP_FIELD_INVALID';
 
 export interface Diagnostic {
   code: DiagnosticCode;
-  severity: 'error' | 'warning';
+  severity: 'error' | 'warning' | 'info';
   message: string;
   nodeId?: StepId;
   field?: string;
   branchKey?: string;
   boundaryIndex?: number;
+  ruleIndex?: number;
+  cellColumn?: string;
 }
 
 export interface GraphNode {
