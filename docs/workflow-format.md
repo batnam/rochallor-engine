@@ -44,7 +44,7 @@ Every element of the `steps` array is a step object. The `type` field is the dis
 |-------|------|----------|-------------|
 | `id` | string | **yes** | Step identifier — must be unique within the definition. Used in `nextStep` / `conditionalNextSteps` references. |
 | `name` | string | **yes** | Human-readable label. Appears in history and audit logs. |
-| `type` | string | **yes** | One of: `SERVICE_TASK`, `USER_TASK`, `DECISION`, `TRANSFORMATION`, `WAIT`, `PARALLEL_GATEWAY`, `JOIN_GATEWAY`, `END`. |
+| `type` | string | **yes** | One of: `SERVICE_TASK`, `USER_TASK`, `DECISION`, `DECISION_TABLE`, `TRANSFORMATION`, `WAIT`, `PARALLEL_GATEWAY`, `JOIN_GATEWAY`, `END`. |
 | `description` | string | no | Optional free-form text. |
 | `boundaryEvents` | array | no | Timer events that fire while this step is active. See [Boundary Events](#boundary-events). Supported on `SERVICE_TASK`, `USER_TASK`, and `WAIT`. |
 
@@ -136,6 +136,214 @@ Evaluates a set of boolean expressions against the current workflow variables an
 ```
 
 Expressions in `conditionalNextSteps` must evaluate to a **boolean**. A non-boolean result (e.g. a bare arithmetic expression) will fail the step. See [Expression Reference](#expression-reference) for the full syntax, operators, and built-in functions.
+
+---
+
+### `DECISION_TABLE` — tabular rule evaluation
+
+Produces output variables from a tabular grid of rules and advances linearly to `nextStep`. Each rule combines per-input cell conditions (conjunction) with a map of output variable assignments. Rules are evaluated in document order; which matched rules contribute to the output map is governed by the step's `hitPolicy`. Routing is **not** the table's job — pair it with a downstream `DECISION` step that reads the produced variables.
+
+Use this step type when the same logical decision varies on two or more inputs (e.g. pricing tiers driven by credit score × loan amount) — it scales better than a chain of `DECISION` steps.
+
+#### 1. Wire shape
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `hitPolicy` | string | no (default `"U"`) | One of `U`, `F`, `A`, `R`, `C`, `C+`, `C#`, `C>`, `C<`. See **Hit policies** below. |
+| `nextStep` | string | **yes** | Step ID of the linear successor. Must reference an existing step in the same definition. |
+| `decisionTable` | object | **yes** | Payload object holding `rules`. |
+| `decisionTable.rules` | array | **yes** | Ordered rule rows. Must have at least one entry. Evaluated in document order. |
+
+Each rule (an entry of `decisionTable.rules`) is an object:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `when` | object | no | Map of `inputColumnName → boolean expression`. The conjunction (logical AND) of all cells in `when` is the rule's match condition. Missing/empty/whitespace cells are treated as wildcards (always match). An empty `when` matches everything (catch-all). |
+| `outputs` | object | no | Map of `variableName → literal-or-${expression}`. Uses the same encoding as `TRANSFORMATION.transformations`. Evaluated against the **pre-step** variable map; the hit policy decides which matched rules' outputs contribute. |
+
+```json
+{
+  "id": "classify-tier",
+  "name": "Classify Tier",
+  "type": "DECISION_TABLE",
+  "hitPolicy": "F",
+  "nextStep": "route-by-tier",
+  "decisionTable": {
+    "rules": [
+      {
+        "when":    { "creditScore": "creditScore >= 750", "amount": "amount >= 50000000" },
+        "outputs": { "tier": "GOLD",   "feePercent": 0.5 }
+      },
+      {
+        "when":    { "creditScore": "creditScore >= 700" },
+        "outputs": { "tier": "SILVER", "feePercent": 0.7 }
+      },
+      {
+        "when":    {},
+        "outputs": { "tier": "BRONZE", "feePercent": 1.0 }
+      }
+    ]
+  }
+}
+```
+
+#### 2. Hit policies
+
+| Code | Name | Behaviour when ≥1 rules match |
+|------|------|------------------------------|
+| `U`  | Unique | Exactly **one** rule must match. Two or more matches fail the step with `DecisionTableUniqueViolation`. Outputs come from the matched rule. |
+| `F`  | First  | The **first** matching rule (in document order) contributes its outputs. Later matches are ignored. |
+| `A`  | Any    | All matched rules must produce structurally-equal values per output column. Disagreement fails the step with `DecisionTableAnyConflict`. |
+| `R`  | Rule Order | Each output column becomes a list of values, one entry per matched rule, in document order. |
+| `C`  | Collect | Same per-column list shape as `R` (document order in practice, not promised). |
+| `C+` | Collect + sum | Per-column list, then **sum** of numeric values. Non-numeric values fail with `DecisionTableAggregatorTypeError`. |
+| `C#` | Collect + count | The **count** of matched rules. Type-agnostic; works on any output column type. |
+| `C>` | Collect + max | Per-column **max** of numeric values. Non-numeric values fail with `DecisionTableAggregatorTypeError`. |
+| `C<` | Collect + min | Per-column **min** of numeric values. Non-numeric values fail with `DecisionTableAggregatorTypeError`. |
+
+Zero matches under **any** policy fail the step with `DecisionTableNoRuleMatched`. Write a catch-all rule (empty `when`) at the bottom of the rules list if you need fallback behaviour.
+
+#### 3. `Collect` aggregators
+
+The aggregator suffix on `C` collapses each output column's matched-value list into a single scalar. `+`, `>`, `<` require numeric values; `#` (count) is type-agnostic and returns the count of matched rules as an integer for every output column.
+
+A rule that omits a column declared by other matched rules contributes `null` to that column's list. Under `+`/`>`/`<` this surfaces as a `DecisionTableAggregatorTypeError` (which is the correct authoring signal); under `#` the count is unaffected.
+
+#### 4. Runtime behaviour
+
+- Rules are evaluated **in document order** against the pre-step variable snapshot. A rule's matched status does not depend on other rules' outputs.
+- A `when` cell that is missing, empty, or whitespace is a **wildcard** — that column does not constrain the rule.
+- An empty `when` object (or omitted entirely) matches everything; use this for a catch-all rule.
+- Cell expressions must evaluate to a **boolean**. A non-boolean result fails the step with a `DecisionTableCellError` naming the rule index and column. Expressions use the same dialect as `DECISION` / `TRANSFORMATION` — see [Expression Reference](#expression-reference).
+- `outputs` are evaluated against the **pre-step** variable snapshot (so declaration order inside `outputs` is irrelevant, and outputs that overwrite an input variable name do not leak back into `when` evaluations). The hit policy then collapses the matched rules' outputs and the result is shallow-merged into the instance variables — same merge semantics as `TRANSFORMATION`.
+- The instance unconditionally advances to `nextStep` once the merge completes.
+
+#### 5. Canonical pairing pattern (DT + DECISION)
+
+The table classifies; the downstream `DECISION` routes:
+
+```json
+[
+  { "id": "classify-tier", "name": "Classify",     "type": "DECISION_TABLE", "hitPolicy": "F", "nextStep": "route-by-tier", "decisionTable": { "rules": [ /* … */ ] } },
+  { "id": "route-by-tier", "name": "Route",        "type": "DECISION",
+    "conditionalNextSteps": {
+      "tier == \"GOLD\"":   "gold-end",
+      "tier == \"SILVER\"": "silver-end",
+      "tier == \"BRONZE\"": "bronze-end"
+    } }
+]
+```
+
+This split keeps each step type doing one thing — the table produces data, the decision routes — which makes both easier to reuse and to lint.
+
+#### 5a. Replacing a verbose if/else chain with DT + DECISION
+
+When the same routing decision depends on two or more inputs (e.g. credit score **and** loan amount **and** customer segment), expressing it as a chain of `DECISION` steps quickly becomes hard to read and review. The table form scales linearly with the number of rules; the chain form scales with the cartesian product of the conditions.
+
+**Before — a single `DECISION` with compound expressions.** Every branch has to repeat each input, the precedence between rules is implicit in insertion order, and adding a new tier means editing a deeply-nested boolean.
+
+```json
+{
+  "id": "route-loan-application",
+  "name": "Route Loan Application",
+  "type": "DECISION",
+  "conditionalNextSteps": {
+    "creditScore >= 750 && loanAmount >= 50000000 && segment == 'PRIORITY'": "priority-gold-path",
+    "creditScore >= 750 && loanAmount >= 50000000":                          "gold-path",
+    "creditScore >= 700 && loanAmount >= 20000000":                          "silver-path",
+    "creditScore >= 650":                                                    "standard-path",
+    "creditScore <  650 && creditScore >= 500":                              "manual-review-path",
+    "creditScore <  500":                                                    "reject-path"
+  }
+}
+```
+
+**After — a `DECISION_TABLE` that classifies, followed by a tiny `DECISION` that routes.** The table reads top-to-bottom like a spec; the routing step contains one branch per terminal path and nothing else.
+
+```json
+[
+  {
+    "id": "classify-application",
+    "name": "Classify Application",
+    "type": "DECISION_TABLE",
+    "hitPolicy": "F",
+    "nextStep": "route-by-tier",
+    "decisionTable": {
+      "rules": [
+        {
+          "when":    { "credit": "creditScore >= 750", "amount": "loanAmount >= 50000000", "segment": "segment == 'PRIORITY'" },
+          "outputs": { "tier": "PRIORITY_GOLD" }
+        },
+        {
+          "when":    { "credit": "creditScore >= 750", "amount": "loanAmount >= 50000000" },
+          "outputs": { "tier": "GOLD" }
+        },
+        {
+          "when":    { "credit": "creditScore >= 700", "amount": "loanAmount >= 20000000" },
+          "outputs": { "tier": "SILVER" }
+        },
+        {
+          "when":    { "credit": "creditScore >= 650" },
+          "outputs": { "tier": "STANDARD" }
+        },
+        {
+          "when":    { "credit": "creditScore >= 500" },
+          "outputs": { "tier": "MANUAL_REVIEW" }
+        },
+        {
+          "when":    {},
+          "outputs": { "tier": "REJECT" }
+        }
+      ]
+    }
+  },
+  {
+    "id": "route-by-tier",
+    "name": "Route by Tier",
+    "type": "DECISION",
+    "conditionalNextSteps": {
+      "tier == 'PRIORITY_GOLD'": "priority-gold-path",
+      "tier == 'GOLD'":          "gold-path",
+      "tier == 'SILVER'":        "silver-path",
+      "tier == 'STANDARD'":      "standard-path",
+      "tier == 'MANUAL_REVIEW'": "manual-review-path",
+      "tier == 'REJECT'":        "reject-path"
+    }
+  }
+]
+```
+
+Why the rewrite pays off:
+
+- **Each input appears in its own column**, so adding a new dimension (e.g. region) is one extra `when` cell per affected rule rather than rewriting every compound expression.
+- **The `tier` variable is now first-class state** — downstream audit logs, history APIs, and follow-on workflows can read it without re-deriving anything from `creditScore` / `loanAmount`.
+- **Routing is exhaustive by construction**: the catch-all `{}` rule guarantees `tier` is always set, so the downstream `DECISION` cannot fall through with `DecisionNoBranchMatched`.
+- **`hitPolicy: "F"` makes precedence explicit** — the most specific rule wins because it sits at the top of the list, not because of operator-precedence accidents.
+
+#### 6. Validation rules
+
+Validation is enforced at upload time. The full set is in the [Validation Rules](#validation-rules) table at the bottom of this document; the DT-specific entries are:
+
+- `decisionTable.rules` must be non-empty.
+- `nextStep` is required and must resolve.
+- `hitPolicy` (when present) must be one of the nine recognised codes.
+- An aggregator suffix (`+`, `#`, `>`, `<`) is only valid on `C`.
+- Every `rules[].outputs` value must be a well-formed JSON value.
+- The 005-era fields `rules[].then` and `decisionTable.defaultNextStep` are **rejected at parse time** with a migration-pointing error.
+
+The following step-level fields are **not valid** on a `DECISION_TABLE` step (they belong to other step types): `conditionalNextSteps`, `transformations`, `parallelNextSteps`, `joinStep`, `jobType`, `delegateClass`, `retryCount`, `boundaryEvents`.
+
+#### Migration from 005
+
+The 007 redesign replaces the 005 shape outright (no auto-conversion). Field-level deltas:
+
+| 005 | 007 | Notes |
+|-----|-----|-------|
+| `rules[].then` (target step ID per rule) | **removed** | Rules produce outputs; routing moves to a downstream `DECISION`. |
+| `decisionTable.defaultNextStep` | **removed** | No-match is now a runtime failure (`DecisionTableNoRuleMatched`). Use a catch-all rule (empty `when`) for fallback. |
+| step-level `nextStep` (forbidden on DT) | **required** | The single linear successor; mirrors `TRANSFORMATION`. |
+| (no `hitPolicy` field) | `hitPolicy` (default `U`) | Selects how matched rules contribute to outputs. |
+| `rules[].outputs` (optional) | `rules[].outputs` (optional) | Unchanged encoding. |
 
 ---
 
@@ -472,16 +680,20 @@ The engine rejects an upload with HTTP 400 and a descriptive error if any of the
 | `steps` is non-empty | At least one step must be present |
 | Every step has `id` | Non-empty, unique within the definition |
 | Every step has `name` | Non-empty string |
-| Every step has a valid `type` | One of the eight supported types |
+| Every step has a valid `type` | One of the nine supported types |
 | `nextWorkflowId` required when `autoStartNextWorkflow: true` | Both fields must be set together |
 | `DECISION` has `conditionalNextSteps` | At least one entry; all target IDs must exist |
+| `DECISION_TABLE` has at least one rule | `decisionTable.rules` must be non-empty |
+| `DECISION_TABLE` has `nextStep` | Required; target must exist |
+| `DECISION_TABLE.hitPolicy` is recognised | One of `U`, `F`, `A`, `R`, `C`, `C+`, `C#`, `C>`, `C<`. Aggregator suffix is valid only on `C`. |
+| `DECISION_TABLE` removed 005 fields rejected | `rules[].then` and `decisionTable.defaultNextStep` are rejected at parse time with a migration-pointing message |
 | `TRANSFORMATION` has `nextStep` | Required; target must exist |
 | `TRANSFORMATION` has `transformations` | At least one entry |
 | `WAIT` has `nextStep` | Required; target must exist |
 | `PARALLEL_GATEWAY` has `parallelNextSteps` | Minimum 2 entries; all targets must exist |
 | `PARALLEL_GATEWAY` has `joinStep` | Required; target must exist |
 | `JOIN_GATEWAY` has `nextStep` | Required; target must exist |
-| All step references resolve | Every `nextStep`, `conditionalNextSteps` target, `parallelNextSteps`, `joinStep`, `boundaryEvents[].targetStepId` must point to an existing step ID |
+| All step references resolve | Every `nextStep`, `conditionalNextSteps` target, `parallelNextSteps`, `joinStep`, and `boundaryEvents[].targetStepId` must point to an existing step ID |
 | All steps are reachable | Graph walk from the first step must reach every step in the definition |
 | At least one `END` step is reachable | The workflow must have a terminal state |
 | Boundary event `type` is `TIMER` | No other event types are supported |
@@ -517,7 +729,7 @@ This section provides a full two-workflow chain you can upload and run end-to-en
 
 ### Workflow 1 — `LOS::loan-application-full`
 
-Illustrates: sequential tasks, parallel risk checks, computed boolean flags via `TRANSFORMATION`, a `DECISION` gate, a `USER_TASK` with a timer boundary, and auto-chaining to the next workflow.
+Illustrates: sequential tasks, parallel risk checks, computed boolean flags via `TRANSFORMATION`, a `DECISION_TABLE` and `DECISION` gate, a `USER_TASK` with a timer boundary, and auto-chaining to the next workflow.
 
 ```json
 {
@@ -562,26 +774,49 @@ Illustrates: sequential tasks, parallel risk checks, computed boolean flags via 
       "id": "merge-risk-results",
       "name": "Merge Risk Results",
       "type": "JOIN_GATEWAY",
-      "nextStep": "compute-risk-band"
+      "nextStep": "classify-risk-tier"
     },
     {
-      "id": "compute-risk-band",
-      "name": "Compute Risk Band",
-      "type": "TRANSFORMATION",
-      "transformations": {
-        "highRisk": "${creditScore < 500 || fraudScore > 0.8}",
-        "requiresManualReview": "${creditScore >= 500 && creditScore < 650}"
-      },
-      "nextStep": "route-application"
+      "id": "classify-risk-tier",
+      "name": "Classify Risk Tier",
+      "description": "Decision table: classify the application into a risk tier and assign indicative pricing.",
+      "type": "DECISION_TABLE",
+      "hitPolicy": "F",
+      "nextStep": "route-application",
+      "decisionTable": {
+        "rules": [
+          {
+            "when":    { "credit": "creditScore < 500" },
+            "outputs": { "riskTier": "HIGH", "decisionReason": "Credit score below acceptable threshold", "interestRatePct": 0.0 }
+          },
+          {
+            "when":    { "fraud": "fraudScore > 0.8" },
+            "outputs": { "riskTier": "HIGH", "decisionReason": "Fraud signal above acceptable threshold", "interestRatePct": 0.0 }
+          },
+          {
+            "when":    { "credit": "creditScore < 650" },
+            "outputs": { "riskTier": "MEDIUM", "decisionReason": "Mid-range credit score, manual underwriting required", "interestRatePct": 12.5 }
+          },
+          {
+            "when":    { "credit": "creditScore >= 750" },
+            "outputs": { "riskTier": "PREMIUM", "decisionReason": "Excellent credit profile", "interestRatePct": 6.5 }
+          },
+          {
+            "when":    {},
+            "outputs": { "riskTier": "STANDARD", "decisionReason": "Standard credit profile", "interestRatePct": 9.0 }
+          }
+        ]
+      }
     },
     {
       "id": "route-application",
       "name": "Route Application",
       "type": "DECISION",
       "conditionalNextSteps": {
-        "#highRisk == true": "end-rejected",
-        "#requiresManualReview == true": "manual-review-task",
-        "#creditScore >= 650": "auto-approve"
+        "#riskTier == 'HIGH'": "end-rejected",
+        "#riskTier == 'MEDIUM'": "manual-review-task",
+        "#riskTier == 'PREMIUM'": "auto-approve",
+        "#riskTier == 'STANDARD'": "auto-approve"
       }
     },
     {

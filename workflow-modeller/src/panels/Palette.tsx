@@ -16,6 +16,7 @@ const STEP_META: Record<StepType, StepMeta> = {
   SERVICE_TASK: { label: 'Service Task', colorVar: '--step-service-task', shape: 'rect' },
   USER_TASK: { label: 'User Task', colorVar: '--step-user-task', shape: 'rect' },
   DECISION: { label: 'Decision', colorVar: '--step-decision', shape: 'diamond' },
+  DECISION_TABLE: { label: 'Decision Table', colorVar: '--step-decision-table', shape: 'rect' },
   TRANSFORMATION: { label: 'Transformation', colorVar: '--step-transformation', shape: 'rect' },
   WAIT: { label: 'Wait', colorVar: '--step-wait', shape: 'circle' },
   PARALLEL_GATEWAY: {
@@ -31,6 +32,7 @@ const STEP_TYPES: readonly StepType[] = [
   'SERVICE_TASK',
   'USER_TASK',
   'DECISION',
+  'DECISION_TABLE',
   'TRANSFORMATION',
   'WAIT',
   'PARALLEL_GATEWAY',

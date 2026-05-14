@@ -114,3 +114,60 @@ describe('renameStepId', () => {
     expect(JSON.stringify(def)).toBe(originalJson);
   });
 });
+
+describe('renameStepId for DECISION_TABLE', () => {
+  function dtDef(): WorkflowDefinition {
+    return {
+      id: 'wf',
+      name: 'wf',
+      steps: [
+        {
+          id: 'dt',
+          name: 'Decision Table',
+          type: 'DECISION_TABLE',
+          hitPolicy: 'F',
+          nextStep: 'target',
+          decisionTable: {
+            rules: [
+              {
+                when: { score: 'value >= 650' },
+                outputs: { tier: 'GOLD', via: 'target' }, // "via" value === step id; MUST NOT be remapped
+              },
+              { when: { score: 'value < 650' }, outputs: { tier: 'BRONZE' } },
+            ],
+          },
+        },
+        { id: 'target', name: 'Target', type: 'END' },
+        { id: 'other', name: 'Other', type: 'END' },
+      ],
+    };
+  }
+
+  it('rewrites DECISION_TABLE.nextStep when it references the renamed step', () => {
+    const renamed = renameStepId(dtDef(), 'target', 'new-target');
+    const dt = renamed.steps.find((s) => s.id === 'dt');
+    if (dt?.type !== 'DECISION_TABLE') throw new Error('dt missing');
+    expect(dt.nextStep).toBe('new-target');
+  });
+
+  it('does NOT touch any per-rule field (FR-029)', () => {
+    const renamed = renameStepId(dtDef(), 'target', 'new-target');
+    const dt = renamed.steps.find((s) => s.id === 'dt');
+    if (dt?.type !== 'DECISION_TABLE') throw new Error('dt missing');
+    expect(dt.decisionTable.rules[0]?.when).toEqual({ score: 'value >= 650' });
+    expect(dt.decisionTable.rules[0]?.outputs).toEqual({ tier: 'GOLD', via: 'target' });
+  });
+
+  it('renames the DECISION_TABLE step itself when oldId matches the dt step id', () => {
+    const renamed = renameStepId(dtDef(), 'dt', 'pricing-table');
+    expect(renamed.steps.find((s) => s.id === 'pricing-table')).toBeDefined();
+    expect(renamed.steps.find((s) => s.id === 'dt')).toBeUndefined();
+  });
+
+  it('leaves the step unchanged when the renamed step is unrelated to the table', () => {
+    const renamed = renameStepId(dtDef(), 'other', 'somewhere');
+    const dt = renamed.steps.find((s) => s.id === 'dt');
+    if (dt?.type !== 'DECISION_TABLE') throw new Error('dt missing');
+    expect(dt.nextStep).toBe('target');
+  });
+});

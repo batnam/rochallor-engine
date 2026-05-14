@@ -56,6 +56,7 @@ enum StepType {
   STEP_TYPE_PARALLEL_GATEWAY = 6;
   STEP_TYPE_JOIN_GATEWAY = 7;
   STEP_TYPE_END = 8;
+  STEP_TYPE_DECISION_TABLE = 9;
 }
 
 enum InstanceStatus {
@@ -117,6 +118,32 @@ message WorkflowStep {
 
   // Boundary events (optional; most commonly attached to SERVICE_TASK / USER_TASK / WAIT)
   repeated BoundaryEvent boundary_events = 50;
+
+  // Decision table — populated only when type == STEP_TYPE_DECISION_TABLE.
+  DecisionTable decision_table = 60;
+
+  // Hit policy for DECISION_TABLE steps. One of "U", "F", "A", "R", "C",
+  // "C+", "C#", "C>", "C<". Empty defaults to "U" at runtime.
+  string hit_policy = 61;
+}
+
+// DecisionTable is the payload for a DECISION_TABLE step. Rules are evaluated
+// in document order; the first match wins (hit policy: FIRST). If no rule
+// matches and default_next_step is empty, the step fails with the error
+// string "DecisionTableNoRuleMatched".
+message DecisionTable {
+  repeated DecisionTableRule rules = 1;
+  string default_next_step = 2;
+}
+
+// DecisionTableRule is one row of a decision table. `when` is the conjunction
+// of per-input cell expressions (key = input column name; value = boolean
+// expression). Missing/empty cells are wildcards. `outputs` mirrors
+// TRANSFORMATION.transformations encoding (raw JSON literal or "${expression}").
+message DecisionTableRule {
+  map<string, string> when = 1;
+  string then = 2;
+  map<string, google.protobuf.Value> outputs = 3;
 }
 
 message BoundaryEvent {

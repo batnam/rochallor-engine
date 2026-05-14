@@ -29,3 +29,45 @@ var (
 	// complete route on a WAIT).
 	ErrStepTypeMismatch = errors.New("step type does not match the endpoint")
 )
+
+// Decision-table runtime failure prefixes.
+//
+// These are NOT sentinel errors — they are the leading tokens of the human
+// readable message strings passed to failInstance() when a DECISION_TABLE
+// step fails at evaluation time. Lifted here as named constants so unit
+// tests in handlers_unit_test.go can assert on the prefix without
+// duplicating literal strings across files.
+//
+// See specs/007-decision-table-outputs/data-model.md §4 for the contract.
+const (
+	// DecisionTableNoRuleMatched — zero rules matched under any hit
+	// policy. Carried over from the 005 design.
+	DecisionTableNoRuleMatched = "DecisionTableNoRuleMatched"
+
+	// DecisionTableCellError — a rule's `when` cell expression raised an
+	// evaluator error or returned a non-bool value. Carried over from
+	// the 005 design.
+	DecisionTableCellError = "DecisionTableCellError"
+
+	// DecisionTableOutputError — a rule's `outputs` value failed to
+	// unmarshal as JSON, or its `${expression}` failed to evaluate.
+	// Carried over from the 005 design.
+	DecisionTableOutputError = "DecisionTableOutputError"
+
+	// DecisionTableUniqueViolation — hit policy "U" and two or more
+	// rules matched the same input vector. New in 007. The message
+	// names the matching rule indices and the policy.
+	DecisionTableUniqueViolation = "DecisionTableUniqueViolation"
+
+	// DecisionTableAnyConflict — hit policy "A" and the matching rules
+	// produced disagreeing outputs on at least one column. New in 007.
+	// The message names the disagreeing column(s) and conflicting
+	// values.
+	DecisionTableAnyConflict = "DecisionTableAnyConflict"
+
+	// DecisionTableAggregatorTypeError — a Collect aggregator (+, >, <)
+	// was applied to a non-numeric output value. New in 007. The
+	// message names the offending column and value. The "#" (count)
+	// aggregator is type-agnostic and never raises this error.
+	DecisionTableAggregatorTypeError = "DecisionTableAggregatorTypeError"
+)

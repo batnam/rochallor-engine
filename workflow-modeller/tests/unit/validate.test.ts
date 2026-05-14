@@ -189,3 +189,159 @@ describe('validate — valid fixtures produce zero errors', () => {
     });
   }
 });
+
+describe('validate — DECISION_TABLE rules (007 shape)', () => {
+  function dtDef(
+    decisionTable: {
+      rules: Array<{
+        when?: Record<string, string>;
+        outputs?: Record<string, unknown>;
+      }>;
+    },
+    overrides: {
+      hitPolicy?: string;
+      nextStep?: string;
+      extra?: Record<string, unknown>;
+      tableExtra?: Record<string, unknown>;
+      ruleExtras?: Record<number, Record<string, unknown>>;
+    } = {},
+  ): WorkflowDefinition {
+    const hitPolicy = overrides.hitPolicy ?? 'F';
+    const nextStep = overrides.nextStep ?? 'a';
+    const rules = decisionTable.rules.map((r, i) => ({
+      when: r.when ?? {},
+      outputs: r.outputs ?? {},
+      ...(overrides.ruleExtras?.[i] ?? {}),
+    }));
+    return {
+      id: 'wf',
+      name: 'wf',
+      steps: [
+        {
+          id: 'dt',
+          name: 'Decision Table',
+          type: 'DECISION_TABLE',
+          hitPolicy,
+          nextStep,
+          decisionTable: {
+            rules,
+            ...(overrides.tableExtra ?? {}),
+          },
+          ...(overrides.extra ?? {}),
+        },
+        { id: 'a', name: 'A', type: 'END' },
+      ],
+    } as unknown as WorkflowDefinition;
+  }
+
+  it('DECISION_TABLE_HAS_RULES fires on zero rules', () => {
+    const def = dtDef({ rules: [] });
+    const diags = validate(def);
+    const d = diags.find((x) => x.code === 'DECISION_TABLE_HAS_RULES');
+    expect(d).toBeTruthy();
+    expect(d?.severity).toBe('error');
+    expect(d?.nodeId).toBe('dt');
+  });
+
+  it('DECISION_TABLE_HAS_NEXT fires when nextStep is empty', () => {
+    const def = dtDef({ rules: [{ outputs: { tier: 'GOLD' } }] }, { nextStep: '' });
+    const d = validate(def).find((x) => x.code === 'DECISION_TABLE_HAS_NEXT');
+    expect(d).toBeTruthy();
+    expect(d?.severity).toBe('error');
+  });
+
+  it('REF_RESOLVES fires when nextStep points to a missing step', () => {
+    const def = dtDef({ rules: [{ outputs: { tier: 'GOLD' } }] }, { nextStep: 'ghost' });
+    const m = validate(def).find((d) => d.code === 'REF_RESOLVES' && d.field === 'nextStep');
+    expect(m).toBeTruthy();
+  });
+
+  it('DECISION_TABLE_HIT_POLICY_UNKNOWN fires for unrecognised policy', () => {
+    const def = dtDef({ rules: [{ outputs: { tier: 'GOLD' } }] }, { hitPolicy: 'X' });
+    const m = validate(def).find((d) => d.code === 'DECISION_TABLE_HIT_POLICY_UNKNOWN');
+    expect(m).toBeTruthy();
+  });
+
+  it('accepts each canonical hit policy value', () => {
+    for (const hp of ['U', 'F', 'A', 'R', 'C', 'C+', 'C#', 'C>', 'C<']) {
+      const def = dtDef({ rules: [{ outputs: { tier: 'GOLD' } }] }, { hitPolicy: hp });
+      const m = validate(def).find(
+        (d) =>
+          d.code === 'DECISION_TABLE_HIT_POLICY_UNKNOWN' ||
+          d.code === 'DECISION_TABLE_AGGREGATOR_ON_NON_C',
+      );
+      expect(m, `hitPolicy=${hp}`).toBeUndefined();
+    }
+  });
+
+  it('DECISION_TABLE_LEGACY_THEN fires when a rule carries a legacy "then" field', () => {
+    const def = dtDef(
+      { rules: [{ outputs: { tier: 'GOLD' } }] },
+      { ruleExtras: { 0: { then: 'a' } } },
+    );
+    const m = validate(def).find((d) => d.code === 'DECISION_TABLE_LEGACY_THEN');
+    expect(m).toBeTruthy();
+    expect(m?.message).toMatch(/Migration from 005|migration/);
+  });
+
+  it('DECISION_TABLE_LEGACY_DEFAULT_NEXT_STEP fires when the table carries a legacy defaultNextStep', () => {
+    const def = dtDef(
+      { rules: [{ outputs: { tier: 'GOLD' } }] },
+      { tableExtra: { defaultNextStep: 'a' } },
+    );
+    const m = validate(def).find((d) => d.code === 'DECISION_TABLE_LEGACY_DEFAULT_NEXT_STEP');
+    expect(m).toBeTruthy();
+    expect(m?.message).toMatch(/Migration from 005|migration/);
+  });
+
+  it('DECISION_TABLE_UNREACHABLE_RULE fires for rules after a catch-all', () => {
+    const def = dtDef({
+      rules: [
+        { when: { x: 'value > 0' }, outputs: { tier: 'A' } },
+        { when: {}, outputs: { tier: 'B' } }, // catch-all
+        { when: { x: 'value < 0' }, outputs: { tier: 'C' } }, // unreachable
+        { when: {}, outputs: { tier: 'D' } }, // unreachable
+      ],
+    });
+    const matches = validate(def).filter((d) => d.code === 'DECISION_TABLE_UNREACHABLE_RULE');
+    expect(matches).toHaveLength(2);
+    expect(matches.map((d) => d.ruleIndex)).toEqual([2, 3]);
+    expect(matches[0]?.severity).toBe('warning');
+  });
+
+  it('STEP_FIELD_INVALID fires for each forbidden cross-type field', () => {
+    const def = dtDef(
+      { rules: [{ outputs: { tier: 'GOLD' } }] },
+      { extra: { jobType: 'x', conditionalNextSteps: {} } },
+    );
+    const matches = validate(def).filter((d) => d.code === 'STEP_FIELD_INVALID');
+    const fields = matches.map((d) => d.field).sort();
+    expect(fields).toEqual(['conditionalNextSteps', 'jobType']);
+  });
+
+  it('DT_CELL_EXPR_SYNTAX fires on an invalid cell expression, with ruleIndex + cellColumn', () => {
+    const def = dtDef({
+      rules: [{ when: { score: 'value >=' }, outputs: { tier: 'GOLD' } }],
+    });
+    const m = validate(def).find((d) => d.code === 'DT_CELL_EXPR_SYNTAX');
+    expect(m).toBeTruthy();
+    expect(m?.ruleIndex).toBe(0);
+    expect(m?.cellColumn).toBe('score');
+  });
+
+  it('DT_OUTPUT_EXPR_SYNTAX fires on a bad expression inside a closed ${...} template', () => {
+    const def = dtDef({
+      rules: [{ when: {}, outputs: { tier: '${value +}' } }],
+    });
+    const m = validate(def).find((d) => d.code === 'DT_OUTPUT_EXPR_SYNTAX');
+    expect(m).toBeTruthy();
+    expect(m?.ruleIndex).toBe(0);
+    expect(m?.branchKey).toBe('tier');
+  });
+
+  it('ALL_REACHABLE walks the DT single outbound edge to nextStep', () => {
+    const def = dtDef({ rules: [{ outputs: { tier: 'GOLD' } }] }, { nextStep: 'a' });
+    const codes = codesIn(def);
+    expect(codes).not.toContain('ALL_REACHABLE');
+  });
+});

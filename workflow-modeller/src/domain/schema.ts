@@ -56,6 +56,45 @@ export const zDecision = z
   })
   .passthrough();
 
+/**
+ * Hit policy codes for DECISION_TABLE steps (007 wire format).
+ *
+ * - U  Unique:     at most one rule may match; multiple matches → engine fails the step.
+ * - F  First:      first matching rule in document order wins.
+ * - A  Any:        every matching rule must produce structurally-equal outputs.
+ * - R  Rule Order: every matching rule contributes; per-column lists in document order.
+ * - C  Collect:    every matching rule contributes; per-column lists (no order promised).
+ * - C+ / C# / C> / C< : Collect with aggregator (sum / count / max / min) — scalar per column.
+ *
+ * Omitted/empty defaults to "U" (Unique) at engine runtime; the modeller's
+ * editor pre-selects "U" so the author still has a single click to accept it.
+ * See specs/007-decision-table-outputs/data-model.md §1.
+ */
+export const zHitPolicy = z.enum(['U', 'F', 'A', 'R', 'C', 'C+', 'C#', 'C>', 'C<']);
+
+export const zDecisionTableRule = z
+  .object({
+    when: z.record(z.string()).default({}),
+    outputs: z.record(zJsonValue).default({}),
+  })
+  .passthrough();
+
+export const zDecisionTable = z
+  .object({
+    rules: z.array(zDecisionTableRule).min(1),
+  })
+  .passthrough();
+
+export const zDecisionTableStep = z
+  .object({
+    ...stepCommon,
+    type: z.literal('DECISION_TABLE'),
+    hitPolicy: zHitPolicy.optional().default('U'),
+    nextStep: z.string().min(1),
+    decisionTable: zDecisionTable,
+  })
+  .passthrough();
+
 export const zTransformation = z
   .object({
     ...stepCommon,
@@ -102,6 +141,7 @@ export const zStep = z.discriminatedUnion('type', [
   zServiceTask,
   zUserTask,
   zDecision,
+  zDecisionTableStep,
   zTransformation,
   zWait,
   zParallelGateway,
@@ -126,6 +166,7 @@ export const STEP_TYPES = [
   'SERVICE_TASK',
   'USER_TASK',
   'DECISION',
+  'DECISION_TABLE',
   'TRANSFORMATION',
   'WAIT',
   'PARALLEL_GATEWAY',
@@ -148,6 +189,7 @@ export const KNOWN_STEP_KEYS: Record<(typeof STEP_TYPES)[number], readonly strin
   ],
   USER_TASK: ['id', 'name', 'type', 'description', 'nextStep', 'jobType', 'boundaryEvents'],
   DECISION: ['id', 'name', 'type', 'description', 'conditionalNextSteps'],
+  DECISION_TABLE: ['id', 'name', 'type', 'description', 'hitPolicy', 'nextStep', 'decisionTable'],
   TRANSFORMATION: ['id', 'name', 'type', 'description', 'nextStep', 'transformations'],
   WAIT: ['id', 'name', 'type', 'description', 'nextStep', 'boundaryEvents'],
   PARALLEL_GATEWAY: ['id', 'name', 'type', 'description', 'parallelNextSteps', 'joinStep'],

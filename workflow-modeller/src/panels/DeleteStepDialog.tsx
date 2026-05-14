@@ -81,7 +81,7 @@ export function DeleteStepDialog({ stepId, onClose }: DeleteStepDialogProps): Re
   );
 }
 
-function findReferences(def: WorkflowDefinition, id: StepId): string[] {
+export function findReferences(def: WorkflowDefinition, id: StepId): string[] {
   const hits: string[] = [];
   for (const step of def.steps) {
     switch (step.type) {
@@ -109,6 +109,9 @@ function findReferences(def: WorkflowDefinition, id: StepId): string[] {
           if (target === id) hits.push(`${step.id}.conditionalNextSteps["${expr}"]`);
         }
         break;
+      case 'DECISION_TABLE':
+        if (step.nextStep === id) hits.push(`${step.id}.nextStep`);
+        break;
       case 'PARALLEL_GATEWAY':
         step.parallelNextSteps.forEach((t, i) => {
           if (t === id) hits.push(`${step.id}.parallelNextSteps[${i}]`);
@@ -122,7 +125,7 @@ function findReferences(def: WorkflowDefinition, id: StepId): string[] {
   return hits;
 }
 
-function rewriteRefs(step: Step, oldId: StepId, newId: StepId): Step {
+export function rewriteRefs(step: Step, oldId: StepId, newId: StepId): Step {
   switch (step.type) {
     case 'SERVICE_TASK':
     case 'USER_TASK': {
@@ -162,6 +165,8 @@ function rewriteRefs(step: Step, oldId: StepId, newId: StepId): Step {
       }
       return { ...step, conditionalNextSteps: next };
     }
+    case 'DECISION_TABLE':
+      return step.nextStep === oldId ? { ...step, nextStep: newId } : step;
     case 'PARALLEL_GATEWAY':
       return {
         ...step,

@@ -11,6 +11,7 @@
   --step-service-task: #3b82f6;
   --step-user-task: #22c55e;
   --step-decision: #ef4444;
+  --step-decision-table: #f97316;
   --step-transformation: #a855f7;
   --step-wait: #64748b;
   --step-parallel-gateway: #06b6d4;
@@ -1207,6 +1208,134 @@ body,
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+}
+
+.wm-dt-columns {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin-bottom: 0.25rem;
+}
+
+.wm-dt-column-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 3px;
+  background: var(--surface-muted);
+}
+
+.wm-dt-column-chip button {
+  padding: 0 0.25rem;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.wm-dt-add-col {
+  padding: 0.25rem 0.625rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  border-radius: 3px;
+  border: 1px dashed var(--surface-border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.wm-dt-rule-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  background: var(--surface-muted);
+}
+
+.wm-dt-rule-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.wm-dt-rule-card-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wm-dt-rule-card-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.wm-dt-rule-card-actions button {
+  padding: 0.125rem 0.375rem;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1;
+  border-radius: 3px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.wm-dt-rule-card-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.wm-dt-rule-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.wm-dt-rule-section-label {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--text-muted);
+}
+
+.wm-dt-rule-section--when .wm-dt-rule-section-label {
+  background: var(--step-service-task);
+}
+
+.wm-dt-rule-section--then .wm-dt-rule-section-label {
+  background: var(--step-decision-table);
+}
+
+.wm-dt-rule-cell-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.wm-dt-rule-cell-name {
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-muted);
 }
 
 .wm-boundary-row {

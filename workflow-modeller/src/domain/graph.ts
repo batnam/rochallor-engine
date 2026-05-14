@@ -54,6 +54,10 @@ function pushStepEdges(step: Step, out: GraphEdge[]): void {
       }
       break;
 
+    case 'DECISION_TABLE':
+      out.push(makeEdge(step.id, step.nextStep, { kind: 'sequential' }));
+      break;
+
     case 'TRANSFORMATION':
       out.push(makeEdge(step.id, step.nextStep, { kind: 'sequential' }));
       break;

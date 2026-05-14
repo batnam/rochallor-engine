@@ -56,9 +56,9 @@ func TestDecision_NonObjectVariablesFailWithDiagnosticMessage(t *testing.T) {
 				ID:   "decide",
 				Name: "Decide",
 				Type: definition.StepTypeDecision,
-				ConditionalNextSteps: map[string]string{
-					"#result == 'ok'": "end",
-				},
+				ConditionalNextSteps: definition.NewConditionalBranches(
+					"#result == 'ok'", "end",
+				),
 			},
 			{ID: "end", Name: "End", Type: definition.StepTypeEnd},
 		},

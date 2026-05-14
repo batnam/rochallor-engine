@@ -115,7 +115,7 @@ The rest of this document describes **the default (short-polling) path** in dept
 | Go     | ✓   | ✓   |       ✓       |
 | Java   | ✓   | ✓   |       ✓       |
 | Node   | ✓   | ✓   |       ✓       |
-| Python | ✓   | —   |       ✓       |
+| Python | ✓   | ✓   |       ✓       |
 
 All transports implement the same `EngineClient` interface (poll / complete / fail). Use **REST** for simplicity; use **gRPC** when you need tighter coupling to the proto contract or lower latency.
 

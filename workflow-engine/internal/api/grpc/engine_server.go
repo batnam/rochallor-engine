@@ -307,6 +307,20 @@ func protoDefToInternal(p *workflowv1.WorkflowDefinition) *definition.WorkflowDe
 		NextWorkflowId:        p.NextWorkflowId,
 	}
 	for _, ps := range p.Steps {
+		// NOTE: protobuf map<string, string> does not preserve insertion
+		// order on the wire. Clients that need ordered DECISION evaluation
+		// (per docs/workflow-format.md) must upload via the JSON REST
+		// endpoint, which retains author order.
+		var branches *definition.ConditionalBranches
+		if len(ps.ConditionalNextSteps) > 0 {
+			branches = &definition.ConditionalBranches{
+				Targets: make(map[string]string, len(ps.ConditionalNextSteps)),
+			}
+			for k, v := range ps.ConditionalNextSteps {
+				branches.Exprs = append(branches.Exprs, k)
+				branches.Targets[k] = v
+			}
+		}
 		s := definition.WorkflowStep{
 			ID:                   ps.Id,
 			Name:                 ps.Name,
@@ -315,10 +329,11 @@ func protoDefToInternal(p *workflowv1.WorkflowDefinition) *definition.WorkflowDe
 			NextStep:             ps.NextStep,
 			ParallelNextSteps:    ps.ParallelNextSteps,
 			JoinStep:             ps.JoinStep,
-			ConditionalNextSteps: ps.ConditionalNextSteps,
+			ConditionalNextSteps: branches,
 			JobType:              ps.JobType,
 			DelegateClass:        ps.DelegateClass,
 			RetryCount:           int(ps.RetryCount),
+			HitPolicy:            ps.HitPolicy,
 		}
 		for _, pbe := range ps.BoundaryEvents {
 			s.BoundaryEvents = append(s.BoundaryEvents, definition.BoundaryEvent{
@@ -335,6 +350,22 @@ func protoDefToInternal(p *workflowv1.WorkflowDefinition) *definition.WorkflowDe
 					s.Transformations[k] = b
 				}
 			}
+		}
+		if ps.DecisionTable != nil {
+			dt := &definition.DecisionTable{}
+			for _, pr := range ps.DecisionTable.Rules {
+				r := definition.DecisionTableRule{When: pr.When}
+				if len(pr.Outputs) > 0 {
+					r.Outputs = make(map[string]json.RawMessage, len(pr.Outputs))
+					for k, v := range pr.Outputs {
+						if b, err := json.Marshal(v.AsInterface()); err == nil {
+							r.Outputs[k] = b
+						}
+					}
+				}
+				dt.Rules = append(dt.Rules, r)
+			}
+			s.DecisionTable = dt
 		}
 		d.Steps = append(d.Steps, s)
 	}

@@ -25,7 +25,7 @@ const schemaVersion = 1
 
 // Dispatcher is the event-driven Dispatcher. Its Enqueue serializes a
 // JobDispatchEvent proto and INSERTs a row into dispatch_outbox inside the
-// caller's transaction (FR-002, INV-1, INV-5). No network I/O happens here;
+// caller's transaction. No network I/O happens here;
 // publish is the relay's job.
 type Dispatcher struct{}
 

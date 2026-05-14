@@ -1,6 +1,7 @@
 package definition
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -16,7 +17,7 @@ func (e ValidationErrors) Error() string {
 	return "validation errors:\n  " + strings.Join(e, "\n  ")
 }
 
-// Validate checks every rule from data-model §1.1 and returns a
+// Validate checks every rule and returns a
 // ValidationErrors slice if any rule is violated. Returns nil on success.
 func Validate(def *WorkflowDefinition) error {
 	var errs ValidationErrors
@@ -70,6 +71,7 @@ func Validate(def *WorkflowDefinition) error {
 		StepTypeParallelGateway: true,
 		StepTypeJoinGateway:     true,
 		StepTypeEnd:             true,
+		StepTypeDecisionTable:   true,
 	}
 
 	for _, s := range def.Steps {
@@ -95,11 +97,13 @@ func Validate(def *WorkflowDefinition) error {
 			}
 
 		case StepTypeDecision:
-			if len(s.ConditionalNextSteps) == 0 {
+			if s.ConditionalNextSteps.Len() == 0 {
 				errs = append(errs, fmt.Sprintf("step %q (DECISION): conditionalNextSteps must not be empty", s.ID))
 			}
-			for _, target := range s.ConditionalNextSteps {
-				checkRef(s.ID, "conditionalNextSteps target", target, stepByID, &errs)
+			if s.ConditionalNextSteps != nil {
+				for _, target := range s.ConditionalNextSteps.Targets {
+					checkRef(s.ID, "conditionalNextSteps target", target, stepByID, &errs)
+				}
 			}
 
 		case StepTypeTransformation:
@@ -142,6 +146,13 @@ func Validate(def *WorkflowDefinition) error {
 		case StepTypeEnd:
 			// no mandatory fields
 
+		case StepTypeDecisionTable:
+			validateDecisionTable(s, stepByID, &errs)
+		}
+
+		// Forbid DecisionTable on non-DECISION_TABLE steps (symmetric guard).
+		if s.Type != StepTypeDecisionTable && s.DecisionTable != nil {
+			errs = append(errs, fmt.Sprintf("step %q (%s): decisionTable is not valid on this step type", s.ID, s.Type))
 		}
 
 		// Boundary events
@@ -197,6 +208,83 @@ func checkRef(stepID, field, target string, stepByID map[string]*WorkflowStep, e
 	}
 }
 
+// validHitPolicies is the closed set of recognised hitPolicy values.
+var validHitPolicies = map[string]bool{
+	"U": true, "F": true, "A": true, "R": true, "C": true,
+	"C+": true, "C#": true, "C>": true, "C<": true,
+}
+
+// validateDecisionTable enforces the upload-time invariants for a
+// DECISION_TABLE step (007 wire format): payload present, at least one rule,
+// step-level nextStep is required and resolves, hitPolicy is recognised,
+// outputs values are well-formed JSON, and no foreign step-type fields
+func validateDecisionTable(s WorkflowStep, stepByID map[string]*WorkflowStep, errs *ValidationErrors) {
+	// V1 — payload present.
+	if s.DecisionTable == nil {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): decisionTable payload is required", s.ID))
+		return
+	}
+	dt := s.DecisionTable
+	// V2 — rules non-empty.
+	if len(dt.Rules) == 0 {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): rules must not be empty", s.ID))
+	}
+	// V7 — outputs values are well-formed JSON.
+	for i, r := range dt.Rules {
+		for k, raw := range r.Outputs {
+			var probe any
+			if err := json.Unmarshal(raw, &probe); err != nil {
+				*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE) rules[%d].outputs[%q]: invalid JSON value: %v", s.ID, i, k, err))
+			}
+		}
+	}
+
+	// V3 / V4 — nextStep is required and must resolve.
+	if s.NextStep == "" {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): nextStep is required", s.ID))
+	} else {
+		checkRef(s.ID, "nextStep", s.NextStep, stepByID, errs)
+	}
+
+	// V5 / V6 — hitPolicy enum + aggregator-only-on-C check.
+	if s.HitPolicy != "" {
+		if !validHitPolicies[s.HitPolicy] {
+			// Distinguish "aggregator-on-non-C" (V6) from "unknown code" (V5).
+			if len(s.HitPolicy) >= 2 && (s.HitPolicy[1] == '+' || s.HitPolicy[1] == '#' || s.HitPolicy[1] == '>' || s.HitPolicy[1] == '<') && s.HitPolicy[0] != 'C' {
+				*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): aggregator %q is only valid on hitPolicy \"C\" (got %q)", s.ID, string(s.HitPolicy[1]), s.HitPolicy))
+			} else {
+				*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): hitPolicy %q is not recognised; expected one of U, F, A, R, C, C+, C#, C>, C<", s.ID, s.HitPolicy))
+			}
+		}
+	}
+
+	// V10 — foreign-step fields must not appear on a DECISION_TABLE step.
+	if s.ConditionalNextSteps.Len() > 0 {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): conditionalNextSteps is not valid on this step type", s.ID))
+	}
+	if len(s.Transformations) > 0 {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): transformations is not valid on this step type", s.ID))
+	}
+	if len(s.ParallelNextSteps) > 0 {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): parallelNextSteps is not valid on this step type", s.ID))
+	}
+	if s.JoinStep != "" {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): joinStep is not valid on this step type", s.ID))
+	}
+	if s.JobType != "" {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): jobType is not valid on this step type", s.ID))
+	}
+	if s.DelegateClass != "" {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): delegateClass is not valid on this step type", s.ID))
+	}
+	if s.RetryCount != 0 {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): retryCount is not valid on this step type", s.ID))
+	}
+	if len(s.BoundaryEvents) > 0 {
+		*errs = append(*errs, fmt.Sprintf("step %q (DECISION_TABLE): boundaryEvents is not valid on this step type", s.ID))
+	}
+}
+
 // graphWalk performs a DFS from start, marking all reachable step IDs.
 func graphWalk(id string, steps map[string]*WorkflowStep, visited map[string]bool) {
 	if visited[id] {
@@ -210,8 +298,10 @@ func graphWalk(id string, steps map[string]*WorkflowStep, visited map[string]boo
 	if s.NextStep != "" {
 		graphWalk(s.NextStep, steps, visited)
 	}
-	for _, t := range s.ConditionalNextSteps {
-		graphWalk(t, steps, visited)
+	if s.ConditionalNextSteps != nil {
+		for _, t := range s.ConditionalNextSteps.Targets {
+			graphWalk(t, steps, visited)
+		}
 	}
 	for _, t := range s.ParallelNextSteps {
 		graphWalk(t, steps, visited)
@@ -222,4 +312,7 @@ func graphWalk(id string, steps map[string]*WorkflowStep, visited map[string]boo
 	for _, be := range s.BoundaryEvents {
 		graphWalk(be.TargetStepId, steps, visited)
 	}
+	// DECISION_TABLE's only outbound edge is the step-level NextStep (already
+	// walked above). Per-rule routing was removed in 007; rules produce
+	// outputs only.
 }

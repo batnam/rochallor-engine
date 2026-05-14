@@ -130,6 +130,36 @@ describe('toEdges sourceHandle', () => {
   });
 });
 
+describe('toEdges for DECISION_TABLE', () => {
+  function dtDef(nextStep: string): WorkflowDefinition {
+    return {
+      id: 'dt-test',
+      name: 'DT test',
+      steps: [
+        {
+          id: 'dt',
+          name: 'Decision Table',
+          type: 'DECISION_TABLE',
+          hitPolicy: 'F',
+          nextStep,
+          decisionTable: {
+            rules: [{ when: { x: 'value == 1' }, outputs: { tier: 'GOLD' } }],
+          },
+        },
+        { id: 'a', name: 'A', type: 'END' },
+      ],
+    };
+  }
+
+  it('emits exactly one sequential edge to nextStep', () => {
+    const edges = toEdges(dtDef('a')).filter((e) => e.from === 'dt');
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.to).toBe('a');
+    expect(edges[0]?.variant.kind).toBe('sequential');
+    expect(edges[0]?.sourceHandle).toBeUndefined();
+  });
+});
+
 function groupByKind(edges: ReturnType<typeof toEdges>): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const e of edges) counts[e.variant.kind] = (counts[e.variant.kind] ?? 0) + 1;

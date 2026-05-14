@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
-	"time"
 
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
@@ -183,7 +181,7 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 		// Backward-compat: a SERVICE_TASK with no nextStep and no conditional
 		// branches ends the local branch without cleanup — preserve the
 		// pre-refactor behavior of CompleteJobAndAdvance for such workflows.
-		if completedStep.NextStep == "" && len(completedStep.ConditionalNextSteps) == 0 {
+		if completedStep.NextStep == "" && completedStep.ConditionalNextSteps.Len() == 0 {
 			return nil
 		}
 		return s.advancePastStep(ctx, tx, inst, def, completedStep)
@@ -332,297 +330,11 @@ func (s *Service) routeStep(ctx context.Context, tx db.Tx, inst *WorkflowInstanc
 		return s.handleJoinGateway(ctx, tx, inst, def, step, seID)
 	case definition.StepTypeEnd:
 		return s.handleEnd(ctx, tx, inst, def, step, seID)
+	case definition.StepTypeDecisionTable:
+		return s.handleDecisionTable(ctx, tx, inst, def, step)
 	default:
 		return fmt.Errorf("unsupported step type %q", step.Type)
 	}
-}
-
-// ─── step type handlers ───────────────────────────────────────────────────────
-
-func (s *Service) handleServiceTask(ctx context.Context, tx db.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string, attempt int) error {
-	jobType := step.JobType
-	if jobType == "" {
-		jobType = step.ID
-	}
-	retryCount := step.RetryCount
-	jobID := id.NewJob()
-	if err := s.store.InsertJob(ctx, tx, jobID, inst.ID, seID, jobType, retryCount, inst.Variables); err != nil {
-		return fmt.Errorf("create job for step %q: %w", step.ID, err)
-	}
-	if err := s.dispatcher.Enqueue(ctx, tx, dispatch.DispatchJob{
-		ID:               jobID,
-		InstanceID:       inst.ID,
-		StepExecutionID:  seID,
-		JobType:          jobType,
-		RetriesRemaining: retryCount,
-		Payload:          []byte(inst.Variables),
-		CreatedAt:        time.Now(),
-	}); err != nil {
-		return fmt.Errorf("dispatch enqueue for step %q: %w", step.ID, err)
-	}
-	return s.scheduleBoundaryEvents(ctx, tx, inst, step, seID)
-}
-
-func (s *Service) handleUserTask(ctx context.Context, tx db.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string) error {
-	utID := id.NewUserTask()
-	if err := s.store.InsertUserTask(ctx, tx, utID, inst.ID, seID, step.ID, inst.Variables); err != nil {
-		return fmt.Errorf("create user_task for step %q: %w", step.ID, err)
-	}
-	if err := s.store.UpdateInstanceStatus(ctx, tx, inst.ID, InstanceStatusWaiting); err != nil {
-		return err
-	}
-	inst.Status = InstanceStatusWaiting
-	return s.scheduleBoundaryEvents(ctx, tx, inst, step, seID)
-}
-
-func (s *Service) handleDecision(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep) error {
-	vars, err := variablesToMap(inst.Variables)
-	if err != nil {
-		return s.failInstance(ctx, tx, inst, step.ID, fmt.Sprintf("corrupt instance variables: %v", err))
-	}
-	for expr, target := range step.ConditionalNextSteps {
-		result, err := evaluateExpr(expr, vars)
-		if err != nil {
-			return s.failInstance(ctx, tx, inst, step.ID, fmt.Sprintf("expression eval error: %v", err))
-		}
-		matched, ok := result.(bool)
-		if !ok {
-			return s.failInstance(ctx, tx, inst, step.ID, fmt.Sprintf("expression %q: result is %T, not bool", expr, result))
-		}
-		if matched {
-			if err := s.store.CompleteStepExecutionByStepNoOutput(ctx, tx, inst.ID, step.ID); err != nil {
-				return err
-			}
-			removeFromCurrentSteps(inst, step.ID)
-			return s.dispatchStep(ctx, tx, inst, def, target)
-		}
-	}
-	return s.failInstance(ctx, tx, inst, step.ID, "no conditionalNextSteps branch matched (DecisionNoBranchMatched)")
-}
-
-func (s *Service) handleTransformation(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string) error {
-	vars, err := variablesToMap(inst.Variables)
-	if err != nil {
-		return fmt.Errorf("corrupt instance variables: %w", err)
-	}
-	delta := make(map[string]any, len(step.Transformations))
-	for k, rawVal := range step.Transformations {
-		var v any
-		if err := json.Unmarshal(rawVal, &v); err != nil {
-			return fmt.Errorf("transformation %q: unmarshal value: %w", k, err)
-		}
-		if strVal, ok := v.(string); ok && strings.HasPrefix(strVal, "${") && strings.HasSuffix(strVal, "}") {
-			inner := strings.TrimSpace(strVal[2 : len(strVal)-1])
-			if inner == "now()" {
-				v = time.Now().UTC().Format(time.RFC3339)
-			} else {
-				result, err := evaluateExpr(inner, vars)
-				if err != nil {
-					return s.failInstance(ctx, tx, inst, step.ID, fmt.Sprintf("transformation %q: expression eval: %v", k, err))
-				}
-				v = result
-			}
-		}
-		vars[k] = v
-		delta[k] = v
-	}
-
-	merged, err := json.Marshal(vars)
-	if err != nil {
-		return fmt.Errorf("transformation: marshal merged vars: %w", err)
-	}
-	inst.Variables = merged
-
-	if err := s.store.UpdateInstanceVariablesPartial(ctx, tx, inst.ID, delta); err != nil {
-		return err
-	}
-	if err := s.store.CompleteStepExecutionByID(ctx, tx, seID, merged); err != nil {
-		return err
-	}
-
-	removeFromCurrentSteps(inst, step.ID)
-	return s.dispatchStep(ctx, tx, inst, def, step.NextStep)
-}
-
-func (s *Service) handleWait(ctx context.Context, tx db.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string) error {
-	if err := s.store.UpdateInstanceStatus(ctx, tx, inst.ID, InstanceStatusWaiting); err != nil {
-		return err
-	}
-	inst.Status = InstanceStatusWaiting
-	return s.scheduleBoundaryEvents(ctx, tx, inst, step, seID)
-}
-
-func (s *Service) handleParallelGateway(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep) error {
-	if err := s.store.CompleteStepExecutionByStepNoOutput(ctx, tx, inst.ID, step.ID); err != nil {
-		return err
-	}
-	removeFromCurrentSteps(inst, step.ID)
-	for _, branchID := range step.ParallelNextSteps {
-		if err := s.dispatchStep(ctx, tx, inst, def, branchID); err != nil {
-			return fmt.Errorf("parallel branch %q: %w", branchID, err)
-		}
-	}
-	return nil
-}
-
-func (s *Service) handleJoinGateway(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string) error {
-	pgStep := findParallelGatewayFor(def, step.ID)
-	if pgStep == nil {
-		return fmt.Errorf("join step %q: no matching PARALLEL_GATEWAY found", step.ID)
-	}
-	expectedBranches := len(pgStep.ParallelNextSteps)
-
-	// Count completed branch leaf steps using the transaction so that the
-	// current branch's step_execution — marked COMPLETED earlier in this same
-	// tx by CompleteJobAndAdvance — is visible without a compensating increment.
-	arrivedBranches, err := s.store.CountCompletedBranchLeafs(ctx, tx, inst.ID, branchLeafsFor(pgStep))
-	if err != nil {
-		return fmt.Errorf("join count branches: %w", err)
-	}
-
-	if err := s.store.CompleteStepExecutionByID(ctx, tx, seID, nil); err != nil {
-		return err
-	}
-
-	if arrivedBranches < expectedBranches {
-		return nil // not all branches done yet
-	}
-
-	removeFromCurrentSteps(inst, step.ID)
-	return s.dispatchStep(ctx, tx, inst, def, step.NextStep)
-}
-
-func (s *Service) handleEnd(ctx context.Context, tx db.Tx, inst *WorkflowInstance, def *definition.WorkflowDefinition, step *definition.WorkflowStep, seID string) error {
-	if err := s.store.CompleteStepExecutionByID(ctx, tx, seID, nil); err != nil {
-		return err
-	}
-	newIDs := withoutStep(inst.CurrentStepIDs, step.ID)
-	if err := s.store.CompleteInstance(ctx, tx, inst.ID, newIDs); err != nil {
-		return err
-	}
-	inst.CurrentStepIDs = newIDs
-	inst.Status = InstanceStatusCompleted
-
-	if def.AutoStartNextWorkflow && def.NextWorkflowId != "" {
-		nextID := def.NextWorkflowId
-		vars, err := variablesToMap(inst.Variables)
-		if err != nil {
-			slog.Error("autoStartNextWorkflow: corrupt instance variables, skipping chain",
-				"instance_id", inst.ID, "next_workflow_id", nextID, "err", err)
-			return nil
-		}
-		go func() {
-			tCtx, cancel := context.WithTimeout(s.rootCtx, 30*time.Second)
-			defer cancel()
-			if _, err := s.Start(tCtx, nextID, 0, vars, ""); err != nil {
-				slog.Error("autoStartNextWorkflow: failed to start chained workflow",
-					"next_workflow_id", nextID, "err", err)
-			}
-		}()
-	}
-	return nil
-}
-
-func (s *Service) failInstance(ctx context.Context, tx db.Tx, inst *WorkflowInstance, stepID, reason string) error {
-	if err := s.store.FailStepExecutionByStep(ctx, tx, inst.ID, stepID, reason); err != nil {
-		return err
-	}
-	if err := s.store.FailInstance(ctx, tx, inst.ID, reason); err != nil {
-		return err
-	}
-	inst.Status = InstanceStatusFailed
-	return nil
-}
-
-// scheduleBoundaryEvents creates boundary_event_schedule rows for any TIMER
-// events attached to step.
-func (s *Service) scheduleBoundaryEvents(ctx context.Context, tx db.Tx, inst *WorkflowInstance, step *definition.WorkflowStep, seID string) error {
-	for _, be := range step.BoundaryEvents {
-		if be.Type != definition.BoundaryEventTypeTimer {
-			continue
-		}
-		dur, err := parseDuration(be.Duration)
-		if err != nil {
-			return fmt.Errorf("boundary event duration %q: %w", be.Duration, err)
-		}
-		fireAt := time.Now().Add(dur)
-		besID := id.NewBoundaryEvent()
-		if err := s.store.InsertBoundaryEventSchedule(ctx, tx, besID, inst.ID, seID, be.TargetStepId, fireAt, be.Interrupting); err != nil {
-			return fmt.Errorf("create boundary_event_schedule: %w", err)
-		}
-	}
-	return nil
-}
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-func findStep(def *definition.WorkflowDefinition, id string) *definition.WorkflowStep {
-	for i := range def.Steps {
-		if def.Steps[i].ID == id {
-			return &def.Steps[i]
-		}
-	}
-	return nil
-}
-
-func findParallelGatewayFor(def *definition.WorkflowDefinition, joinStepID string) *definition.WorkflowStep {
-	for i := range def.Steps {
-		if def.Steps[i].Type == definition.StepTypeParallelGateway && def.Steps[i].JoinStep == joinStepID {
-			return &def.Steps[i]
-		}
-	}
-	return nil
-}
-
-// branchLeafsFor returns the step IDs whose COMPLETED rows count as branch
-// arrivals at the matching join.
-func branchLeafsFor(pg *definition.WorkflowStep) []string {
-	return pg.ParallelNextSteps
-}
-
-func removeFromCurrentSteps(inst *WorkflowInstance, stepID string) {
-	inst.CurrentStepIDs = withoutStep(inst.CurrentStepIDs, stepID)
-}
-
-// withStep returns a new slice containing all ids plus stepID if not already
-// present. It never mutates the input slice.
-func withStep(ids []string, stepID string) []string {
-	for _, s := range ids {
-		if s == stepID {
-			return ids
-		}
-	}
-	out := make([]string, len(ids)+1)
-	copy(out, ids)
-	out[len(ids)] = stepID
-	return out
-}
-
-// withoutStep returns a new slice with all ids except stepID. It never
-// mutates the input slice.
-func withoutStep(ids []string, stepID string) []string {
-	out := make([]string, 0, len(ids))
-	for _, s := range ids {
-		if s != stepID {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// recomputeInstanceStatus inspects the remaining current_step_ids and returns
-// WAITING when any remaining step is USER_TASK or WAIT, otherwise ACTIVE.
-func recomputeInstanceStatus(inst *WorkflowInstance, def *definition.WorkflowDefinition) InstanceStatus {
-	for _, sid := range inst.CurrentStepIDs {
-		st := findStep(def, sid)
-		if st == nil {
-			continue
-		}
-		if st.Type == definition.StepTypeUserTask || st.Type == definition.StepTypeWait {
-			return InstanceStatusWaiting
-		}
-	}
-	return InstanceStatusActive
 }
 
 // advancePastStep is the shared tail used by CompleteJobAndAdvance,
@@ -638,12 +350,13 @@ func (s *Service) advancePastStep(ctx context.Context, tx db.Tx, inst *WorkflowI
 	inst.CurrentStepIDs = newIDs
 	inst.Status = newStatus
 
-	if len(completedStep.ConditionalNextSteps) > 0 {
+	if completedStep.ConditionalNextSteps.Len() > 0 {
 		vars, err := variablesToMap(inst.Variables)
 		if err != nil {
 			return s.failInstance(ctx, tx, inst, completedStep.ID, fmt.Sprintf("corrupt instance variables: %v", err))
 		}
-		for expr, target := range completedStep.ConditionalNextSteps {
+		for _, expr := range completedStep.ConditionalNextSteps.Exprs {
+			target := completedStep.ConditionalNextSteps.Targets[expr]
 			result, err := evaluateExpr(expr, vars)
 			if err != nil {
 				return s.failInstance(ctx, tx, inst, completedStep.ID, fmt.Sprintf("expression eval error: %v", err))
@@ -663,78 +376,4 @@ func (s *Service) advancePastStep(ctx context.Context, tx db.Tx, inst *WorkflowI
 		return s.dispatchStep(ctx, tx, inst, def, completedStep.NextStep)
 	}
 	return nil
-}
-
-func mergeVariables(existing json.RawMessage, delta map[string]any) (json.RawMessage, error) {
-	base := make(map[string]any)
-	if len(existing) > 0 {
-		if err := json.Unmarshal(existing, &base); err != nil {
-			return nil, fmt.Errorf("merge vars: unmarshal existing: %w", err)
-		}
-		if base == nil {
-			base = make(map[string]any)
-		}
-	}
-	for k, v := range delta {
-		base[k] = v
-	}
-	return json.Marshal(base)
-}
-
-func variablesToMap(raw json.RawMessage) (map[string]any, error) {
-	m := make(map[string]any)
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &m); err != nil {
-			return nil, fmt.Errorf("unmarshal instance variables: %w", err)
-		}
-	}
-	return m, nil
-}
-
-// evaluateExpr is a thin adapter to the expression package, injected at
-// startup to avoid an import cycle.
-var evaluateExpr func(expr string, vars map[string]any) (any, error)
-
-// SetExpressionEvaluator injects the expression evaluator (called from main).
-func SetExpressionEvaluator(fn func(expr string, vars map[string]any) (any, error)) {
-	evaluateExpr = fn
-}
-
-// parseDuration parses an ISO-8601 duration string (PT30S, PT5M, PT2H) into a time.Duration.
-func parseDuration(iso string) (time.Duration, error) {
-	if len(iso) < 3 || iso[0] != 'P' {
-		return 0, fmt.Errorf("invalid ISO-8601 duration: %q", iso)
-	}
-	rest := iso[1:]
-	if len(rest) > 0 && rest[0] == 'T' {
-		rest = rest[1:]
-	}
-	var total time.Duration
-	i := 0
-	for i < len(rest) {
-		j := i
-		for j < len(rest) && (rest[j] >= '0' && rest[j] <= '9' || rest[j] == '.') {
-			j++
-		}
-		if j >= len(rest) {
-			break
-		}
-		unit := rest[j]
-		numStr := rest[i:j]
-		var n float64
-		fmt.Sscanf(numStr, "%f", &n)
-		switch unit {
-		case 'H':
-			total += time.Duration(n * float64(time.Hour))
-		case 'M':
-			total += time.Duration(n * float64(time.Minute))
-		case 'S':
-			total += time.Duration(n * float64(time.Second))
-		}
-		i = j + 1
-	}
-	if total == 0 {
-		return 0, fmt.Errorf("invalid or zero ISO-8601 duration: %q", iso)
-	}
-	return total, nil
 }

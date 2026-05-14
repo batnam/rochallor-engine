@@ -1,0 +1,53 @@
+{
+  "id": "regional-router",
+  "name": "Regional router",
+  "description": "Decision Table fixture: 3 rules + downstream DECISION on the target output (007 shape).",
+  "steps": [
+    {
+      "id": "route-by-region",
+      "name": "Route by region",
+      "type": "DECISION_TABLE",
+      "hitPolicy": "F",
+      "nextStep": "route-decision",
+      "decisionTable": {
+        "rules": [
+          { "when": { "region": "value == \"NA\"" }, "outputs": { "target": "na" } },
+          { "when": { "region": "value == \"EU\"" }, "outputs": { "target": "eu" } },
+          { "when": {}, "outputs": { "target": "fallback" } }
+        ]
+      }
+    },
+    {
+      "id": "route-decision",
+      "name": "Route on target",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "target == \"na\"": "na-handler",
+        "target == \"eu\"": "eu-handler",
+        "target == \"fallback\"": "fallback"
+      }
+    },
+    {
+      "id": "na-handler",
+      "name": "NA",
+      "type": "SERVICE_TASK",
+      "jobType": "route-region",
+      "nextStep": "end"
+    },
+    {
+      "id": "eu-handler",
+      "name": "EU",
+      "type": "SERVICE_TASK",
+      "jobType": "route-region",
+      "nextStep": "end"
+    },
+    {
+      "id": "fallback",
+      "name": "Fallback",
+      "type": "SERVICE_TASK",
+      "jobType": "route-region",
+      "nextStep": "end"
+    },
+    { "id": "end", "name": "End", "type": "END" }
+  ]
+}

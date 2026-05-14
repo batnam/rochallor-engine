@@ -3,6 +3,7 @@ import { useSelection } from '@/store/selectors';
 import { useWorkflowStore } from '@/store/workflowStore';
 import type { ReactNode } from 'react';
 import { DecisionForm } from './property-forms/DecisionForm';
+import { DecisionTableForm } from './property-forms/DecisionTableForm';
 import { Field, StepPicker, TextInput } from './property-forms/FormPrimitives';
 import { JoinGatewayForm } from './property-forms/JoinGatewayForm';
 import { ParallelGatewayForm } from './property-forms/ParallelGatewayForm';
@@ -52,6 +53,8 @@ function StepForm({ step }: { step: Step }): ReactNode {
       return <UserTaskForm step={step} />;
     case 'DECISION':
       return <DecisionForm step={step} />;
+    case 'DECISION_TABLE':
+      return <DecisionTableForm step={step} />;
     case 'TRANSFORMATION':
       return <TransformationForm step={step} />;
     case 'WAIT':

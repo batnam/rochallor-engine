@@ -153,6 +153,9 @@ func runSDKSuite(transport string, client scenarios.ClientIface, sdk, scenariosD
 	suite := []entry{
 		{"linear", scenarios.RunLinear},
 		{"decision", scenarios.RunDecision},
+		{"decision-table", scenarios.RunDecisionTable},
+		{"decision-table-with-decision", scenarios.RunDecisionTableWithDecision},
+		{"decision-table-collect-sum", scenarios.RunDecisionTableCollectSum},
 		{"parallel", scenarios.RunParallel},
 		{"user-task", scenarios.RunUserTask},
 		{"timer", scenarios.RunTimer},

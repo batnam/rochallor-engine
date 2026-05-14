@@ -152,6 +152,15 @@ function newStep(template: NewStepTemplate, def: WorkflowDefinition): Step {
       return { id, name, type: 'USER_TASK' };
     case 'DECISION':
       return { id, name, type: 'DECISION', conditionalNextSteps: {} };
+    case 'DECISION_TABLE':
+      return {
+        id,
+        name,
+        type: 'DECISION_TABLE',
+        hitPolicy: 'U',
+        nextStep: '',
+        decisionTable: { rules: [] },
+      };
     case 'TRANSFORMATION':
       return { id, name, type: 'TRANSFORMATION', nextStep: '', transformations: {} };
     case 'WAIT':
@@ -420,6 +429,18 @@ function scrubRefs(def: WorkflowDefinition, removedId: StepId): WorkflowDefiniti
           ([, target]) => target !== removedId,
         );
         return { ...step, conditionalNextSteps: Object.fromEntries(entries) };
+      }
+      case 'DECISION_TABLE': {
+        const rules = step.decisionTable.rules.map((r) =>
+          r.then === removedId ? { ...r, then: '' } : r,
+        );
+        const { defaultNextStep, ...rest } = step.decisionTable;
+        const next = {
+          ...rest,
+          rules,
+          ...(defaultNextStep && defaultNextStep !== removedId ? { defaultNextStep } : {}),
+        };
+        return { ...step, decisionTable: next };
       }
       case 'PARALLEL_GATEWAY': {
         const parallelNextSteps = step.parallelNextSteps.filter((t) => t !== removedId);
