@@ -58,6 +58,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: workflow-sdk-python/dist/
+          skip-existing: true
 
   publish-sdk-node:
     name: Publish Node SDK → npm
@@ -89,7 +90,7 @@ jobs:
         working-directory: workflow-sdk-node
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          npm version ${VERSION} --no-git-tag-version
+          npm pkg set version=${VERSION}
           npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
