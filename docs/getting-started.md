@@ -102,7 +102,7 @@ npm install rochallor-workflow-sdk
 
 ```kotlin
 dependencies {
-    implementation("io.github.batnamv:workflow-sdk-java:1.0.0")
+    implementation("io.github.batnam:workflow-sdk-java:1.0.0")
 }
 ```
 

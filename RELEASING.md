@@ -36,7 +36,7 @@ No API token is stored — PyPI verifies the GitHub Actions OIDC token automatic
 
 **3b. Namespace verification**
 
-1. In Central Portal → **Namespaces → Add Namespace** → enter `io.github.batnamv`
+1. In Central Portal → **Namespaces → Add Namespace** → enter `io.github.batnam`
 2. Verify via GitHub username (instant, no DNS needed since `batnam` matches your GitHub handle)
 
 **3c. GPG signing key**
@@ -102,7 +102,7 @@ This triggers the `publish.yml` workflow which:
 - Builds and pushes `ghcr.io/batnam/rochallor-engine:v1.1.0` and `:latest`
 - Publishes `rochallor-sdk==1.1.0` to PyPI
 - Publishes `rochallor-workflow-sdk@1.1.0` to npm
-- Publishes `io.github.batnamv:workflow-sdk-java:1.1.0` to Maven Central
+- Publishes `io.github.batnam:workflow-sdk-java:1.1.0` to Maven Central
 - Creates tag `workflow-sdk-go/v1.1.0` for Go module versioning
 - Creates a GitHub Release with auto-generated release notes
 
@@ -113,7 +113,7 @@ This triggers the `publish.yml` workflow which:
 | Docker image | `ghcr.io/batnam/rochallor-engine` |
 | PyPI package | `https://pypi.org/project/rochallor-sdk/` |
 | npm package | `https://www.npmjs.com/package/rochallor-workflow-sdk` |
-| Java package | `https://central.sonatype.com/artifact/io.github.batnamv/workflow-sdk-java` |
+| Java package | `https://central.sonatype.com/artifact/io.github.batnam/workflow-sdk-java` |
 | GitHub Release | GitHub → Releases tab |
 
 ---
