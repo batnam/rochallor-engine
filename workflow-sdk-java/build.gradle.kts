@@ -121,6 +121,12 @@ sourceSets {
     }
 }
 
+// Avoid duplicate-entry errors in sourcesJar/javadocJar because the protobuf
+// plugin auto-registers the generated source directories that we also list above
+tasks.withType<Jar>().configureEach {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Checkstyle
 // ──────────────────────────────────────────────────────────────────────────────
