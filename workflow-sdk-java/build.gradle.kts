@@ -9,7 +9,7 @@ plugins {
     id("com.vanniktech.maven.publish") version "0.30.0"
 }
 
-group = "com.batnam"
+group = "io.github.batnamv"
 version = "1.0.0"
 
 java {
@@ -153,7 +153,7 @@ mavenPublishing {
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
     signAllPublications()
 
-    coordinates("com.batnam", "workflow-sdk-java", version.toString())
+    coordinates("io.github.batnamv", "workflow-sdk-java", version.toString())
 
     pom {
         name.set("workflow-sdk-java")

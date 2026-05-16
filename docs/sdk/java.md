@@ -1,6 +1,6 @@
 # Java SDK
 
-**Coordinates**: `com.batnam.rochallor-engine:workflow-sdk-java:1.0.0`
+**Coordinates**: `io.github.batnamv:workflow-sdk-java:1.0.0`
 
 ## Key types
 
