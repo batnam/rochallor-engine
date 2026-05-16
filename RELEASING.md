@@ -23,11 +23,41 @@ No API token is stored — PyPI verifies the GitHub Actions OIDC token automatic
 3. Copy the token
 4. In GitHub repo → **Settings → Secrets → Actions** → add secret `NPM_TOKEN`
 
-### 3. GitHub Packages (Java SDK)
+### 3. Maven Central (Java SDK)
 
-No setup needed — uses the auto-provided `GITHUB_TOKEN` with `packages: write` permission.
+**3a. Sonatype Central Portal account**
 
-Users who want to consume the Java SDK need a GitHub Personal Access Token with `read:packages` scope.
+1. Create account at [central.sonatype.com](https://central.sonatype.com)
+2. Go to **Account → User Token** → Generate token
+3. Copy the **Username token** and **Password token**
+4. In GitHub repo → **Settings → Secrets → Actions** → add:
+   - `MAVEN_CENTRAL_USERNAME` — the username token
+   - `MAVEN_CENTRAL_PASSWORD` — the password token
+
+**3b. Namespace verification**
+
+1. In Central Portal → **Namespaces → Add Namespace** → enter `com.batnam`
+2. Verify via GitHub username (instant, no DNS needed since `batnam` matches your GitHub handle)
+
+**3c. GPG signing key**
+
+```bash
+# Generate a key (use your real name/email)
+gpg --gen-key
+
+# List keys to get the KEY_ID
+gpg --list-secret-keys --keyid-format LONG
+
+# Export private key (ASCII armor)
+gpg --armor --export-secret-keys KEY_ID
+
+# Upload public key so Maven Central can verify
+gpg --keyserver keyserver.ubuntu.com --send-keys KEY_ID
+```
+
+In GitHub repo → **Settings → Secrets → Actions** → add:
+- `GPG_PRIVATE_KEY` — output of `gpg --armor --export-secret-keys KEY_ID`
+- `GPG_PASSPHRASE` — the passphrase you set when generating the key
 
 ### 4. GHCR (Docker image)
 
@@ -72,7 +102,7 @@ This triggers the `publish.yml` workflow which:
 - Builds and pushes `ghcr.io/batnam/rochallor-engine:v1.1.0` and `:latest`
 - Publishes `rochallor-sdk==1.1.0` to PyPI
 - Publishes `rochallor-workflow-sdk@1.1.0` to npm
-- Publishes `com.batnam:workflow-sdk-java:1.1.0` to GitHub Packages
+- Publishes `com.batnam:workflow-sdk-java:1.1.0` to Maven Central
 - Creates tag `workflow-sdk-go/v1.1.0` for Go module versioning
 - Creates a GitHub Release with auto-generated release notes
 
@@ -83,7 +113,7 @@ This triggers the `publish.yml` workflow which:
 | Docker image | `ghcr.io/batnam/rochallor-engine` |
 | PyPI package | `https://pypi.org/project/rochallor-sdk/` |
 | npm package | `https://www.npmjs.com/package/rochallor-workflow-sdk` |
-| Java package | GitHub → Packages tab |
+| Java package | `https://central.sonatype.com/artifact/com.batnam/workflow-sdk-java` |
 | GitHub Release | GitHub → Releases tab |
 
 ---

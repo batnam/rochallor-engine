@@ -98,21 +98,9 @@ go get github.com/batnam/rochallor-engine/workflow-sdk-go@latest
 npm install rochallor-workflow-sdk
 ```
 
-#### Java (GitHub Packages)
-
-Add the GitHub Packages repository to your `build.gradle.kts`:
+#### Java (Maven Central)
 
 ```kotlin
-repositories {
-    maven {
-        url = uri("https://maven.pkg.github.com/batnam/rochallor-engine")
-        credentials {
-            username = System.getenv("GITHUB_ACTOR")
-            password = System.getenv("GITHUB_TOKEN")  // needs read:packages scope
-        }
-    }
-}
-
 dependencies {
     implementation("com.batnam:workflow-sdk-java:1.0.0")
 }

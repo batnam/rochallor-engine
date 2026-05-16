@@ -100,7 +100,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-sdk-java:
-    name: Publish Java SDK → GitHub Packages
+    name: Publish Java SDK → Maven Central
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,11 +110,14 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Publish to GitHub Packages
+      - name: Publish to Maven Central
         working-directory: workflow-sdk-java
-        run: ./gradlew publish -Pversion=${GITHUB_REF_NAME#v}
+        run: ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache -Pversion=${GITHUB_REF_NAME#v}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInKey: ${{ secrets.GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingInPassword: ${{ secrets.GPG_PASSPHRASE }}
 
   tag-go-sdk:
     name: Tag Go SDK module
