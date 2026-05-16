@@ -70,9 +70,20 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install and build
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
+      - name: Install dependencies
         working-directory: workflow-sdk-node
-        run: npm install && npm run build
+        run: npm install
+
+      - name: Generate proto code
+        working-directory: workflow-sdk-node
+        run: npm run proto-gen
+
+      - name: Build
+        working-directory: workflow-sdk-node
+        run: npm run build
 
       - name: Set version and publish
         working-directory: workflow-sdk-node

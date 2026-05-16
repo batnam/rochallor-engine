@@ -20,12 +20,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries",
 ]
-
-[project.urls]
-Homepage = "https://github.com/batnam/rochallor-engine"
-Repository = "https://github.com/batnam/rochallor-engine"
-Documentation = "https://github.com/batnam/rochallor-engine/tree/main/docs"
-"Bug Tracker" = "https://github.com/batnam/rochallor-engine/issues"
 dependencies = [
     "confluent-kafka>=2.4.0",
     "grpcio>=1.60",
@@ -33,6 +27,12 @@ dependencies = [
     "httpx>=0.27",
     "prometheus-client>=0.20",
 ]
+
+[project.urls]
+Homepage = "https://github.com/batnam/rochallor-engine"
+Repository = "https://github.com/batnam/rochallor-engine"
+Documentation = "https://github.com/batnam/rochallor-engine/tree/main/docs"
+"Bug Tracker" = "https://github.com/batnam/rochallor-engine/issues"
 
 [project.optional-dependencies]
 dev = [
