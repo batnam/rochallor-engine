@@ -6,6 +6,8 @@
 
 A lightweight, language-agnostic workflow engine built in Go, using PostgreSQL for persistence and — by default — `FOR UPDATE SKIP LOCKED` for job distribution across competing workers. An opt-in Kafka + Transaction Outbox dispatch mode is available for deployments that have outgrown the polling path; see [Dispatch modes](#dispatch-modes) below.
 
+**[Documentation →](https://batnam.github.io/rochallor-engine)**
+
 ## What it does
 
 Rochallor Workflow Engine lets you define long-running business processes as a graph of steps — service tasks executed by your code, user tasks waiting for human input, decisions branching on variables, parallel branches, timers, and chained workflows. The engine stores all state in PostgreSQL and hands work out to SDK workers in any language via a poll-and-lock model.
@@ -215,6 +217,8 @@ For full setup instructions, available scripts, and the spec docs, see **[workfl
 ---
 
 ## Documentation
+
+Full documentation is hosted at **https://batnam.github.io/rochallor-engine** (search included).
 
 | Topic | Description |
 |-------|-------------|
