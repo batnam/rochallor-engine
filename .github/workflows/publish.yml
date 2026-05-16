@@ -79,7 +79,7 @@ jobs:
 
       - name: Generate proto code
         working-directory: workflow-sdk-node
-        run: npm run proto-gen
+        run: mkdir -p src/generated && npm run proto-gen
 
       - name: Build
         working-directory: workflow-sdk-node
