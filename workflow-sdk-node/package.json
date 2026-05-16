@@ -32,7 +32,7 @@
     "undici": "^7.3.0"
   },
   "devDependencies": {
-    "@types/node": "^22.13.10",
+    "@types/node": "^24",
     "msw": "^2.7.3",
     "ts-proto": "^2.6.1",
     "typescript": "^5.8.2",
@@ -42,7 +42,7 @@
     "dist/**/*"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "license": "Apache-2.0"
 }

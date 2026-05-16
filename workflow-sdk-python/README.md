@@ -1,276 +1,278 @@
-# workflow-sdk-python
+# Python SDK
 
-Python SDK for the [Rochallor Workflow engine](../README.md). Provides a polling worker, REST client, and Prometheus metrics — all with zero framework dependencies.
+**Package**: `rochallor-sdk` ([PyPI](https://pypi.org/project/rochallor-sdk/))
 
-**Python 3.10+ required.**
+> The Python SDK supports **REST only**. A gRPC transport is not implemented.
 
----
+## Key types
 
-## Installation
+| Module | Type | Purpose |
+|--------|------|---------|
+| `workflow_sdk.client.rest` | `RestEngineClient(base_url, timeout?)` | REST client using `httpx` |
+| `workflow_sdk.client.interface` | `EngineClient` protocol | Transport abstraction |
+| `workflow_sdk.handler.registry` | `HandlerRegistry` | Maps `jobType` strings to handler callables |
+| `workflow_sdk.runner.runner` | `Runner(client, registry, worker_id, ...)` | Poll/dispatch loop |
+| `workflow_sdk.runner.runner` | `Runner.run(stop_event?)` | Blocks until `stop_event` is set or SIGINT/SIGTERM received |
+| `workflow_sdk.errors` | `NonRetryableError` | Raise from a handler to bypass the retry budget |
+| `workflow_sdk.errors` | `EngineClientError` | Raised on non-2xx HTTP responses — carries `.status_code` and `.message` |
 
-```bash
-# From the repository root:
-pip install -e "workflow-sdk-python"
-
-# With dev dependencies (pytest, mypy, etc.):
-pip install -e "workflow-sdk-python[dev]"
-```
-
----
-
-## Quick Start: Worker
-
-```python
-import signal
-import threading
-
-from workflow_sdk.client.rest import RestEngineClient
-from workflow_sdk.handler.registry import HandlerRegistry
-from workflow_sdk.runner.runner import Runner
-
-# 1. Create the REST client pointing at your engine
-client = RestEngineClient("http://localhost:8080")
-
-# 2. Register handlers by job type
-registry = HandlerRegistry()
-
-@registry.register("process-order")
-def handle_process_order(ctx: dict) -> dict:
-    order_id = ctx["variables"].get("orderId")
-    # ... do work ...
-    return {"status": "processed", "orderId": order_id}
-
-@registry.register("send-notification")
-def handle_notification(ctx: dict) -> dict:
-    # Raise NonRetryableError for permanent failures
-    from workflow_sdk.errors import NonRetryableError
-    if not ctx["variables"].get("email"):
-        raise NonRetryableError("email address is required")
-    return {}
-
-# 3. Start the runner (blocks until stop_event is set)
-stop = threading.Event()
-signal.signal(signal.SIGINT, lambda *_: stop.set())
-signal.signal(signal.SIGTERM, lambda *_: stop.set())
-
-runner = Runner(
-    client=client,
-    registry=registry,
-    worker_id="py-worker-1",
-    parallelism=16,        # concurrent job handlers (default 64)
-    poll_interval=0.5,     # seconds between polls (default 0.5)
-)
-runner.run(stop_event=stop)
-```
-
----
-
-## API Reference
-
-### `RestEngineClient`
-
-```python
-from workflow_sdk.client.rest import RestEngineClient
-
-client = RestEngineClient(base_url, timeout=30.0)
-```
-
-| Method | Description |
-|--------|-------------|
-| `upload_definition(definition)` | Upload a workflow definition JSON; returns definition summary |
-| `get_definition(definition_id)` | Fetch a definition by ID |
-| `list_definitions(keyword="", page=0, page_size=20)` | Paginated list of definitions |
-| `start_instance(definition_id, variables=None, ...)` | Start a workflow instance; returns instance summary |
-| `get_instance(instance_id)` | Fetch instance state |
-| `get_instance_history(instance_id)` | List step executions for an instance |
-| `cancel_instance(instance_id, reason="")` | Cancel a running instance |
-| `poll_jobs(worker_id, job_types, max_jobs=1)` | Claim jobs (used by `Runner` automatically) |
-| `complete_job(job_id, worker_id, variables=None)` | Mark job complete with output variables |
-| `fail_job(job_id, worker_id, error_message, retryable=True)` | Record job failure |
-| `complete_user_task(task_id, completed_by="", result=None)` | Complete a user task |
-| `close()` | Release the underlying HTTP connection pool |
-
-`RestEngineClient` is a context manager:
-
-```python
-with RestEngineClient("http://localhost:8080") as client:
-    instance = client.start_instance("my-workflow")
-```
-
-### `HandlerRegistry`
-
-```python
-from workflow_sdk.handler.registry import HandlerRegistry
-
-registry = HandlerRegistry()
-
-# Register via decorator
-@registry.register("my-job-type")
-def handler(ctx: dict) -> dict:
-    return {"result": "ok"}
-
-# Or register directly
-registry.register("other-type", lambda ctx: {"x": 1})
-
-# Inspect registered types
-registry.job_types()  # -> ["my-job-type", "other-type"]
-```
-
-**Handler signature**: `(ctx: dict) -> dict | None`
-
-The `ctx` dict contains:
+The handler function receives a `dict` with the following keys:
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `id` | `str` | Job ID |
-| `jobType` | `str` | Handler key |
-| `instanceId` | `str` | Workflow instance ID |
-| `stepId` | `str` | Step ID in the definition |
-| `stepExecutionId` | `str` | Unique execution ID for this attempt |
-| `retriesRemaining` | `int` | Retries left before permanent failure |
-| `variables` | `dict` | Input variables from the workflow |
-| `lockExpiresAt` | `str` | ISO-8601 timestamp when the job lock expires |
+| `id` | str | Job ID |
+| `jobType` | str | Job type string |
+| `instanceId` | str | Workflow instance ID |
+| `stepExecutionId` | str | Step execution ID |
+| `retriesRemaining` | int | Retry budget remaining |
+| `variables` | dict | Current workflow variables |
 
-### `Runner`
-
-```python
-from workflow_sdk.runner.runner import Runner
-
-runner = Runner(
-    client=client,           # RestEngineClient (or any EngineClient implementor)
-    registry=registry,       # HandlerRegistry with at least one handler
-    worker_id="my-worker",   # Unique worker ID (shown in engine logs)
-    parallelism=64,          # Max concurrent handler threads (default 64)
-    poll_interval=0.5,       # Poll interval in seconds (default 0.5)
-    metrics=None,            # Optional Metrics instance for Prometheus
-)
-
-stop = threading.Event()
-runner.run(stop_event=stop)  # Blocks until stop_event is set
-```
-
-The runner drains all in-flight jobs before returning after `stop_event` is set.
-
-### Errors
-
-```python
-from workflow_sdk.errors import NonRetryableError, EngineClientError, WorkflowSDKError
-```
-
-| Exception | When to use |
-|-----------|-------------|
-| `NonRetryableError` | Raise inside a handler to mark the job failed permanently (no retry) |
-| `EngineClientError` | Raised by `RestEngineClient` on HTTP 4xx/5xx responses; has `.status_code` and `.message` |
-| `WorkflowSDKError` | Base class; raised on connection errors |
-
-Any other exception raised by a handler causes the job to fail with `retryable=True`.
-
-### Metrics
-
-```python
-from prometheus_client import CollectorRegistry
-from workflow_sdk.metrics.metrics import Metrics
-
-# Use an isolated registry (recommended in tests / multi-worker setups)
-reg = CollectorRegistry()
-m = Metrics(registry=reg)
-
-runner = Runner(client=client, registry=registry, worker_id="w1", metrics=m)
-```
-
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `workflow_sdk_poll_latency_seconds` | Histogram | — | Time spent in each `poll_jobs` call |
-| `workflow_sdk_lock_conflicts_total` | Counter | — | Empty poll rounds (no jobs claimed) |
-| `workflow_sdk_handler_latency_seconds` | Histogram | `job_type` | Handler execution time |
-| `workflow_sdk_retries_total` | Counter | `job_type` | Jobs retried after transient failure |
-| `workflow_sdk_jobs_completed_total` | Counter | `job_type`, `outcome` | Completed jobs; outcome is `success` or `failure` |
-
-Expose metrics via `prometheus_client.start_http_server(port)` in your worker process.
+Return a `dict` of variables to merge into the instance, or `None` / `{}` for no output.
 
 ---
 
-## Management Operations Example
+## How the runner works
 
-The following script uploads a definition, starts an instance, polls until it completes, then prints the final variables:
+`HandlerRegistry()` + `registry.register(...)` just build a `jobType → callable` map in memory — no connection, no I/O. The `Runner` is what drives everything:
+
+1. A loop fires every `poll_interval` seconds (default 0.5 s) and calls `POST /v1/jobs/poll`.
+2. The engine claims available jobs atomically with `FOR UPDATE SKIP LOCKED` and returns them.
+3. Each job is submitted to a `ThreadPoolExecutor` (bounded by `parallelism`, default 64).
+4. The thread calls your registered handler, then calls `complete_job` or `fail_job` based on the result.
+
+**Error handling**: raise a plain `Exception` → `fail_job(retryable=True)` → engine retries up to `retryCount`. Raise `NonRetryableError` → `fail_job(retryable=False)` → fails immediately regardless of retry budget.
+
+For the full model (sequence diagram, retry flow, graceful shutdown), see [architecture.md — Worker polling model](../architecture.md#worker-polling-model).
+
+---
+
+## Minimal example
 
 ```python
-import time
+import threading
+from workflow_sdk.client.rest import RestEngineClient
+from workflow_sdk.handler.registry import HandlerRegistry
+from workflow_sdk.runner.runner import Runner
+
+client   = RestEngineClient("http://localhost:8080")
+registry = HandlerRegistry()
+
+def process_order(ctx):
+    order_id = ctx["variables"]["orderId"]
+    # ... process order ...
+    return {"processed": True, "orderId": order_id}
+
+registry.register("process-order", process_order)
+
+# Runner installs SIGINT/SIGTERM handlers automatically when stop_event is None
+Runner(client=client, registry=registry, worker_id="py-worker-1").run()
+```
+
+---
+
+## Full demo — multiple handlers, non-retryable errors, context manager
+
+```python
+import logging
+import threading
+from datetime import datetime, timezone
+
+from workflow_sdk.client.rest import RestEngineClient
+from workflow_sdk.errors import EngineClientError, NonRetryableError
+from workflow_sdk.handler.registry import HandlerRegistry
+from workflow_sdk.runner.runner import Runner
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger(__name__)
+
+
+def validate_application(ctx: dict) -> dict:
+    """Validate the loan application — non-retryable on bad input."""
+    applicant_id = ctx["variables"].get("applicantId")
+    if not applicant_id:
+        raise NonRetryableError("applicantId is required and must be a non-empty string")
+
+    retries_left = ctx["retriesRemaining"]
+    log.info("Validating applicant %s (retries left: %d)", applicant_id, retries_left)
+    # ... call validation service ...
+    return {
+        "validationPassed": True,
+        "validatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def credit_score(ctx: dict) -> dict:
+    """Fetch credit score — retryable on transient errors."""
+    applicant_id = ctx["variables"]["applicantId"]
+    score = fetch_credit_score(applicant_id)  # may raise on network error → retryable
+    return {"creditScore": score}
+
+
+def send_notification(ctx: dict) -> dict | None:
+    """Send email notification — no output variables."""
+    email = ctx["variables"].get("email", "")
+    log.info("Sending notification to %s (jobId=%s)", email, ctx["id"])
+    # ... send email ...
+    return {"notificationSent": True}
+
+
+def upload_workflow(client: RestEngineClient) -> None:
+    """Upload the loan workflow definition if not already present."""
+    try:
+        client.get_definition("loan-processing-workflow")
+        log.info("Definition already exists — skipping upload")
+        return
+    except EngineClientError as e:
+        if e.status_code != 404:
+            raise
+
+    definition = {
+        "id":   "loan-processing-workflow",
+        "name": "Loan Processing Workflow",
+        "steps": [
+            {"id": "validate",      "name": "Validate Application",
+             "type": "SERVICE_TASK", "jobType": "validate-application", "nextStep": "score"},
+            {"id": "score",         "name": "Credit Score Check",
+             "type": "SERVICE_TASK", "jobType": "credit-score",         "nextStep": "notify"},
+            {"id": "notify",        "name": "Send Notification",
+             "type": "SERVICE_TASK", "jobType": "send-notification",    "nextStep": "end"},
+            {"id": "end",           "name": "Done",                     "type": "END"},
+        ],
+    }
+    result = client.upload_definition(definition)
+    log.info("Uploaded definition: %s v%s", result["id"], result["version"])
+
+
+def main() -> None:
+    # RestEngineClient is a context manager — closes the httpx.Client on exit
+    with RestEngineClient("http://localhost:8080", timeout=10.0) as client:
+        upload_workflow(client)
+
+        registry = HandlerRegistry()
+        registry.register("validate-application", validate_application)
+        registry.register("credit-score",         credit_score)
+        registry.register("send-notification",    send_notification)
+
+        runner = Runner(
+            client=client,
+            registry=registry,
+            worker_id="py-worker-1",
+            parallelism=16,
+            poll_interval=0.25,
+        )
+        # Blocks until SIGINT/SIGTERM; drains in-flight jobs before returning
+        runner.run()
+
+
+if __name__ == "__main__":
+    main()
+
+
+def fetch_credit_score(applicant_id: str) -> int:
+    return 720  # placeholder
+```
+
+---
+
+## Full REST admin API
+
+`RestEngineClient` exposes all engine operations, not just the worker interface:
+
+```python
 from workflow_sdk.client.rest import RestEngineClient
 
 client = RestEngineClient("http://localhost:8080")
 
-# 1. Upload a simple one-step workflow
-definition = {
-    "id": "echo-workflow",
-    "name": "Echo Workflow",
-    "steps": [
-        {
-            "id": "echo",
-            "type": "SERVICE_TASK",
-            "jobType": "echo",
-            "next": "end"
-        },
-        {"id": "end", "type": "END"}
-    ]
-}
-uploaded = client.upload_definition(definition)
-print(f"Definition: {uploaded['id']} v{uploaded['version']}")
+# Definitions
+result  = client.upload_definition(definition_dict)   # → {"id": ..., "version": ...}
+defn    = client.get_definition("my-workflow")         # → definition dict
+page    = client.list_definitions(keyword="loan", page=0, page_size=20)
 
-# 2. Start an instance
-instance = client.start_instance("echo-workflow", variables={"message": "hello"})
-instance_id = instance["id"]
-print(f"Instance started: {instance_id}")
+# Instances
+instance = client.start_instance(
+    "my-workflow",
+    variables={"applicantId": "A-001"},
+    business_key="APP-2024-001",          # optional correlation key
+)
+state    = client.get_instance(instance["id"])
+history  = client.get_instance_history(instance["id"])   # → list of step execution dicts
+client.cancel_instance(instance["id"], reason="User requested")
 
-# 3. Poll instance status until completed or failed
-for _ in range(30):
-    state = client.get_instance(instance_id)
-    status = state["status"]
-    print(f"  Status: {status}")
-    if status in ("COMPLETED", "FAILED", "CANCELLED"):
-        break
-    time.sleep(1)
-
-# 4. Print execution history
-history = client.get_instance_history(instance_id)
-for step in history:
-    print(f"  Step {step['stepId']}: {step['status']}")
-
-# 5. List all definitions
-page = client.list_definitions()
-print(f"Total definitions: {page['total']}")
+# User tasks
+client.complete_user_task(task_id, completed_by="jane@example.com", result={"approved": True})
 ```
 
 ---
 
-## Running Tests
+## Kafka Dispatch (Opt-In)
 
-```bash
-cd workflow-sdk-python
-pytest tests/ -v
+The Python SDK supports push-based job dispatch via Kafka, providing a more scalable alternative to polling.
+
+### Usage
+
+```python
+from workflow_sdk.runner.kafka_runner import KafkaRunner
+
+# Setup client and registry as before
+runner = KafkaRunner(
+    worker_id=worker_id,
+    brokers="localhost:9092",
+    client=client,
+    registry=registry
+)
+
+runner.run()
 ```
 
-Expected: **52 tests pass** in < 1 second. No running engine required — all HTTP interactions are mocked via `pytest-httpx`.
+### At-least-once delivery and idempotent handlers
+
+`KafkaRunner` delivers jobs with **at-least-once** semantics. An in-process dedup window (default 10 min) absorbs most duplicates transparently — but a handler **can** be invoked more than once for the same `job_id` when:
+
+- The relay was down longer than `dedup_window_seconds` before republishing.
+- This runner restarted between the original message and a relay-republished duplicate.
+
+**Handlers must be idempotent.** Use `job.job_id` as the idempotency key for every external side-effect:
+
+```python
+@registry.handler("send-invoice")
+def send_invoice(job):
+    # Guard: skip if this job_id was already processed.
+    if db.invoice_already_sent(job.job_id):
+        return {}
+    return send_invoice_to_customer(job.variables, idempotency_key=job.job_id)
+```
+
+Common patterns:
+
+| Side-effect | Idempotency approach |
+|-------------|----------------------|
+| DB write | Upsert on a `job_id` unique column or check-before-insert |
+| HTTP call | Pass `job.job_id` as `Idempotency-Key` header (Stripe, Adyen, etc.) |
+| Email / push | Insert into `notifications_sent(job_id)` with UNIQUE; skip if row exists |
+
+The engine's `complete_job` / `fail_job` calls are already idempotent — a second call with the same `job_id` is a no-op. Only your external side-effects need to be guarded.
 
 ---
 
-## Type Checking
+### KafkaRunner constructor reference
 
-```bash
-mypy src/
-```
-
-The package ships a `py.typed` marker (PEP 561). All public APIs have complete type annotations.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `worker_id` | str | *(required)* | Unique identifier for this worker. |
+| `brokers` | str | *(required)* | Comma-separated list of Kafka brokers. |
+| `client` | `EngineClient` | *(required)* | REST client for completion callbacks. |
+| `registry` | `HandlerRegistry` | *(required)* | Maps job types to handlers. |
+| `dedup_window_seconds` | float | `600.0` | Window (seconds) for in-memory deduplication (default 10m). |
+| `extra_kafka_config` | dict | `None` | Optional overrides for the Kafka Consumer (passed to `confluent_kafka`). |
 
 ---
 
-## Backoff Configuration
+## Runner constructor reference (Polling Mode)
 
-The SDK uses exponential backoff when retrying failed jobs (constants in `src/workflow_sdk/retry/backoff.py`):
-
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `BASE_DELAY` | 0.1 s | Initial delay before first retry |
-| `FACTOR` | 2.0 | Exponential growth factor |
-| `JITTER_FRAC` | 0.20 | ±20% random jitter per step |
-| `MAX_DELAY` | 30.0 s | Maximum delay cap |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `client` | `EngineClient` | *(required)* | REST client. |
+| `registry` | `HandlerRegistry` | *(required)* | Maps job types to handlers. |
+| `worker_id` | str | *(required)* | Unique identifier for this worker process. |
+| `parallelism` | int | `64` | `ThreadPoolExecutor` max workers — concurrent jobs. |
+| `poll_interval` | float | `0.5` | Seconds between poll rounds when the queue is empty. |

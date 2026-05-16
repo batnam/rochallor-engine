@@ -10,7 +10,7 @@
     "@bufbuild/protobuf": "^2.2.3"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^24",
     "ts-proto": "^2.6.1",
     "typescript": "^5.8.0"
   }

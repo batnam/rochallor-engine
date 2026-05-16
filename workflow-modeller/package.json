@@ -5,7 +5,7 @@
   "description": "Visual workflow modeller for the Rochallor Workflow Engine — feature 001-workflow-modeller.",
   "type": "module",
   "engines": {
-    "node": ">=20.10"
+    "node": ">=24"
   },
   "packageManager": "pnpm@9.12.3",
   "scripts": {
@@ -40,7 +40,7 @@
     "@playwright/test": "^1.47.2",
     "@testing-library/react": "^16.0.1",
     "@testing-library/user-event": "^14.5.2",
-    "@types/node": "^22.9.0",
+    "@types/node": "^24",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.3",

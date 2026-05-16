@@ -10,7 +10,7 @@ Deploy the Rochallor Workflow Engine on Kubernetes with a single `helm install` 
 
 ```bash
 # Install (provide your Postgres DSN inline — use existingSecret in production)
-helm install rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
+helm install rochallor oci://ghcr.io/batnam/charts/rochallor \
   --set postgresql.dsn="postgres://workflow:workflow@postgres:5432/workflow?sslmode=require"
 ```
 
@@ -28,7 +28,7 @@ kubectl create secret generic rochallor-kafka \
   --from-literal=password="<kafka-password>"
 
 # Install with the kafka overlay
-helm install rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
+helm install rochallor oci://ghcr.io/batnam/charts/rochallor \
   -f https://raw.githubusercontent.com/batnam/rochallor-engine/main/deploy/helm/rochallor/values-kafka.yaml \
   --set postgresql.existingSecret=rochallor-db \
   --set kafka.existingSecret=rochallor-kafka \
@@ -147,16 +147,16 @@ kubectl create secret generic rochallor-db \
 #    Example: 3 replicas × 16 = 48 PG connections
 
 # 3. Enable PDB for zero-downtime upgrades
-helm upgrade rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
+helm upgrade rochallor oci://ghcr.io/batnam/charts/rochallor \
   --set podDisruptionBudget.enabled=true \
   --set podDisruptionBudget.minAvailable=1
 
 # 4. Enable the migrations hook for controlled schema upgrades
-helm upgrade rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
+helm upgrade rochallor oci://ghcr.io/batnam/charts/rochallor \
   --set migrations.enabled=true
 
 # 5. Set resource requests to match your observed usage
-helm upgrade rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
+helm upgrade rochallor oci://ghcr.io/batnam/charts/rochallor \
   --set resources.requests.cpu=200m \
   --set resources.requests.memory=128Mi \
   --set resources.limits.memory=256Mi
@@ -243,7 +243,7 @@ After registration, Artifact Hub scans the OCI registry automatically on each pu
 Users can then install directly:
 
 ```bash
-helm install rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0
+helm install rochallor oci://ghcr.io/batnam/charts/rochallor
 ```
 
 ---
@@ -253,14 +253,14 @@ helm install rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0
 ### Minimal (polling, inline DSN — dev only)
 
 ```bash
-helm install rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
+helm install rochallor oci://ghcr.io/batnam/charts/rochallor \
   --set postgresql.dsn="postgres://workflow:workflow@postgres:5432/workflow?sslmode=disable"
 ```
 
 ### Production polling (3 replicas, Secrets, PDB)
 
 ```bash
-helm install rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
+helm install rochallor oci://ghcr.io/batnam/charts/rochallor \
   --set replicaCount=3 \
   --set postgresql.existingSecret=rochallor-db \
   --set podDisruptionBudget.enabled=true \
@@ -270,7 +270,7 @@ helm install rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
 ### Kafka + SASL/TLS
 
 ```bash
-helm install rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
+helm install rochallor oci://ghcr.io/batnam/charts/rochallor \
   -f deploy/helm/rochallor/values-kafka.yaml \
   --set postgresql.existingSecret=rochallor-db \
   --set kafka.existingSecret=rochallor-kafka \

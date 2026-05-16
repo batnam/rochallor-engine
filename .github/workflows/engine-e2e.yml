@@ -49,9 +49,9 @@ jobs:
       WORKER_TRANSPORT: ${{ matrix.transport }}
       E2E_TIMER_INTERRUPTING: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: e2e/runner/go.mod
           cache-dependency-path: e2e/runner/go.sum
@@ -64,7 +64,7 @@ jobs:
 
       - name: Upload e2e logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-logs-${{ matrix.dispatch_mode }}-${{ matrix.transport }}-${{ matrix.sdk }}
           path: e2e/logs/
