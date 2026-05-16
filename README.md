@@ -219,7 +219,8 @@ For full setup instructions, available scripts, and the spec docs, see **[workfl
 | Topic | Description |
 |-------|-------------|
 | [Architecture](docs/architecture.md) | System overview, transport support, parallel job processing, throughput estimates |
-| [Getting Started](docs/getting-started.md) | Prerequisites and step-by-step quick start |
+| [Getting Started](docs/getting-started.md) | Prerequisites and step-by-step quick start (Docker Compose and Helm) |
+| [Helm Chart](docs/helm.md) | Kubernetes deployment — polling and Kafka modes, configuration reference, Artifact Hub |
 | [Workflow JSON Format](docs/workflow-format.md) | All step types, expression syntax, variables, validation rules, annotated example |
 | [Configuration](docs/configuration.md) | Engine environment variables |
 | [Development](docs/development.md) | Running tests, building proto code, validating REST contracts |

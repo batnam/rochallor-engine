@@ -1,0 +1,42 @@
+Rochallor Workflow Engine {{ .Chart.AppVersion }} installed.
+
+Dispatch mode: {{ .Values.engine.dispatchMode }}
+Replicas:      {{ .Values.replicaCount }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Access the engine inside the cluster:
+
+  REST API  — {{ include "rochallor.fullname" . }}:{{ .Values.engine.rest.port }}
+  gRPC      — {{ include "rochallor.fullname" . }}:{{ .Values.engine.grpc.port }}
+  Metrics   — {{ include "rochallor.fullname" . }}:{{ .Values.engine.metrics.port }}/metrics
+
+Local port-forward (dev):
+
+  kubectl port-forward svc/{{ include "rochallor.fullname" . }} \
+    {{ .Values.engine.rest.port }}:{{ .Values.engine.rest.port }} \
+    {{ .Values.engine.grpc.port }}:{{ .Values.engine.grpc.port }}
+
+Health check:
+
+  kubectl exec deploy/{{ include "rochallor.fullname" . }} -- \
+    wget -qO- http://localhost:{{ .Values.engine.rest.port }}/healthz
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{{- if eq .Values.engine.dispatchMode "kafka_outbox" }}
+
+Kafka mode — pre-create topics before dispatching jobs:
+  Format:     workflow.jobs.<stepId>
+  Partitions: 8 recommended, replication factor 3
+
+{{- end }}
+{{- if not .Values.postgresql.dsn }}
+{{- if not .Values.postgresql.existingSecret }}
+
+WARNING: postgresql.dsn and postgresql.existingSecret are both empty.
+The engine will fail to start. Set one of:
+  --set postgresql.dsn="postgres://..."
+  --set postgresql.existingSecret=<secret-name>
+
+{{- end }}
+{{- end }}
+Docs: https://github.com/batnam/rochallor-engine/blob/main/docs/helm.md

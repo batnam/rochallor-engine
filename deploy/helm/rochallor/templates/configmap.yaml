@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "rochallor.fullname" . }}
+  labels:
+    {{- include "rochallor.labels" . | nindent 4 }}
+data:
+  WE_DISPATCH_MODE: {{ .Values.engine.dispatchMode | quote }}
+  WE_LOG_LEVEL: {{ .Values.engine.logLevel | quote }}
+  WE_AUDIT_LOG_ENABLED: {{ .Values.engine.auditLogEnabled | quote }}
+  WE_REST_PORT: {{ .Values.engine.rest.port | quote }}
+  WE_GRPC_PORT: {{ .Values.engine.grpc.port | quote }}
+  WE_METRICS_PORT: {{ .Values.engine.metrics.port | quote }}
+  {{- if .Values.engine.db.maxConns }}
+  DB_MAX_CONNS: {{ .Values.engine.db.maxConns | quote }}
+  {{- end }}
+  {{- if .Values.engine.db.minConns }}
+  DB_MIN_CONNS: {{ .Values.engine.db.minConns | quote }}
+  {{- end }}
+  {{- if eq .Values.engine.dispatchMode "kafka_outbox" }}
+  WE_KAFKA_SEED_BROKERS: {{ .Values.kafka.seedBrokers | quote }}
+  WE_KAFKA_TRANSPORT: {{ .Values.kafka.transport | quote }}
+  {{- if .Values.kafka.saslMechanism }}
+  WE_KAFKA_SASL_MECHANISM: {{ .Values.kafka.saslMechanism | quote }}
+  {{- end }}
+  {{- if .Values.kafka.outboxBatchSize }}
+  WE_OUTBOX_BATCH_SIZE: {{ .Values.kafka.outboxBatchSize | quote }}
+  {{- end }}
+  {{- if .Values.kafka.tlsCaPath }}
+  WE_KAFKA_TLS_CA_PATH: {{ .Values.kafka.tlsCaPath | quote }}
+  {{- end }}
+  {{- if .Values.kafka.tlsServerName }}
+  WE_KAFKA_TLS_SERVER_NAME: {{ .Values.kafka.tlsServerName | quote }}
+  {{- end }}
+  {{- end }}

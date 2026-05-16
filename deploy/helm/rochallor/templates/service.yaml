@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rochallor.fullname" . }}
+  labels:
+    {{- include "rochallor.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "rochallor.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: rest
+      port: {{ .Values.engine.rest.port }}
+      targetPort: rest
+      protocol: TCP
+    - name: grpc
+      port: {{ .Values.engine.grpc.port }}
+      targetPort: grpc
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.engine.metrics.port }}
+      targetPort: metrics
+      protocol: TCP

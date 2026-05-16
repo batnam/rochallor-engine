@@ -1,0 +1,147 @@
+# Default values for rochallor.
+# See docs/helm.md for full configuration reference.
+
+# Number of engine replicas.
+# Polling mode: adding replicas increases PostgreSQL lock contention — benchmark before scaling past 3.
+# Kafka mode: scaling is approximately linear.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/batnam/rochallor-engine
+  # Defaults to Chart.appVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ── Engine ──────────────────────────────────────────────────────────────────
+
+engine:
+  # Dispatch mode: "polling" (default) or "kafka_outbox".
+  # See docs/helm.md#dispatch-modes for trade-offs.
+  dispatchMode: polling
+
+  logLevel: info       # debug | info | warn | error
+  auditLogEnabled: "true"
+
+  rest:
+    port: 8080
+  grpc:
+    port: 9090
+  metrics:
+    port: 9091
+
+  db:
+    # PostgreSQL connection pool ceiling per replica.
+    # Total connections = replicaCount × maxConns; size your Postgres accordingly.
+    # Empty = engine default (4 × CPU cores, floor 4).
+    maxConns: ""
+    minConns: ""
+
+# ── PostgreSQL ───────────────────────────────────────────────────────────────
+
+postgresql:
+  # libpq connection string. Required.
+  # NEVER commit real credentials — use existingSecret in production.
+  dsn: ""
+
+  # Name of an existing Kubernetes Secret. The chart will not create a db
+  # Secret when this is set.
+  existingSecret: ""
+  # Key inside the Secret whose value is the full DSN.
+  existingSecretKey: dsn
+
+# ── Kafka (only when engine.dispatchMode = kafka_outbox) ────────────────────
+
+kafka:
+  # Comma-separated broker list, e.g. "kafka-0:9092,kafka-1:9092"
+  seedBrokers: ""
+
+  # "plaintext" (dev/trusted networks) or "sasl_scram_tls" (production)
+  transport: plaintext
+
+  # Only used when transport = sasl_scram_tls
+  saslMechanism: SCRAM-SHA-512   # SCRAM-SHA-256 | SCRAM-SHA-512
+  saslUsername: ""
+  saslPassword: ""
+
+  # Optional TLS overrides
+  tlsCaPath: ""
+  tlsServerName: ""
+
+  outboxBatchSize: 200
+
+  # Name of an existing Secret containing SASL credentials.
+  # The chart will not create a kafka Secret when this is set.
+  existingSecret: ""
+  existingSecretUsernameKey: username
+  existingSecretPasswordKey: password
+
+# ── Migrations ───────────────────────────────────────────────────────────────
+
+# The engine applies database migrations automatically on every startup, so this
+# Job is OPTIONAL. Enable it to run migrations as an explicit Helm pre-upgrade
+# hook — useful for zero-downtime rolling upgrades where you want the schema
+# promoted before any new pod starts serving traffic.
+migrations:
+  enabled: false
+  # Extra annotations (e.g. ArgoCD sync-wave, Flux reconcile annotations).
+  annotations: {}
+  # Job timeout in seconds.
+  activeDeadlineSeconds: 300
+
+# ── Service ──────────────────────────────────────────────────────────────────
+
+service:
+  type: ClusterIP
+  annotations: {}
+
+# ── ServiceAccount ───────────────────────────────────────────────────────────
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# ── Resources ────────────────────────────────────────────────────────────────
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+# ── Autoscaling ──────────────────────────────────────────────────────────────
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+# ── Pod Disruption Budget ─────────────────────────────────────────────────────
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# ── Scheduling ───────────────────────────────────────────────────────────────
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ── Extras ───────────────────────────────────────────────────────────────────
+
+# Additional environment variables for the engine container.
+# Useful for any WE_* variable not natively exposed above.
+extraEnv: []
+# - name: WE_SOME_FLAG
+#   value: "true"
+
+extraVolumes: []
+extraVolumeMounts: []

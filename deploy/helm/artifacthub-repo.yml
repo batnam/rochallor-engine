@@ -1,0 +1,18 @@
+# Artifact Hub repository metadata.
+# https://artifacthub.io/docs/topics/repositories/helm-charts/
+#
+# After pushing the chart to GHCR OCI (done automatically by the Release CI job),
+# register the repository on Artifact Hub:
+#
+#   1. Go to https://artifacthub.io/control-panel/repositories
+#   2. Add repository:
+#        Name:  rochallor
+#        Kind:  Helm charts (OCI)
+#        URL:   oci://ghcr.io/batnam/charts
+#   3. Paste the repositoryID returned by Artifact Hub into this file and commit.
+#
+# repositoryID: ""   # fill after registering
+
+owners:
+  - name: batnamv
+    email: pro8xvn@gmail.com

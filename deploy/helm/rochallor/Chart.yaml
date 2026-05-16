@@ -1,0 +1,35 @@
+apiVersion: v2
+name: rochallor
+description: >-
+  Lightweight, language-agnostic workflow engine backed by PostgreSQL.
+  Supports short-polling (default) and Kafka + Transactional Outbox dispatch modes.
+type: application
+version: 0.1.0
+appVersion: "v1.0.0"
+home: https://github.com/batnam/rochallor-engine
+icon: https://raw.githubusercontent.com/batnam/rochallor-engine/main/images/Workflow-Modeller.png
+sources:
+  - https://github.com/batnam/rochallor-engine
+keywords:
+  - workflow
+  - orchestration
+  - engine
+  - kafka
+  - postgresql
+  - bpmn
+maintainers:
+  - name: batnamv
+    email: pro8xvn@gmail.com
+    url: https://github.com/batnamv
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/category: integration-delivery
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial Helm chart — polling and kafka_outbox dispatch modes
+  artifacthub.io/readme: "https://raw.githubusercontent.com/batnam/rochallor-engine/main/docs/helm.md"
+  artifacthub.io/screenshots: |
+    - title: Workflow Modeller
+      url: https://raw.githubusercontent.com/batnam/rochallor-engine/main/images/Workflow-Modeller.png

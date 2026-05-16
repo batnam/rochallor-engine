@@ -1,0 +1,35 @@
+# Kafka + Transactional Outbox dispatch mode — overlay values.
+#
+# Usage (install):
+#   helm install rochallor rochallor/rochallor \
+#     -f values-kafka.yaml \
+#     --set postgresql.existingSecret=rochallor-db \
+#     --set kafka.existingSecret=rochallor-kafka
+#
+# Usage (upgrade):
+#   helm upgrade rochallor rochallor/rochallor \
+#     --reuse-values -f values-kafka.yaml
+
+engine:
+  dispatchMode: kafka_outbox
+
+kafka:
+  # Required: comma-separated broker addresses
+  seedBrokers: "kafka:9092"
+
+  # "sasl_scram_tls" for production clusters; "plaintext" for dev/trusted nets
+  transport: sasl_scram_tls
+  saslMechanism: SCRAM-SHA-512
+
+  # Option A — inline credentials (dev/staging only, never commit to VCS)
+  # saslUsername: ""
+  # saslPassword: ""
+
+  # Option B — reference an existing Kubernetes Secret (recommended)
+  # Create with:
+  #   kubectl create secret generic rochallor-kafka \
+  #     --from-literal=username=<user> \
+  #     --from-literal=password=<pass>
+  existingSecret: ""
+
+  outboxBatchSize: 200

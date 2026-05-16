@@ -30,16 +30,38 @@ go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
 ---
 
-## Quick Start (no clone required)
+## Quick Start — Kubernetes (Helm)
 
-The fastest way to get the engine running:
+If you are deploying to Kubernetes, the fastest path is the Helm chart:
+
+```bash
+helm install rochallor oci://ghcr.io/batnam/charts/rochallor \
+  --set postgresql.dsn="postgres://workflow:workflow@<host>:5432/workflow?sslmode=require"
+```
+
+For Kafka mode, production secrets, autoscaling, and the full configuration reference see **[docs/helm.md](helm.md)**.
+
+---
+
+## Quick Start — Docker Compose (no clone required)
+
+The fastest way to get the engine running locally:
 
 ```bash
 curl -O https://raw.githubusercontent.com/batnam/rochallor-engine/main/deploy/docker-compose.quickstart.yml
 docker compose -f docker-compose.quickstart.yml up -d
 ```
 
-Engine is ready at `http://localhost:8080`. PostgreSQL data persists in a named Docker volume.
+Services started:
+
+| Service | URL |
+|---------|-----|
+| Workflow Modeller | http://localhost:3000 |
+| Engine REST API | http://localhost:8080 |
+| gRPC | localhost:9090 |
+| Prometheus metrics | http://localhost:9091/metrics |
+
+PostgreSQL data persists in a named Docker volume.
 
 Then install an SDK and jump to [Step 5 — Upload a definition](#5-upload-a-workflow-definition).
 
