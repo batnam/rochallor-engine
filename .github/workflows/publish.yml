@@ -124,8 +124,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "workflow-sdk-go/${{ github.ref_name }}"
-          git push origin "workflow-sdk-go/${{ github.ref_name }}"
+          TAG="workflow-sdk-go/${{ github.ref_name }}"
+          if git ls-remote --tags origin "$TAG" | grep -q .; then
+            echo "Tag $TAG already exists, skipping"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
 
   github-release:
     name: Create GitHub Release
