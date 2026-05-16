@@ -218,8 +218,6 @@ For full setup instructions, available scripts, and the spec docs, see **[workfl
 
 ## Documentation
 
-Full documentation is hosted at **https://batnam.github.io/rochallor-engine** (search included).
-
 | Topic | Description |
 |-------|-------------|
 | [Architecture](docs/architecture.md) | System overview, transport support, parallel job processing, throughput estimates |
