@@ -155,6 +155,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install oras
+        uses: oras-project/setup-oras@v1
+
       - name: Package and push chart
         run: |
           VERSION=${GITHUB_REF_NAME#v}
@@ -163,6 +166,12 @@ jobs:
             --app-version "${GITHUB_REF_NAME}"
           helm push "rochallor-${VERSION}.tgz" \
             oci://ghcr.io/${{ github.repository_owner }}/charts
+
+      - name: Push Artifact Hub metadata
+        run: |
+          oras push ghcr.io/${{ github.repository_owner }}/charts:artifacthub.io \
+            --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+            deploy/helm/artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
 
   github-release:
     name: Create GitHub Release
