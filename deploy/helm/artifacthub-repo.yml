@@ -11,7 +11,7 @@
 #        URL:   oci://ghcr.io/batnam/charts
 #   3. Paste the repositoryID returned by Artifact Hub into this file and commit.
 #
-# repositoryID: ""   # fill after registering
+repositoryID: "52823d5f-1c66-4776-9f82-a4ba3c9cd15d"   # fill after registering
 
 owners:
   - name: Nam Vu
