@@ -1,0 +1,70 @@
+site_name: Rochallor Engine
+site_url: https://batnam.github.io/rochallor-engine/
+site_description: A lightweight, language-agnostic workflow engine built in Go
+site_author: batnam
+repo_url: https://github.com/batnam/rochallor-engine
+repo_name: batnam/rochallor-engine
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Architecture: architecture.md
+  - Workflow Format: workflow-format.md
+  - Configuration: configuration.md
+  - Deployment:
+    - Helm: helm.md
+    - Event-Driven (Kafka): quickstart-even-driven.md
+    - Polling vs Kafka: tradeoffs.md
+  - SDK:
+    - Go: sdk/go.md
+    - Python: sdk/python.md
+    - Node / TypeScript: sdk/node.md
+    - Java: sdk/java.md
+  - Development: development.md

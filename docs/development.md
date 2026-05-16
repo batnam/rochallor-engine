@@ -411,7 +411,7 @@ The project maintains a comprehensive E2E test suite that verifies the engine an
 - Ensure cross-SDK compatibility and consistent engine behavior.
 
 ### Execution
-For detailed instructions on running the E2E suite, refer to the [E2E README](../e2e/README.md).
+For detailed instructions on running the E2E suite, refer to the [E2E README](https://github.com/batnam/rochallor-engine/blob/main/e2e/README.md).
 
 Quick run command (requires Docker):
 ```bash
