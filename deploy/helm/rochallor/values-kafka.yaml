@@ -1,13 +1,13 @@
 # Kafka + Transactional Outbox dispatch mode — overlay values.
 #
 # Usage (install):
-#   helm install rochallor rochallor/rochallor \
+#   helm install rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
 #     -f values-kafka.yaml \
 #     --set postgresql.existingSecret=rochallor-db \
 #     --set kafka.existingSecret=rochallor-kafka
 #
 # Usage (upgrade):
-#   helm upgrade rochallor rochallor/rochallor \
+#   helm upgrade rochallor oci://ghcr.io/batnam/charts/rochallor --version 1.0.0 \
 #     --reuse-values -f values-kafka.yaml
 
 engine:
