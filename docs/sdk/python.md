@@ -1,6 +1,6 @@
 # Python SDK
 
-**Package**: `workflow-sdk` (`pip install -e ".[dev]"`)
+**Package**: `rochallor-sdk` ([PyPI](https://pypi.org/project/rochallor-sdk/))
 
 > The Python SDK supports **REST only**. A gRPC transport is not implemented.
 

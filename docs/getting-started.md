@@ -30,7 +30,22 @@ go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
 ---
 
-## Quick Start
+## Quick Start (no clone required)
+
+The fastest way to get the engine running:
+
+```bash
+curl -O https://raw.githubusercontent.com/batnam/rochallor-engine/main/deploy/docker-compose.quickstart.yml
+docker compose -f docker-compose.quickstart.yml up -d
+```
+
+Engine is ready at `http://localhost:8080`. PostgreSQL data persists in a named Docker volume.
+
+Then install an SDK and jump to [Step 5 — Upload a definition](#5-upload-a-workflow-definition).
+
+---
+
+## Quick Start (from source)
 
 Steps 1–3 are the same regardless of which SDK you use.
 
@@ -66,47 +81,40 @@ make run
 #### Python
 
 ```bash
-cd workflow-sdk-python
-pip install -e ".[dev]"
+pip install rochallor-sdk
 ```
 
 > Python SDK supports **REST only**.
 
 #### Go
 
-The Go SDK is a module inside this repo — no separate install step needed.
-
 ```bash
-# From any Go module that imports it:
-go get github.com/batnam/rochallor-engine/workflow-sdk-go
+go get github.com/batnam/rochallor-engine/workflow-sdk-go@latest
 ```
 
 #### Node / TypeScript
 
 ```bash
-cd workflow-sdk-node
-npm install
-npm run build
+npm install rochallor-workflow-sdk
 ```
 
-#### Java
+#### Java (GitHub Packages)
 
-```bash
-cd workflow-sdk-java
-./gradlew build
-```
+Add the GitHub Packages repository to your `build.gradle.kts`:
 
-The built JAR is at `build/libs/workflow-sdk-java-1.0.0.jar`. For Maven/Gradle projects, publish to your local repo:
+```kotlin
+repositories {
+    maven {
+        url = uri("https://maven.pkg.github.com/batnam/rochallor-engine")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")  // needs read:packages scope
+        }
+    }
+}
 
-```bash
-./gradlew publishToMavenLocal
-```
-
-Then add to your `build.gradle`:
-
-```groovy
 dependencies {
-    implementation 'com.batnam.rochallor-engine:workflow-sdk-java:1.0.0'
+    implementation("com.batnam:workflow-sdk-java:1.0.0")
 }
 ```
 

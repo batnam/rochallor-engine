@@ -1,6 +1,6 @@
 # Node / TypeScript SDK
 
-**Package**: `@batnam/workflow-sdk`
+**Package**: `rochallor-workflow-sdk` ([npm](https://www.npmjs.com/package/rochallor-workflow-sdk))
 
 ## Key types
 

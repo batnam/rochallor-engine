@@ -1,10 +1,22 @@
 {
-  "name": "@batnam/workflow-sdk",
+  "name": "rochallor-workflow-sdk",
   "version": "1.0.0",
-  "description": "Node/TypeScript SDK for the JSON-only workflow engine (batnam)",
+  "description": "Node/TypeScript SDK for the Rochallor Workflow engine",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/batnam/rochallor-engine.git",
+    "directory": "workflow-sdk-node"
+  },
+  "homepage": "https://github.com/batnam/rochallor-engine",
+  "bugs": "https://github.com/batnam/rochallor-engine/issues",
+  "keywords": ["workflow", "orchestration", "engine", "sdk", "worker"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

@@ -140,17 +140,38 @@ tasks.test {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Publishing (Maven local for now; CI overrides to Nexus/GitHub Packages)
+// Publishing — GitHub Packages (set GITHUB_TOKEN in CI; local uses mavenLocal)
 // ──────────────────────────────────────────────────────────────────────────────
 publishing {
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/batnam/rochallor-engine")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") as String?
+                password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key") as String?
+            }
+        }
+    }
     publications {
         create<MavenPublication>("mavenJava") {
             from(components["java"])
             pom {
                 name.set("workflow-sdk-java")
                 description.set("Java SDK for the Rochallor workflow engine")
-                groupId = "com.batnam.rochallor-engine"
+                url.set("https://github.com/batnam/rochallor-engine")
+                groupId = "com.batnam"
                 artifactId = "workflow-sdk-java"
+                licenses {
+                    license {
+                        name.set("MIT License")
+                        url.set("https://opensource.org/licenses/MIT")
+                    }
+                }
+                scm {
+                    url.set("https://github.com/batnam/rochallor-engine")
+                    connection.set("scm:git:git://github.com/batnam/rochallor-engine.git")
+                }
             }
         }
     }
