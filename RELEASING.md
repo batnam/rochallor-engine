@@ -101,20 +101,20 @@ git push origin v1.1.0
 This triggers the `publish.yml` workflow which:
 - Builds and pushes `ghcr.io/batnam/rochallor-engine:v1.1.0` and `:latest`
 - Publishes `rochallor-sdk==1.1.0` to PyPI
-- Publishes `rochallor-workflow-sdk@1.1.0` to npm
+- Publishes `rochallor-workflow-sdk-node@1.1.0` to npm
 - Publishes `io.github.batnam:workflow-sdk-java:1.1.0` to Maven Central
 - Creates tag `workflow-sdk-go/v1.1.0` for Go module versioning
 - Creates a GitHub Release with auto-generated release notes
 
 ### Step 4 — Verify
 
-| Check | URL |
-|-------|-----|
-| Docker image | `ghcr.io/batnam/rochallor-engine` |
-| PyPI package | `https://pypi.org/project/rochallor-sdk/` |
-| npm package | `https://www.npmjs.com/package/rochallor-workflow-sdk` |
+| Check | URL                                                                        |
+|-------|----------------------------------------------------------------------------|
+| Docker image | `ghcr.io/batnam/rochallor-engine`                                          |
+| PyPI package | `https://pypi.org/project/rochallor-sdk/`                                  |
+| npm package | `https://www.npmjs.com/package/rochallor-workflow-sdk-node`                |
 | Java package | `https://central.sonatype.com/artifact/io.github.batnam/workflow-sdk-java` |
-| GitHub Release | GitHub → Releases tab |
+| GitHub Release | GitHub → Releases tab                                                      |
 
 ---
 

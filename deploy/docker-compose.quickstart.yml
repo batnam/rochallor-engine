@@ -1,7 +1,7 @@
 # Rochallor Quick Start
 #
-# Starts the workflow engine + PostgreSQL using pre-built images, and builds
-# the visual modeller from source.
+# Starts the workflow engine, visual modeller, and PostgreSQL using pre-built
+# images. No clone required.
 #
 # Usage:
 #   docker compose -f docker-compose.quickstart.yml up
@@ -48,8 +48,7 @@ services:
       retries: 20
 
   modeller:
-    build:
-      context: ../workflow-modeller
+    image: ghcr.io/batnam/rochallor-modeller:latest
     restart: unless-stopped
     ports:
       - "3000:3000"

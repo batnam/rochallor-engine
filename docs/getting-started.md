@@ -30,19 +30,6 @@ go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
 ---
 
-## Quick Start — Kubernetes (Helm)
-
-If you are deploying to Kubernetes, the fastest path is the Helm chart:
-
-```bash
-helm install rochallor oci://ghcr.io/batnam/charts/rochallor \
-  --set postgresql.dsn="postgres://workflow:workflow@<host>:5432/workflow?sslmode=require"
-```
-
-For Kafka mode, production secrets, autoscaling, and the full configuration reference see **[docs/helm.md](helm.md)**.
-
----
-
 ## Quick Start — Docker Compose (no clone required)
 
 The fastest way to get the engine running locally:
@@ -117,7 +104,7 @@ go get github.com/batnam/rochallor-engine/workflow-sdk-go@latest
 #### Node / TypeScript
 
 ```bash
-npm install rochallor-workflow-sdk
+npm install rochallor-workflow-sdk-node
 ```
 
 #### Java (Maven Central)

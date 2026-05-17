@@ -1,5 +1,5 @@
 {
-  "name": "rochallor-workflow-sdk",
+  "name": "rochallor-workflow-sdk-node",
   "version": "1.0.0",
   "description": "Node/TypeScript SDK for the Rochallor Workflow engine",
   "type": "module",

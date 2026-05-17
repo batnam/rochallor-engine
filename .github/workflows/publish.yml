@@ -33,6 +33,28 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/rochallor-engine:${{ github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/rochallor-engine:latest
 
+  publish-modeller:
+    name: Publish Modeller image → GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./workflow-modeller
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/rochallor-modeller:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/rochallor-modeller:latest
+
   publish-sdk-python:
     name: Publish Python SDK → PyPI
     runs-on: ubuntu-latest
@@ -91,8 +113,8 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           npm pkg set version=${VERSION}
-          if npm view rochallor-workflow-sdk@${VERSION} version > /dev/null 2>&1; then
-            echo "rochallor-workflow-sdk@${VERSION} already published, skipping"
+          if npm view rochallor-workflow-sdk-note@${VERSION} version > /dev/null 2>&1; then
+            echo "rochallor-workflow-sdk-node@${VERSION} already published, skipping"
           else
             npm publish --access public
           fi
@@ -176,7 +198,7 @@ jobs:
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [publish-engine, publish-sdk-python, publish-sdk-node, publish-sdk-java, tag-go-sdk, publish-helm-chart]
+    needs: [publish-engine, publish-modeller, publish-sdk-python, publish-sdk-node, publish-sdk-java, tag-go-sdk, publish-helm-chart]
     steps:
       - uses: actions/checkout@v5
 
