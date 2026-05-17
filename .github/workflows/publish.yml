@@ -9,6 +9,7 @@ permissions:
   contents: write
   packages: write
   id-token: write
+  actions: write
 
 jobs:
   publish-engine:
@@ -36,6 +37,8 @@ jobs:
           context: ./workflow-engine
           platforms: linux/amd64,linux/arm64
           push: true
+          cache-from: type=gha,scope=engine
+          cache-to: type=gha,mode=max,scope=engine
           tags: |
             ghcr.io/${{ github.repository_owner }}/rochallor-engine:${{ github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/rochallor-engine:latest
@@ -65,6 +68,8 @@ jobs:
           context: ./workflow-modeller
           platforms: linux/amd64,linux/arm64
           push: true
+          cache-from: type=gha,scope=modeller
+          cache-to: type=gha,mode=max,scope=modeller
           tags: |
             ghcr.io/${{ github.repository_owner }}/rochallor-modeller:${{ github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/rochallor-modeller:latest
@@ -127,7 +132,7 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           npm pkg set version=${VERSION}
-          if npm view rochallor-workflow-sdk-note@${VERSION} version > /dev/null 2>&1; then
+          if npm view rochallor-workflow-sdk-node@${VERSION} version > /dev/null 2>&1; then
             echo "rochallor-workflow-sdk-node@${VERSION} already published, skipping"
           else
             npm publish --access public

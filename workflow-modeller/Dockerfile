@@ -1,5 +1,5 @@
 # ── build ──────────────────────────────────────────────────────────────────
-FROM node:24-alpine AS build
+FROM --platform=$BUILDPLATFORM node:24-alpine AS build
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9.12.3 --activate
