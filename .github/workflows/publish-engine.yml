@@ -1,0 +1,64 @@
+name: Publish Engine
+
+on:
+  push:
+    tags:
+      - 'engine-v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  publish-engine:
+    name: Publish Docker image → GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: ver
+        run: echo "tag=${GITHUB_REF_NAME#engine-}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./workflow-engine
+          platforms: linux/amd64,linux/arm64
+          push: true
+          cache-from: type=gha,scope=engine
+          cache-to: type=gha,mode=max,scope=engine
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/rochallor-engine:${{ steps.ver.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/rochallor-engine:latest
+
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [publish-engine]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: ver
+        run: echo "tag=${GITHUB_REF_NAME#engine-}" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Engine ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          make_latest: false

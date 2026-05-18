@@ -102,6 +102,13 @@ func GRPCFailedPrecondition(reason string) error {
 	return status.Errorf(codes.FailedPrecondition, "%s", reason)
 }
 
+// GRPCAlreadyExists wraps a reason in a gRPC ALREADY_EXISTS status.
+// Used when a uniqueness constraint rejects the request (e.g. another ACTIVE
+// instance of the same definition already holds the supplied business_key).
+func GRPCAlreadyExists(reason string) error {
+	return status.Errorf(codes.AlreadyExists, "%s", reason)
+}
+
 // writeJSON marshals v and writes it as an application/json response.
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")

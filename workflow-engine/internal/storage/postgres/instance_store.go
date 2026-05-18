@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
@@ -221,6 +222,11 @@ func (s *InstanceStore) InsertInstance(ctx context.Context, tx db.Tx,
 		&inst.CurrentStepIDs, &inst.Variables, &startedAt, &inst.BusinessKey,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" &&
+			pgErr.ConstraintName == "uniq_workflow_instance_bk_def_active" {
+			return nil, instance.ErrBusinessKeyConflict
+		}
 		return nil, fmt.Errorf("insert instance: %w", err)
 	}
 	inst.StartedAt = startedAt
@@ -232,11 +238,11 @@ func (s *InstanceStore) GetInstanceForUpdate(ctx context.Context, tx db.Tx, inst
 	var inst instance.WorkflowInstance
 	err := ObserveLockWait("instance.for_update", func() error {
 		return pg.QueryRow(ctx,
-			`SELECT id, definition_id, definition_version, status, current_step_ids, variables, started_at
+			`SELECT id, definition_id, definition_version, status, current_step_ids, variables, started_at, business_key
 			   FROM workflow_instance WHERE id = $1 FOR UPDATE`,
 			instanceID,
 		).Scan(&inst.ID, &inst.DefinitionID, &inst.DefinitionVersion, &inst.Status,
-			&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt)
+			&inst.CurrentStepIDs, &inst.Variables, &inst.StartedAt, &inst.BusinessKey)
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

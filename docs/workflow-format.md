@@ -90,6 +90,8 @@ def handle(ctx):
 
 The engine pauses at this step and waits for an external `POST /v1/instances/{instanceId}/user-tasks/{userTaskId}/complete` call (e.g. from a web UI or approval system), where `userTaskId` is the stable step id from the workflow definition. The workflow resumes on `nextStep` once completed.
 
+> **Locating `instanceId` for a chained workflow.** The `POST /v1/instances` response only returns the parent instance's id, not the chained child's. To find the child instance whose `USER_TASK` you need to complete, query by `businessKey` — see [Finding the chained instance id](#finding-the-chained-instance-id).
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `nextStep` | string | no | ID of the step to advance to after completion. |
@@ -665,7 +667,42 @@ Set `autoStartNextWorkflow: true` and `nextWorkflowId` to automatically trigger 
 }
 ```
 
-The engine starts the next workflow instance with the same variables the current instance had at the time it reached `END`. There is no limit to the chain length, but cycles will loop indefinitely — design accordingly.
+The engine starts the next workflow instance with the same variables **and the same `businessKey`** the current instance had at the time it reached `END`. There is no limit to the chain length, but cycles will loop indefinitely — design accordingly.
+
+### Finding the chained instance id
+
+Because the chained instance is created asynchronously, the caller of `POST /v1/instances` only receives the **parent** instance's id. To act on the child (e.g. complete its `USER_TASK`), correlate by `businessKey`:
+
+```http
+GET /v1/instances?definitionId={{child-definition-id}}&businessKey={{bk}}&status=WAITING
+```
+
+Why is the status 'WAITING'? This status only applies to instances with a 'User-Task' or 'Wait' step style, which require completion by a user or an external system.
+
+Example:
+
+```http
+GET http://localhost:8080/v1/instances?definitionId=LOS::loan-disbursement-workflow&businessKey=APP-20240417-001&status=WAITING
+```
+
+
+
+The response's `items[]` contains the child instance with its `id` and current `status`. Because the engine enforces uniqueness on `(definitionId, businessKey)` for in-flight instances (see below), this query returns at most one non-terminal match per `(definition, businessKey)` pair.
+
+> **Implication:** if you intend to use chaining and look up children later, **always** start the parent with a non-empty `businessKey`. Chained instances of definitions without a `businessKey` can only be found by listing all instances of the child definition.
+
+### `businessKey` uniqueness for in-flight instances
+
+The engine enforces a partial uniqueness constraint:
+
+> No two instances of the **same definition** may share a non-empty `businessKey` while both are still **in-flight** — i.e. in `ACTIVE` or `WAITING` status.
+
+Calling `POST /v1/instances` with a `(definitionId, businessKey)` pair that matches an existing in-flight instance is rejected with:
+
+- **REST:** `HTTP 409 Conflict`, body `{"error":"conflict","reason":"business key already in use by an in-flight instance of this definition"}`.
+- **gRPC:** `status.Code = ALREADY_EXISTS` with the same reason text.
+
+Re-runs are allowed once the prior instance reaches a terminal state (`COMPLETED`, `FAILED`, or `CANCELLED`). The constraint applies independently to each definition, so a parent and its chained child may both carry the same `businessKey` simultaneously.
 
 ---
 
@@ -1074,13 +1111,30 @@ Each `SERVICE_TASK`'s `jobType` needs a matching worker. Minimum set for the hap
 
 #### Step 4 — Complete the user task (senior approval path only)
 
-If `loanAmount > 500000000`, the disbursement workflow pauses at `senior-approval-task`. Complete the task by posting to the stable-id route (substitute `<instance-id>` with the id returned by `POST /v1/instances`):
+If `loanAmount > 500000000`, the **disbursement** workflow pauses at `senior-approval-task`. The disbursement instance was auto-started by the application workflow's `autoStartNextWorkflow` chain, so its `instanceId` is **not** the id returned by Step 2 — that id refers to the parent (`LOS::loan-application-full`).
+
+Locate the disbursement instance by filtering on the same `businessKey` you set in Step 2:
 
 ```bash
-curl -X POST http://localhost:8080/v1/instances/<instance-id>/user-tasks/senior-approval-task/complete \
+curl -G http://localhost:8080/v1/instances \
+  --data-urlencode "definitionId=LOS::loan-disbursement-workflow" \
+  --data-urlencode "businessKey=APP-20240417-001"
+```
+
+The response's `items[0].id` is the disbursement instance id. Use it to complete the user task via the stable-id route:
+
+```bash
+DISBURSEMENT_ID=$(curl -sG http://localhost:8080/v1/instances \
+  --data-urlencode "definitionId=LOS::loan-disbursement-workflow" \
+  --data-urlencode "businessKey=APP-20240417-001" \
+  | jq -r '.items[0].id')
+
+curl -X POST "http://localhost:8080/v1/instances/$DISBURSEMENT_ID/user-tasks/senior-approval-task/complete" \
   -H "Content-Type: application/json" \
   -d '{"variables": {"seniorDecision": "APPROVED"}}'
 ```
+
+> Because the engine enforces uniqueness on `(definitionId, businessKey)` for in-flight instances, `items[0]` is the unambiguous match while the disbursement is still `ACTIVE` or `WAITING`. If the lookup returns zero items, the chain hasn't started yet — wait a moment and retry. If you started the parent without a `businessKey`, this lookup is not available; restart the parent with one.
 
 #### Expected terminal states
 

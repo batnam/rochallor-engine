@@ -154,6 +154,22 @@ func (c *GrpcClient) ListDefinitions(ctx context.Context) ([]scenarios.Definitio
 	return out, nil
 }
 
+func (c *GrpcClient) ListInstancesByDefAndBusinessKey(ctx context.Context, defID, businessKey string) ([]scenarios.Instance, error) {
+	resp, err := c.stub.ListInstances(ctx, &workflowv1.ListInstancesRequest{
+		DefinitionId: defID,
+		BusinessKey:  businessKey,
+		PageSize:     50,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list instances: %w", err)
+	}
+	out := make([]scenarios.Instance, 0, len(resp.Instances))
+	for _, p := range resp.Instances {
+		out = append(out, protoInstToScenario(p))
+	}
+	return out, nil
+}
+
 func (c *GrpcClient) SignalWait(ctx context.Context, instanceID, waitStepID string, vars map[string]any) error {
 	sv, err := toStruct(vars)
 	if err != nil {

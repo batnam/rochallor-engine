@@ -1,0 +1,67 @@
+name: Publish Node SDK
+
+on:
+  push:
+    tags:
+      - 'sdk-node-v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish-sdk-node:
+    name: Publish Node SDK → npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+
+      - name: Install dependencies
+        working-directory: workflow-sdk-node
+        run: npm install
+
+      - name: Generate proto code
+        working-directory: workflow-sdk-node
+        run: mkdir -p src/generated && npm run proto-gen
+
+      - name: Build
+        working-directory: workflow-sdk-node
+        run: npm run build
+
+      - name: Set version and publish
+        working-directory: workflow-sdk-node
+        run: |
+          VERSION=${GITHUB_REF_NAME#sdk-node-v}
+          npm pkg set version=${VERSION}
+          if npm view rochallor-workflow-sdk-node@${VERSION} version > /dev/null 2>&1; then
+            echo "rochallor-workflow-sdk-node@${VERSION} already published, skipping"
+          else
+            npm publish --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [publish-sdk-node]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: ver
+        run: echo "tag=${GITHUB_REF_NAME#sdk-node-}" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Node SDK ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          make_latest: false

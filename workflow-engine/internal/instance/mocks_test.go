@@ -62,6 +62,11 @@ type mockStore struct {
 
 	// Configurable return values.
 	branchLeafsCompleted int
+
+	// When set, the next InsertInstance call returns ErrBusinessKeyConflict
+	// (and the flag is cleared). Used by the business-key conflict unit test
+	// to verify Start propagates the sentinel through fmt.Errorf wrapping.
+	forceInsertConflict bool
 }
 
 func newMockStore() *mockStore {
@@ -127,6 +132,10 @@ func (m *mockStore) InsertInstance(ctx context.Context, _ db.Tx,
 ) (*WorkflowInstance, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.forceInsertConflict {
+		m.forceInsertConflict = false
+		return nil, ErrBusinessKeyConflict
+	}
 	inst := &WorkflowInstance{
 		ID:                id,
 		DefinitionID:      defID,

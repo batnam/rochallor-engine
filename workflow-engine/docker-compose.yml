@@ -26,9 +26,9 @@ services:
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_LOG_LEVEL: info
     ports:
-      - "18080:8080"
-      - "19090:9090"
-      - "19091:9091"
+      - "8080:8080"
+      - "9090:9090"
+      - "9091:9091"
     depends_on:
       postgres:
         condition: service_healthy

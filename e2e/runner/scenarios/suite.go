@@ -54,6 +54,7 @@ type ClientIface interface {
 	CancelInstance(ctx context.Context, id string, reason string) (Instance, error)
 	GetDefinition(ctx context.Context, id string) (DefinitionSummary, error)
 	ListDefinitions(ctx context.Context) ([]DefinitionSummary, error)
+	ListInstancesByDefAndBusinessKey(ctx context.Context, defID, businessKey string) ([]Instance, error)
 }
 
 // PollUntilTerminal polls GetInstance every 500 ms until COMPLETED/FAILED/CANCELLED.

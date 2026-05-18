@@ -169,6 +169,8 @@ func runSDKSuite(transport string, client scenarios.ClientIface, sdk, scenariosD
 		{"cancel", scenarios.RunCancel},
 		{"decision-no-match", scenarios.RunDecisionNoMatch},
 		{"business-key", scenarios.RunBusinessKey},
+		{"business-key-duplicate", scenarios.RunBusinessKeyDuplicate},
+		{"chain-business-key", scenarios.RunChainBusinessKey},
 		{"definition-api", scenarios.RunDefinitionAPI},
 		{"parallel-user-task", scenarios.RunParallelUserTask},
 		{"timer-interrupting", scenarios.RunTimerInterrupting},
