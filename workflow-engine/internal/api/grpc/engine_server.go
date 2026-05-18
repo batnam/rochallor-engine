@@ -123,6 +123,9 @@ func (s *EngineServer) StartInstance(ctx context.Context, req *workflowv1.StartI
 	vars := structToMap(req.Variables)
 	inst, err := s.instSvc.Start(ctx, req.DefinitionId, int(req.DefinitionVersion), vars, req.BusinessKey)
 	if err != nil {
+		if errors.Is(err, instance.ErrBusinessKeyConflict) {
+			return nil, engineapi.GRPCAlreadyExists(err.Error())
+		}
 		return nil, engineapi.GRPCInternal(err)
 	}
 	return &workflowv1.StartInstanceResponse{Instance: internalInstToProto(inst)}, nil

@@ -185,6 +185,29 @@ func (c *Client) ListDefinitions(ctx context.Context) ([]scenarios.DefinitionSum
 	return envelope.Items, nil
 }
 
+// ListInstancesByDefAndBusinessKey calls GET /v1/instances?definitionId=...&businessKey=...
+// and returns the matching items. Used by chain-business-key e2e to locate the
+// auto-started child instance after a chained workflow completes.
+func (c *Client) ListInstancesByDefAndBusinessKey(ctx context.Context, defID, businessKey string) ([]scenarios.Instance, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, "v1/instances", nil)
+	if err != nil {
+		return nil, fmt.Errorf("list instances: %w", err)
+	}
+	q := req.URL.Query()
+	q.Set("definitionId", defID)
+	q.Set("businessKey", businessKey)
+	q.Set("pageSize", "50")
+	req.URL.RawQuery = q.Encode()
+
+	var envelope struct {
+		Items []scenarios.Instance `json:"items"`
+	}
+	if err := c.doRequest(req, &envelope); err != nil {
+		return nil, fmt.Errorf("list instances: %w", err)
+	}
+	return envelope.Items, nil
+}
+
 // SignalWait calls POST /v1/instances/{instanceId}/signals/{waitStepId}.
 // The body IS the variable map (not wrapped in {"variables": …}); an empty map
 // is valid — the signal itself is the event.

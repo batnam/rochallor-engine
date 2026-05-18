@@ -226,6 +226,7 @@ For full setup instructions, available scripts, and the spec docs, see **[workfl
 | [Workflow JSON Format](docs/workflow-format.md) | All step types, expression syntax, variables, validation rules, annotated example |
 | [Configuration](docs/configuration.md) | Engine environment variables |
 | [Development](docs/development.md) | Running tests, building proto code, validating REST contracts |
+| [Release Process](docs/release.md) | Per-component tag conventions and how to publish each artifact |
 
 ## SDK References
 

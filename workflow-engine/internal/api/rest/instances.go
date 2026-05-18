@@ -2,6 +2,7 @@ package rest
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -62,6 +63,10 @@ func (h *InstanceHandlers) Start(w http.ResponseWriter, r *http.Request) {
 
 	inst, err := h.svc.Start(r.Context(), req.DefinitionID, req.DefinitionVersion, req.Variables, req.BusinessKey)
 	if err != nil {
+		if errors.Is(err, instance.ErrBusinessKeyConflict) {
+			engineapi.WriteConflict(w, err.Error())
+			return
+		}
 		engineapi.WriteInternalError(w, err.Error())
 		return
 	}

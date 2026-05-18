@@ -1,0 +1,50 @@
+name: Publish Go SDK
+
+on:
+  push:
+    tags:
+      - 'sdk-go-v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  tag-sdk-go:
+    name: Tag Go SDK module
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create go module tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Source tag: sdk-go-v1.2.3 → Go module tag: workflow-sdk-go/v1.2.3
+          # (the path-prefixed form go-get expects for nested modules).
+          VERSION_TAG="${GITHUB_REF_NAME#sdk-go-}"
+          GO_TAG="workflow-sdk-go/${VERSION_TAG}"
+          if git ls-remote --tags origin "$GO_TAG" | grep -q .; then
+            echo "Tag $GO_TAG already exists, skipping"
+          else
+            git tag "$GO_TAG"
+            git push origin "$GO_TAG"
+          fi
+
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [tag-sdk-go]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: ver
+        run: echo "tag=${GITHUB_REF_NAME#sdk-go-}" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Go SDK ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          make_latest: false

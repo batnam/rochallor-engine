@@ -68,3 +68,4 @@ nav:
     - Node / TypeScript: sdk/node.md
     - Java: sdk/java.md
   - Development: development.md
+  - Release Process: release.md

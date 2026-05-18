@@ -28,6 +28,13 @@ var (
 	// match the definition (e.g. signal route on a USER_TASK, or user-task
 	// complete route on a WAIT).
 	ErrStepTypeMismatch = errors.New("step type does not match the endpoint")
+
+	// ErrBusinessKeyConflict — another in-flight instance (ACTIVE or WAITING)
+	// of the same definition already holds this business_key. Enforced by the
+	// partial UNIQUE index (business_key, definition_id) WHERE status IN
+	// ('ACTIVE','WAITING') added in migration 0010. Mapped to HTTP 409 /
+	// gRPC ALREADY_EXISTS.
+	ErrBusinessKeyConflict = errors.New("business key already in use by an in-flight instance of this definition")
 )
 
 // Decision-table runtime failure prefixes.

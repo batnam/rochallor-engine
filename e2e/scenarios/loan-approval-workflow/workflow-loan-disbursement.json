@@ -1,5 +1,6 @@
 {
   "id": "LOS::loan-disbursement-workflow",
+  "version": 1,
   "name": "Loan Disbursement Workflow",
   "description": "Computes disbursement fees, routes large amounts through senior approval, transfers funds, and notifies the customer.",
   "steps": [
@@ -7,12 +8,12 @@
       "id": "compute-disbursement",
       "name": "Compute Disbursement Details",
       "type": "TRANSFORMATION",
+      "nextStep": "route-disbursement",
       "transformations": {
         "disbursementFee": "${loanAmount * 0.01}",
         "netAmount": "${loanAmount - loanAmount * 0.01}",
         "requiresSeniorApproval": "${loanAmount > 500000000}"
-      },
-      "nextStep": "route-disbursement"
+      }
     },
     {
       "id": "route-disbursement",
@@ -41,8 +42,8 @@
       "id": "notify-approval-overdue",
       "name": "Notify Approval Overdue",
       "type": "SERVICE_TASK",
-      "jobType": "notify-approval-overdue",
-      "nextStep": "end-disbursement-timeout"
+      "nextStep": "end-disbursement-timeout",
+      "jobType": "notify-approval-overdue"
     },
     {
       "id": "check-senior-decision",
@@ -57,25 +58,25 @@
       "id": "prepare-disbursement",
       "name": "Prepare Disbursement Record",
       "type": "SERVICE_TASK",
+      "nextStep": "transfer-funds",
       "jobType": "prepare-disbursement",
-      "retryCount": 3,
-      "nextStep": "transfer-funds"
+      "retryCount": 3
     },
     {
       "id": "transfer-funds",
       "name": "Transfer Funds to Customer",
       "type": "SERVICE_TASK",
+      "nextStep": "notify-customer",
       "jobType": "transfer-funds",
-      "retryCount": 5,
-      "nextStep": "notify-customer"
+      "retryCount": 5
     },
     {
       "id": "notify-customer",
       "name": "Notify Customer of Disbursement",
       "type": "SERVICE_TASK",
+      "nextStep": "end-disbursed",
       "jobType": "notify-disbursement",
-      "retryCount": 2,
-      "nextStep": "end-disbursed"
+      "retryCount": 2
     },
     {
       "id": "end-disbursed",
@@ -94,9 +95,95 @@
     }
   ],
   "metadata": {
-    "version": "1.0",
     "category": "LOAN_PROCESSING",
-    "tags": ["loan", "disbursement", "fund-transfer"],
-    "complexity": "MEDIUM"
+    "complexity": "MEDIUM",
+    "tags": [
+      "loan",
+      "disbursement",
+      "fund-transfer"
+    ],
+    "version": "1.0",
+    "workflowModeller": {
+      "layout": {
+        "end-disbursed": {
+          "x": 2082.121958158591,
+          "y": 330.3386406804567
+        },
+        "transfer-funds": {
+          "x": 1389.0217082569907,
+          "y": 317.6042404078355
+        },
+        "notify-customer": {
+          "x": 1710.3558434882643,
+          "y": 318.08295253536267
+        },
+        "route-disbursement": {
+          "x": 350,
+          "y": 41.666666666666664
+        },
+        "compute-disbursement": {
+          "x": -74.46606759553484,
+          "y": 30.349509343817047
+        },
+        "prepare-disbursement": {
+          "x": 1062.3525898597413,
+          "y": 315.70785180613274
+        },
+        "senior-approval-task": {
+          "x": 754.5092641439969,
+          "y": 38.39336894377156
+        },
+        "check-senior-decision": {
+          "x": 1127.0469145922043,
+          "y": 39.208142934347975
+        },
+        "notify-approval-overdue": {
+          "x": 754.768014200238,
+          "y": -169.49455213279498
+        },
+        "end-disbursement-timeout": {
+          "x": 754.9630933079668,
+          "y": -293.0622144015221
+        },
+        "end-disbursement-rejected": {
+          "x": 1049.314235086991,
+          "y": -166.67275943419787
+        }
+      },
+      "edgeHandles": {
+        "compute-disbursement--sequential-->route-disbursement": {
+          "sourceHandle": null,
+          "targetHandle": "in-c-left"
+        },
+        "senior-approval-task--sequential-->check-senior-decision": {
+          "sourceHandle": null,
+          "targetHandle": "in-c-left"
+        },
+        "senior-approval-task--boundary:0-->notify-approval-overdue": {
+          "sourceHandle": "out-top",
+          "targetHandle": "in-bottom"
+        },
+        "notify-approval-overdue--sequential-->end-disbursement-timeout": {
+          "sourceHandle": "out-top",
+          "targetHandle": "in-bottom"
+        },
+        "route-disbursement--conditional:#requiresSeniorApproval == true-->senior-approval-task": {
+          "sourceHandle": "out-c-right",
+          "targetHandle": null
+        },
+        "check-senior-decision--conditional:#seniorDecision == 'APPROVED'-->prepare-disbursement": {
+          "sourceHandle": "branch:#seniorDecision == 'APPROVED'",
+          "targetHandle": "in-top"
+        },
+        "route-disbursement--conditional:#requiresSeniorApproval == false-->prepare-disbursement": {
+          "sourceHandle": "branch:#requiresSeniorApproval == true",
+          "targetHandle": "in"
+        },
+        "check-senior-decision--conditional:#seniorDecision == 'REJECTED'-->end-disbursement-rejected": {
+          "sourceHandle": "out-c-top",
+          "targetHandle": "in-bottom"
+        }
+      }
+    }
   }
 }
