@@ -1,0 +1,19 @@
+{
+  "id": "e2e-node-retry-manual-with-vars",
+  "name": "E2E Node Manual Retry with Variable Override",
+  "steps": [
+    {
+      "id": "node-needs-fix-step",
+      "name": "Step that needs a variable fix",
+      "type": "SERVICE_TASK",
+      "jobType": "node-needs-fix",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

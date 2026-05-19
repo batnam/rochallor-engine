@@ -2502,6 +2502,115 @@ func (*SignalWaitResponse) Descriptor() ([]byte, []int) {
 	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{34}
 }
 
+type RetryStepRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	StepId     string                 `protobuf:"bytes,2,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"` // stable step id from the workflow definition
+	// Optional. When non-empty, the keys are shallow-merged into the instance
+	// variables before the step is re-dispatched, so the new step_execution's
+	// input_snapshot and (for SERVICE_TASK) the dispatched job payload pick up
+	// the patched values. Lets operators fix the variable values that caused
+	// the original failure without having to start a brand-new instance.
+	Variables     *structpb.Struct `protobuf:"bytes,3,opt,name=variables,proto3" json:"variables,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RetryStepRequest) Reset() {
+	*x = RetryStepRequest{}
+	mi := &file_workflow_v1_engine_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetryStepRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetryStepRequest) ProtoMessage() {}
+
+func (x *RetryStepRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_v1_engine_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetryStepRequest.ProtoReflect.Descriptor instead.
+func (*RetryStepRequest) Descriptor() ([]byte, []int) {
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *RetryStepRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *RetryStepRequest) GetStepId() string {
+	if x != nil {
+		return x.StepId
+	}
+	return ""
+}
+
+func (x *RetryStepRequest) GetVariables() *structpb.Struct {
+	if x != nil {
+		return x.Variables
+	}
+	return nil
+}
+
+type RetryStepResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Instance      *WorkflowInstance      `protobuf:"bytes,1,opt,name=instance,proto3" json:"instance,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RetryStepResponse) Reset() {
+	*x = RetryStepResponse{}
+	mi := &file_workflow_v1_engine_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetryStepResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetryStepResponse) ProtoMessage() {}
+
+func (x *RetryStepResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workflow_v1_engine_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetryStepResponse.ProtoReflect.Descriptor instead.
+func (*RetryStepResponse) Descriptor() ([]byte, []int) {
+	return file_workflow_v1_engine_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *RetryStepResponse) GetInstance() *WorkflowInstance {
+	if x != nil {
+		return x.Instance
+	}
+	return nil
+}
+
 var File_workflow_v1_engine_proto protoreflect.FileDescriptor
 
 const file_workflow_v1_engine_proto_rawDesc = "" +
@@ -2693,7 +2802,14 @@ const file_workflow_v1_engine_proto_rawDesc = "" +
 	"\fwait_step_id\x18\x02 \x01(\tR\n" +
 	"waitStepId\x125\n" +
 	"\tvariables\x18\x03 \x01(\v2\x17.google.protobuf.StructR\tvariables\"\x14\n" +
-	"\x12SignalWaitResponse*\x91\x02\n" +
+	"\x12SignalWaitResponse\"\x83\x01\n" +
+	"\x10RetryStepRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12\x17\n" +
+	"\astep_id\x18\x02 \x01(\tR\x06stepId\x125\n" +
+	"\tvariables\x18\x03 \x01(\v2\x17.google.protobuf.StructR\tvariables\"N\n" +
+	"\x11RetryStepResponse\x129\n" +
+	"\binstance\x18\x01 \x01(\v2\x1d.workflow.v1.WorkflowInstanceR\binstance*\x91\x02\n" +
 	"\bStepType\x12\x19\n" +
 	"\x15STEP_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16STEP_TYPE_SERVICE_TASK\x10\x01\x12\x17\n" +
@@ -2720,7 +2836,7 @@ const file_workflow_v1_engine_proto_rawDesc = "" +
 	"\x1dSTEP_EXECUTION_STATUS_SKIPPED\x10\x04*W\n" +
 	"\x11BoundaryEventType\x12#\n" +
 	"\x1fBOUNDARY_EVENT_TYPE_UNSPECIFIED\x10\x00\x12\x1d\n" +
-	"\x19BOUNDARY_EVENT_TYPE_TIMER\x10\x012\xfc\b\n" +
+	"\x19BOUNDARY_EVENT_TYPE_TIMER\x10\x012\xc8\t\n" +
 	"\x0eWorkflowEngine\x12_\n" +
 	"\x10UploadDefinition\x12$.workflow.v1.UploadDefinitionRequest\x1a%.workflow.v1.UploadDefinitionResponse\x12V\n" +
 	"\rGetDefinition\x12!.workflow.v1.GetDefinitionRequest\x1a\".workflow.v1.GetDefinitionResponse\x12\\\n" +
@@ -2735,7 +2851,8 @@ const file_workflow_v1_engine_proto_rawDesc = "" +
 	"\aFailJob\x12\x1b.workflow.v1.FailJobRequest\x1a\x1c.workflow.v1.FailJobResponse\x12_\n" +
 	"\x10CompleteUserTask\x12$.workflow.v1.CompleteUserTaskRequest\x1a%.workflow.v1.CompleteUserTaskResponse\x12M\n" +
 	"\n" +
-	"SignalWait\x12\x1e.workflow.v1.SignalWaitRequest\x1a\x1f.workflow.v1.SignalWaitResponseB\x80\x01\n" +
+	"SignalWait\x12\x1e.workflow.v1.SignalWaitRequest\x1a\x1f.workflow.v1.SignalWaitResponse\x12J\n" +
+	"\tRetryStep\x12\x1d.workflow.v1.RetryStepRequest\x1a\x1e.workflow.v1.RetryStepResponseB\x80\x01\n" +
 	"\x1acom.batnam.workflow.api.v1B\rWorkflowProtoP\x01ZQgithub.com/batnam/rochallor-engine/workflow-engine/api/gen/workflow/v1;workflowv1b\x06proto3"
 
 var (
@@ -2751,7 +2868,7 @@ func file_workflow_v1_engine_proto_rawDescGZIP() []byte {
 }
 
 var file_workflow_v1_engine_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_workflow_v1_engine_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
+var file_workflow_v1_engine_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_workflow_v1_engine_proto_goTypes = []any{
 	(StepType)(0),                      // 0: workflow.v1.StepType
 	(InstanceStatus)(0),                // 1: workflow.v1.InstanceStatus
@@ -2792,42 +2909,44 @@ var file_workflow_v1_engine_proto_goTypes = []any{
 	(*CompleteUserTaskResponse)(nil),   // 36: workflow.v1.CompleteUserTaskResponse
 	(*SignalWaitRequest)(nil),          // 37: workflow.v1.SignalWaitRequest
 	(*SignalWaitResponse)(nil),         // 38: workflow.v1.SignalWaitResponse
-	nil,                                // 39: workflow.v1.WorkflowStep.ConditionalNextStepsEntry
-	nil,                                // 40: workflow.v1.WorkflowStep.TransformationsEntry
-	nil,                                // 41: workflow.v1.DecisionTableRule.WhenEntry
-	nil,                                // 42: workflow.v1.DecisionTableRule.OutputsEntry
-	(*structpb.Struct)(nil),            // 43: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),      // 44: google.protobuf.Timestamp
-	(*structpb.Value)(nil),             // 45: google.protobuf.Value
+	(*RetryStepRequest)(nil),           // 39: workflow.v1.RetryStepRequest
+	(*RetryStepResponse)(nil),          // 40: workflow.v1.RetryStepResponse
+	nil,                                // 41: workflow.v1.WorkflowStep.ConditionalNextStepsEntry
+	nil,                                // 42: workflow.v1.WorkflowStep.TransformationsEntry
+	nil,                                // 43: workflow.v1.DecisionTableRule.WhenEntry
+	nil,                                // 44: workflow.v1.DecisionTableRule.OutputsEntry
+	(*structpb.Struct)(nil),            // 45: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),      // 46: google.protobuf.Timestamp
+	(*structpb.Value)(nil),             // 47: google.protobuf.Value
 }
 var file_workflow_v1_engine_proto_depIdxs = []int32{
 	5,  // 0: workflow.v1.WorkflowDefinition.steps:type_name -> workflow.v1.WorkflowStep
-	43, // 1: workflow.v1.WorkflowDefinition.metadata:type_name -> google.protobuf.Struct
+	45, // 1: workflow.v1.WorkflowDefinition.metadata:type_name -> google.protobuf.Struct
 	0,  // 2: workflow.v1.WorkflowStep.type:type_name -> workflow.v1.StepType
-	39, // 3: workflow.v1.WorkflowStep.conditional_next_steps:type_name -> workflow.v1.WorkflowStep.ConditionalNextStepsEntry
-	40, // 4: workflow.v1.WorkflowStep.transformations:type_name -> workflow.v1.WorkflowStep.TransformationsEntry
+	41, // 3: workflow.v1.WorkflowStep.conditional_next_steps:type_name -> workflow.v1.WorkflowStep.ConditionalNextStepsEntry
+	42, // 4: workflow.v1.WorkflowStep.transformations:type_name -> workflow.v1.WorkflowStep.TransformationsEntry
 	8,  // 5: workflow.v1.WorkflowStep.boundary_events:type_name -> workflow.v1.BoundaryEvent
 	6,  // 6: workflow.v1.WorkflowStep.decision_table:type_name -> workflow.v1.DecisionTable
 	7,  // 7: workflow.v1.DecisionTable.rules:type_name -> workflow.v1.DecisionTableRule
-	41, // 8: workflow.v1.DecisionTableRule.when:type_name -> workflow.v1.DecisionTableRule.WhenEntry
-	42, // 9: workflow.v1.DecisionTableRule.outputs:type_name -> workflow.v1.DecisionTableRule.OutputsEntry
+	43, // 8: workflow.v1.DecisionTableRule.when:type_name -> workflow.v1.DecisionTableRule.WhenEntry
+	44, // 9: workflow.v1.DecisionTableRule.outputs:type_name -> workflow.v1.DecisionTableRule.OutputsEntry
 	3,  // 10: workflow.v1.BoundaryEvent.type:type_name -> workflow.v1.BoundaryEventType
 	1,  // 11: workflow.v1.WorkflowInstance.status:type_name -> workflow.v1.InstanceStatus
-	43, // 12: workflow.v1.WorkflowInstance.variables:type_name -> google.protobuf.Struct
-	44, // 13: workflow.v1.WorkflowInstance.started_at:type_name -> google.protobuf.Timestamp
-	44, // 14: workflow.v1.WorkflowInstance.completed_at:type_name -> google.protobuf.Timestamp
+	45, // 12: workflow.v1.WorkflowInstance.variables:type_name -> google.protobuf.Struct
+	46, // 13: workflow.v1.WorkflowInstance.started_at:type_name -> google.protobuf.Timestamp
+	46, // 14: workflow.v1.WorkflowInstance.completed_at:type_name -> google.protobuf.Timestamp
 	0,  // 15: workflow.v1.StepExecution.step_type:type_name -> workflow.v1.StepType
 	2,  // 16: workflow.v1.StepExecution.status:type_name -> workflow.v1.StepExecutionStatus
-	44, // 17: workflow.v1.StepExecution.started_at:type_name -> google.protobuf.Timestamp
-	44, // 18: workflow.v1.StepExecution.ended_at:type_name -> google.protobuf.Timestamp
-	43, // 19: workflow.v1.Job.variables:type_name -> google.protobuf.Struct
-	44, // 20: workflow.v1.Job.lock_expires_at:type_name -> google.protobuf.Timestamp
-	44, // 21: workflow.v1.JobDispatchEvent.created_at:type_name -> google.protobuf.Timestamp
+	46, // 17: workflow.v1.StepExecution.started_at:type_name -> google.protobuf.Timestamp
+	46, // 18: workflow.v1.StepExecution.ended_at:type_name -> google.protobuf.Timestamp
+	45, // 19: workflow.v1.Job.variables:type_name -> google.protobuf.Struct
+	46, // 20: workflow.v1.Job.lock_expires_at:type_name -> google.protobuf.Timestamp
+	46, // 21: workflow.v1.JobDispatchEvent.created_at:type_name -> google.protobuf.Timestamp
 	4,  // 22: workflow.v1.UploadDefinitionRequest.definition:type_name -> workflow.v1.WorkflowDefinition
-	44, // 23: workflow.v1.UploadDefinitionResponse.uploaded_at:type_name -> google.protobuf.Timestamp
+	46, // 23: workflow.v1.UploadDefinitionResponse.uploaded_at:type_name -> google.protobuf.Timestamp
 	4,  // 24: workflow.v1.GetDefinitionResponse.definition:type_name -> workflow.v1.WorkflowDefinition
 	4,  // 25: workflow.v1.ListDefinitionsResponse.definitions:type_name -> workflow.v1.WorkflowDefinition
-	43, // 26: workflow.v1.StartInstanceRequest.variables:type_name -> google.protobuf.Struct
+	45, // 26: workflow.v1.StartInstanceRequest.variables:type_name -> google.protobuf.Struct
 	9,  // 27: workflow.v1.StartInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
 	9,  // 28: workflow.v1.GetInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
 	10, // 29: workflow.v1.GetInstanceHistoryResponse.executions:type_name -> workflow.v1.StepExecution
@@ -2835,42 +2954,46 @@ var file_workflow_v1_engine_proto_depIdxs = []int32{
 	1,  // 31: workflow.v1.ListInstancesRequest.status:type_name -> workflow.v1.InstanceStatus
 	9,  // 32: workflow.v1.ListInstancesResponse.instances:type_name -> workflow.v1.WorkflowInstance
 	11, // 33: workflow.v1.PollJobsResponse.jobs:type_name -> workflow.v1.Job
-	43, // 34: workflow.v1.CompleteJobRequest.variables_to_set:type_name -> google.protobuf.Struct
-	43, // 35: workflow.v1.CompleteUserTaskRequest.result:type_name -> google.protobuf.Struct
-	43, // 36: workflow.v1.SignalWaitRequest.variables:type_name -> google.protobuf.Struct
-	45, // 37: workflow.v1.WorkflowStep.TransformationsEntry.value:type_name -> google.protobuf.Value
-	45, // 38: workflow.v1.DecisionTableRule.OutputsEntry.value:type_name -> google.protobuf.Value
-	13, // 39: workflow.v1.WorkflowEngine.UploadDefinition:input_type -> workflow.v1.UploadDefinitionRequest
-	15, // 40: workflow.v1.WorkflowEngine.GetDefinition:input_type -> workflow.v1.GetDefinitionRequest
-	17, // 41: workflow.v1.WorkflowEngine.ListDefinitions:input_type -> workflow.v1.ListDefinitionsRequest
-	19, // 42: workflow.v1.WorkflowEngine.StartInstance:input_type -> workflow.v1.StartInstanceRequest
-	21, // 43: workflow.v1.WorkflowEngine.GetInstance:input_type -> workflow.v1.GetInstanceRequest
-	23, // 44: workflow.v1.WorkflowEngine.GetInstanceHistory:input_type -> workflow.v1.GetInstanceHistoryRequest
-	25, // 45: workflow.v1.WorkflowEngine.CancelInstance:input_type -> workflow.v1.CancelInstanceRequest
-	27, // 46: workflow.v1.WorkflowEngine.ListInstances:input_type -> workflow.v1.ListInstancesRequest
-	29, // 47: workflow.v1.WorkflowEngine.PollJobs:input_type -> workflow.v1.PollJobsRequest
-	31, // 48: workflow.v1.WorkflowEngine.CompleteJob:input_type -> workflow.v1.CompleteJobRequest
-	33, // 49: workflow.v1.WorkflowEngine.FailJob:input_type -> workflow.v1.FailJobRequest
-	35, // 50: workflow.v1.WorkflowEngine.CompleteUserTask:input_type -> workflow.v1.CompleteUserTaskRequest
-	37, // 51: workflow.v1.WorkflowEngine.SignalWait:input_type -> workflow.v1.SignalWaitRequest
-	14, // 52: workflow.v1.WorkflowEngine.UploadDefinition:output_type -> workflow.v1.UploadDefinitionResponse
-	16, // 53: workflow.v1.WorkflowEngine.GetDefinition:output_type -> workflow.v1.GetDefinitionResponse
-	18, // 54: workflow.v1.WorkflowEngine.ListDefinitions:output_type -> workflow.v1.ListDefinitionsResponse
-	20, // 55: workflow.v1.WorkflowEngine.StartInstance:output_type -> workflow.v1.StartInstanceResponse
-	22, // 56: workflow.v1.WorkflowEngine.GetInstance:output_type -> workflow.v1.GetInstanceResponse
-	24, // 57: workflow.v1.WorkflowEngine.GetInstanceHistory:output_type -> workflow.v1.GetInstanceHistoryResponse
-	26, // 58: workflow.v1.WorkflowEngine.CancelInstance:output_type -> workflow.v1.CancelInstanceResponse
-	28, // 59: workflow.v1.WorkflowEngine.ListInstances:output_type -> workflow.v1.ListInstancesResponse
-	30, // 60: workflow.v1.WorkflowEngine.PollJobs:output_type -> workflow.v1.PollJobsResponse
-	32, // 61: workflow.v1.WorkflowEngine.CompleteJob:output_type -> workflow.v1.CompleteJobResponse
-	34, // 62: workflow.v1.WorkflowEngine.FailJob:output_type -> workflow.v1.FailJobResponse
-	36, // 63: workflow.v1.WorkflowEngine.CompleteUserTask:output_type -> workflow.v1.CompleteUserTaskResponse
-	38, // 64: workflow.v1.WorkflowEngine.SignalWait:output_type -> workflow.v1.SignalWaitResponse
-	52, // [52:65] is the sub-list for method output_type
-	39, // [39:52] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	45, // 34: workflow.v1.CompleteJobRequest.variables_to_set:type_name -> google.protobuf.Struct
+	45, // 35: workflow.v1.CompleteUserTaskRequest.result:type_name -> google.protobuf.Struct
+	45, // 36: workflow.v1.SignalWaitRequest.variables:type_name -> google.protobuf.Struct
+	45, // 37: workflow.v1.RetryStepRequest.variables:type_name -> google.protobuf.Struct
+	9,  // 38: workflow.v1.RetryStepResponse.instance:type_name -> workflow.v1.WorkflowInstance
+	47, // 39: workflow.v1.WorkflowStep.TransformationsEntry.value:type_name -> google.protobuf.Value
+	47, // 40: workflow.v1.DecisionTableRule.OutputsEntry.value:type_name -> google.protobuf.Value
+	13, // 41: workflow.v1.WorkflowEngine.UploadDefinition:input_type -> workflow.v1.UploadDefinitionRequest
+	15, // 42: workflow.v1.WorkflowEngine.GetDefinition:input_type -> workflow.v1.GetDefinitionRequest
+	17, // 43: workflow.v1.WorkflowEngine.ListDefinitions:input_type -> workflow.v1.ListDefinitionsRequest
+	19, // 44: workflow.v1.WorkflowEngine.StartInstance:input_type -> workflow.v1.StartInstanceRequest
+	21, // 45: workflow.v1.WorkflowEngine.GetInstance:input_type -> workflow.v1.GetInstanceRequest
+	23, // 46: workflow.v1.WorkflowEngine.GetInstanceHistory:input_type -> workflow.v1.GetInstanceHistoryRequest
+	25, // 47: workflow.v1.WorkflowEngine.CancelInstance:input_type -> workflow.v1.CancelInstanceRequest
+	27, // 48: workflow.v1.WorkflowEngine.ListInstances:input_type -> workflow.v1.ListInstancesRequest
+	29, // 49: workflow.v1.WorkflowEngine.PollJobs:input_type -> workflow.v1.PollJobsRequest
+	31, // 50: workflow.v1.WorkflowEngine.CompleteJob:input_type -> workflow.v1.CompleteJobRequest
+	33, // 51: workflow.v1.WorkflowEngine.FailJob:input_type -> workflow.v1.FailJobRequest
+	35, // 52: workflow.v1.WorkflowEngine.CompleteUserTask:input_type -> workflow.v1.CompleteUserTaskRequest
+	37, // 53: workflow.v1.WorkflowEngine.SignalWait:input_type -> workflow.v1.SignalWaitRequest
+	39, // 54: workflow.v1.WorkflowEngine.RetryStep:input_type -> workflow.v1.RetryStepRequest
+	14, // 55: workflow.v1.WorkflowEngine.UploadDefinition:output_type -> workflow.v1.UploadDefinitionResponse
+	16, // 56: workflow.v1.WorkflowEngine.GetDefinition:output_type -> workflow.v1.GetDefinitionResponse
+	18, // 57: workflow.v1.WorkflowEngine.ListDefinitions:output_type -> workflow.v1.ListDefinitionsResponse
+	20, // 58: workflow.v1.WorkflowEngine.StartInstance:output_type -> workflow.v1.StartInstanceResponse
+	22, // 59: workflow.v1.WorkflowEngine.GetInstance:output_type -> workflow.v1.GetInstanceResponse
+	24, // 60: workflow.v1.WorkflowEngine.GetInstanceHistory:output_type -> workflow.v1.GetInstanceHistoryResponse
+	26, // 61: workflow.v1.WorkflowEngine.CancelInstance:output_type -> workflow.v1.CancelInstanceResponse
+	28, // 62: workflow.v1.WorkflowEngine.ListInstances:output_type -> workflow.v1.ListInstancesResponse
+	30, // 63: workflow.v1.WorkflowEngine.PollJobs:output_type -> workflow.v1.PollJobsResponse
+	32, // 64: workflow.v1.WorkflowEngine.CompleteJob:output_type -> workflow.v1.CompleteJobResponse
+	34, // 65: workflow.v1.WorkflowEngine.FailJob:output_type -> workflow.v1.FailJobResponse
+	36, // 66: workflow.v1.WorkflowEngine.CompleteUserTask:output_type -> workflow.v1.CompleteUserTaskResponse
+	38, // 67: workflow.v1.WorkflowEngine.SignalWait:output_type -> workflow.v1.SignalWaitResponse
+	40, // 68: workflow.v1.WorkflowEngine.RetryStep:output_type -> workflow.v1.RetryStepResponse
+	55, // [55:69] is the sub-list for method output_type
+	41, // [41:55] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_workflow_v1_engine_proto_init() }
@@ -2884,7 +3007,7 @@ func file_workflow_v1_engine_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workflow_v1_engine_proto_rawDesc), len(file_workflow_v1_engine_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   39,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

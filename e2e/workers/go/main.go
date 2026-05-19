@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -120,6 +121,36 @@ func main() {
 	// Retry-exhausted scenario handler: always fails to exhaust all retries
 	registry.Register("go-always-fail", func(_ context.Context, _ handler.JobContext) (handler.Result, error) {
 		return handler.Result{}, fmt.Errorf("always fails")
+	})
+
+	// Manual-retry scenario handler. With retryCount=1 in the definition the
+	// engine performs at most 2 auto attempts (initial + 1 retry) before
+	// flipping the instance to FAILED. We want both auto attempts to fail
+	// and the third invocation — triggered by the scenario's manual
+	// RetryStep call — to succeed.
+	var manualRetryMu sync.Mutex
+	manualRetryAttempts := map[string]int{}
+	registry.Register("go-manual-retry", func(_ context.Context, job handler.JobContext) (handler.Result, error) {
+		manualRetryMu.Lock()
+		manualRetryAttempts[job.InstanceID]++
+		n := manualRetryAttempts[job.InstanceID]
+		manualRetryMu.Unlock()
+		if n < 3 {
+			return handler.Result{}, fmt.Errorf("simulated failure attempt %d", n)
+		}
+		return handler.Result{VariablesToSet: map[string]any{"manualRetry": "done", "attempts": float64(n)}}, nil
+	})
+
+	// Manual-retry-with-variables scenario handler. Fails until the instance
+	// variables carry `corrected == true`, which only happens after the
+	// scenario issues RetryStep with a {"corrected": true} patch. retryCount=0
+	// in the definition makes the first failure terminal.
+	registry.Register("go-needs-fix", func(_ context.Context, job handler.JobContext) (handler.Result, error) {
+		corrected, _ := job.Variables["corrected"].(bool)
+		if !corrected {
+			return handler.Result{}, fmt.Errorf("missing corrected=true; bad input data")
+		}
+		return handler.Result{VariablesToSet: map[string]any{"fixed": true}}, nil
 	})
 
 	// Decision-no-match scenario handler: sets result to "rejected" so no branch matches

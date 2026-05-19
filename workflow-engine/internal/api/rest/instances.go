@@ -112,3 +112,45 @@ func (h *InstanceHandlers) Cancel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, inst)
 }
+
+type retryStepRequest struct {
+	// Optional. Keys are shallow-merged into the instance variables before
+	// the step is re-dispatched, so operators can correct the bad data that
+	// caused the original failure without starting a new instance.
+	Variables map[string]any `json:"variables,omitempty"`
+}
+
+// RetryStep handles POST /v1/instances/{id}/steps/{stepId}/retry.
+// Re-runs a FAILED step on a FAILED instance. The instance is flipped back
+// to ACTIVE and the step is re-dispatched (new step_execution row with
+// attempt_number incremented; for SERVICE_TASK steps a new UNLOCKED job is
+// enqueued). The optional body may carry a `variables` map that is shallow-
+// merged into the instance variables before the new dispatch.
+func (h *InstanceHandlers) RetryStep(w http.ResponseWriter, r *http.Request) {
+	instanceID := chi.URLParam(r, "id")
+	stepID := chi.URLParam(r, "stepId")
+
+	var req retryStepRequest
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			engineapi.WriteBadRequest(w, "invalid request body: "+err.Error())
+			return
+		}
+	}
+
+	inst, err := h.svc.RetryFailedStep(r.Context(), instanceID, stepID, req.Variables)
+	if err != nil {
+		switch {
+		case errors.Is(err, instance.ErrInstanceNotFound):
+			engineapi.WriteNotFound(w, err.Error())
+		case errors.Is(err, instance.ErrInstanceNotFailed),
+			errors.Is(err, instance.ErrStepNotRetryable),
+			errors.Is(err, instance.ErrBusinessKeyConflict):
+			engineapi.WriteConflict(w, err.Error())
+		default:
+			engineapi.WriteInternalError(w, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, inst)
+}

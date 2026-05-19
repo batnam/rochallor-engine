@@ -59,6 +59,30 @@ registry.register('node-transform-init', async () => ({ variablesToSet: { firstN
 // Retry-exhausted scenario handler: always fails to exhaust all retries
 registry.register('node-always-fail', async () => { throw new Error('always fails') })
 
+// Manual-retry scenario handler. retryCount=1 → engine performs at most 2
+// auto attempts, both fail, instance → FAILED. The third invocation,
+// triggered by the scenario's RetryStep call, succeeds.
+const manualRetryAttempts: Record<string, number> = {}
+registry.register('node-manual-retry', async (ctx) => {
+  const id = ctx.instanceId
+  manualRetryAttempts[id] = (manualRetryAttempts[id] ?? 0) + 1
+  const n = manualRetryAttempts[id]
+  if (n < 3) {
+    throw new Error(`simulated failure attempt ${n}`)
+  }
+  return { variablesToSet: { manualRetry: 'done', attempts: n } }
+})
+
+// Manual-retry-with-variables scenario handler. Fails until variables carry
+// `corrected === true`, which only happens after RetryStep with a
+// {"corrected": true} patch. retryCount=0 → first failure is terminal.
+registry.register('node-needs-fix', async (ctx) => {
+  if (ctx.variables['corrected'] !== true) {
+    throw new Error('missing corrected=true; bad input data')
+  }
+  return { variablesToSet: { fixed: true } }
+})
+
 // Decision-no-match scenario handler: sets result to "rejected" so no branch matches
 registry.register('node-prepare-no-match', async () => ({ variablesToSet: { result: 'rejected' } }))
 

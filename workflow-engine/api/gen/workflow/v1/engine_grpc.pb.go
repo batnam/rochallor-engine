@@ -41,6 +41,7 @@ const (
 	WorkflowEngine_FailJob_FullMethodName            = "/workflow.v1.WorkflowEngine/FailJob"
 	WorkflowEngine_CompleteUserTask_FullMethodName   = "/workflow.v1.WorkflowEngine/CompleteUserTask"
 	WorkflowEngine_SignalWait_FullMethodName         = "/workflow.v1.WorkflowEngine/SignalWait"
+	WorkflowEngine_RetryStep_FullMethodName          = "/workflow.v1.WorkflowEngine/RetryStep"
 )
 
 // WorkflowEngineClient is the client API for WorkflowEngine service.
@@ -65,6 +66,11 @@ type WorkflowEngineClient interface {
 	CompleteUserTask(ctx context.Context, in *CompleteUserTaskRequest, opts ...grpc.CallOption) (*CompleteUserTaskResponse, error)
 	// Signals — resume a WAIT step by stable step id.
 	SignalWait(ctx context.Context, in *SignalWaitRequest, opts ...grpc.CallOption) (*SignalWaitResponse, error)
+	// Manual retry — re-run a FAILED step on a FAILED instance. The instance
+	// transitions back to ACTIVE, a new step_execution row is created with
+	// attempt_number incremented, and the step is re-dispatched through the
+	// same lifecycle path used by the first attempt.
+	RetryStep(ctx context.Context, in *RetryStepRequest, opts ...grpc.CallOption) (*RetryStepResponse, error)
 }
 
 type workflowEngineClient struct {
@@ -205,6 +211,16 @@ func (c *workflowEngineClient) SignalWait(ctx context.Context, in *SignalWaitReq
 	return out, nil
 }
 
+func (c *workflowEngineClient) RetryStep(ctx context.Context, in *RetryStepRequest, opts ...grpc.CallOption) (*RetryStepResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RetryStepResponse)
+	err := c.cc.Invoke(ctx, WorkflowEngine_RetryStep_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkflowEngineServer is the server API for WorkflowEngine service.
 // All implementations must embed UnimplementedWorkflowEngineServer
 // for forward compatibility.
@@ -227,6 +243,11 @@ type WorkflowEngineServer interface {
 	CompleteUserTask(context.Context, *CompleteUserTaskRequest) (*CompleteUserTaskResponse, error)
 	// Signals — resume a WAIT step by stable step id.
 	SignalWait(context.Context, *SignalWaitRequest) (*SignalWaitResponse, error)
+	// Manual retry — re-run a FAILED step on a FAILED instance. The instance
+	// transitions back to ACTIVE, a new step_execution row is created with
+	// attempt_number incremented, and the step is re-dispatched through the
+	// same lifecycle path used by the first attempt.
+	RetryStep(context.Context, *RetryStepRequest) (*RetryStepResponse, error)
 	mustEmbedUnimplementedWorkflowEngineServer()
 }
 
@@ -275,6 +296,9 @@ func (UnimplementedWorkflowEngineServer) CompleteUserTask(context.Context, *Comp
 }
 func (UnimplementedWorkflowEngineServer) SignalWait(context.Context, *SignalWaitRequest) (*SignalWaitResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SignalWait not implemented")
+}
+func (UnimplementedWorkflowEngineServer) RetryStep(context.Context, *RetryStepRequest) (*RetryStepResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RetryStep not implemented")
 }
 func (UnimplementedWorkflowEngineServer) mustEmbedUnimplementedWorkflowEngineServer() {}
 func (UnimplementedWorkflowEngineServer) testEmbeddedByValue()                        {}
@@ -531,6 +555,24 @@ func _WorkflowEngine_SignalWait_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkflowEngine_RetryStep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RetryStepRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowEngineServer).RetryStep(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowEngine_RetryStep_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowEngineServer).RetryStep(ctx, req.(*RetryStepRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkflowEngine_ServiceDesc is the grpc.ServiceDesc for WorkflowEngine service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -589,6 +631,10 @@ var WorkflowEngine_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SignalWait",
 			Handler:    _WorkflowEngine_SignalWait_Handler,
+		},
+		{
+			MethodName: "RetryStep",
+			Handler:    _WorkflowEngine_RetryStep_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

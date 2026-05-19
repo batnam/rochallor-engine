@@ -67,6 +67,11 @@ type mockStore struct {
 	// (and the flag is cleared). Used by the business-key conflict unit test
 	// to verify Start propagates the sentinel through fmt.Errorf wrapping.
 	forceInsertConflict bool
+
+	// When set, the next ReactivateInstance call returns
+	// ErrBusinessKeyConflict (and the flag is cleared). Used by the
+	// retry-step business-key conflict unit test.
+	reactivateConflict bool
 }
 
 func newMockStore() *mockStore {
@@ -271,7 +276,9 @@ func (m *mockStore) FailStepExecutionByID(ctx context.Context, _ db.Tx, stepExec
 func (m *mockStore) FailStepExecutionByStep(ctx context.Context, _ db.Tx, instanceID, stepID, reason string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.failedStepExecsByStep = append(m.failedStepExecsByStep, instanceID+":"+stepID)
+	key := instanceID + ":" + stepID
+	m.failedStepExecsByStep = append(m.failedStepExecsByStep, key)
+	m.stepExecsByStep[key] = "FAILED"
 	return nil
 }
 
@@ -334,6 +341,31 @@ func (m *mockStore) InsertBoundaryEventSchedule(ctx context.Context, _ db.Tx,
 
 func (m *mockStore) CountCompletedBranchLeafs(ctx context.Context, _ db.Tx, instanceID string, leafStepIDs []string) (int, error) {
 	return m.branchLeafsCompleted, nil
+}
+
+func (m *mockStore) GetLatestStepExecutionStatus(ctx context.Context, _ db.Tx, instanceID, stepID string) (StepExecutionStatus, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	status, ok := m.stepExecsByStep[instanceID+":"+stepID]
+	if !ok {
+		return "", ErrStepNotRetryable
+	}
+	return StepExecutionStatus(status), nil
+}
+
+func (m *mockStore) ReactivateInstance(ctx context.Context, _ db.Tx, instanceID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.reactivateConflict {
+		m.reactivateConflict = false
+		return ErrBusinessKeyConflict
+	}
+	if inst, ok := m.instances[instanceID]; ok {
+		inst.Status = InstanceStatusActive
+		inst.FailureReason = nil
+		inst.CompletedAt = nil
+	}
+	return nil
 }
 
 // fakeDefRepo is a tiny in-memory definition.DefinitionRepository for tests.

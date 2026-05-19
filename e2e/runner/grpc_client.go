@@ -170,6 +170,22 @@ func (c *GrpcClient) ListInstancesByDefAndBusinessKey(ctx context.Context, defID
 	return out, nil
 }
 
+func (c *GrpcClient) RetryStep(ctx context.Context, instanceID, stepID string, vars map[string]any) (scenarios.Instance, error) {
+	sv, err := toStruct(vars)
+	if err != nil {
+		return scenarios.Instance{}, fmt.Errorf("retry step: %w", err)
+	}
+	resp, err := c.stub.RetryStep(ctx, &workflowv1.RetryStepRequest{
+		InstanceId: instanceID,
+		StepId:     stepID,
+		Variables:  sv,
+	})
+	if err != nil {
+		return scenarios.Instance{}, fmt.Errorf("retry step: %w", err)
+	}
+	return protoInstToScenario(resp.Instance), nil
+}
+
 func (c *GrpcClient) SignalWait(ctx context.Context, instanceID, waitStepID string, vars map[string]any) error {
 	sv, err := toStruct(vars)
 	if err != nil {

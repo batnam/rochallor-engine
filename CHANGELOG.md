@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Released]
 
+## [engine-v1.1.0] - 2026-05-19
+
+Engine release adding **manual retry** of failed steps with optional variable patching, so operators can recover FAILED instances without restarting from scratch.
+
+### Added
+
+- **`RetryStep` API.** Re-run a FAILED step on a FAILED instance through either surface:
+  - **REST:** `POST /v1/instances/{id}/steps/{stepId}/retry` — optional body `{"variables": {...}}`.
+  - **gRPC:** `WorkflowEngine.RetryStep(RetryStepRequest{instance_id, step_id, variables})`.
+
+  Atomically: validates the instance is `FAILED` and the latest `step_execution` attempt for `stepId` is `FAILED`; flips the instance back to `ACTIVE` (clearing `failure_reason` / `completed_at`); creates a new `step_execution` row with `attempt_number` incremented; re-dispatches the step through the same path used by the first attempt (for `SERVICE_TASK` a fresh `UNLOCKED` job is enqueued with `retries_remaining` reset to the step's `retryCount` — the previously FAILED job row is left untouched). The workflow then continues to the next step exactly as it would on the first attempt.
+
+- **Variable patch on retry.** The optional `variables` field is shallow-merged into the instance variables **before** the new dispatch, so the new `step_execution.input_snapshot` and the dispatched job payload observe the corrected values. Lets operators fix the bad input data that caused the original failure without starting a brand-new instance — same merge semantics as `CompleteJob` / `SignalWait` / `CompleteUserTask`.
+
+- New sentinel errors for callers that consume the engine packages directly:
+  - `instance.ErrInstanceNotFailed` — instance is not in status FAILED (mapped to HTTP 409 / `FAILED_PRECONDITION`).
+  - `instance.ErrStepNotRetryable` — latest attempt for the step is not FAILED, or no attempt exists (mapped to HTTP 409 / `FAILED_PRECONDITION`).
+
+- **OpenAPI:** `RetryStepRequest` schema + `/v1/instances/{id}/steps/{stepId}/retry` operation added to `api/openapi/rest-openapi.yaml`.
+
+- **Docs:** new "Manual retry (operator-driven)" section in [docs/architecture.md](docs/architecture.md) covering API contract, when to use it, when not to, error responses, and audit-trail behaviour. Cross-referenced from [docs/workflow-format.md](docs/workflow-format.md) next to `retryCount`.
+
+### Migration
+
+None — this release is a pure API addition. No schema changes, no migration to run, no data backfill.
+
+### Compatibility notes
+
+- Fully backward compatible. The new RPC / REST endpoint is additive; existing clients are unaffected.
+- The previously FAILED `step_execution` and `job` rows are preserved on retry (status stays `FAILED`) for audit. The new attempt is a fresh row with `attempt_number = max(prior) + 1`; `GET /v1/instances/{id}/history` returns the full chain.
+- Auto retries (the `retryCount` field on `SERVICE_TASK`) still reuse a single `step_execution` row across attempts — only the terminal failure marks it `FAILED`. Manual retry is the **only** path that creates a new `step_execution` row per attempt. This asymmetry is intentional and documented.
+- Reactivating a FAILED instance respects the partial unique index `(business_key, definition_id) WHERE status IN ('ACTIVE','WAITING')` added in v1.0.1: if another in-flight instance now holds the same `business_key`, the retry is rejected with 409 / `ALREADY_EXISTS`.
+
+### Release
+
+```bash
+git tag engine-v1.1.0
+git push origin engine-v1.1.0
+```
+
+Only the `Publish Engine` workflow runs; image lands at `ghcr.io/<owner>/rochallor-engine:v1.1.0` and `:latest`. See [Release Process](docs/release.md).
+
 ## [engine-v1.0.1] - 2026-05-19
 
 Engine release focused on correlation between chained workflows.

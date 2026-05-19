@@ -224,6 +224,14 @@ func (s *EngineServer) PollJobs(ctx context.Context, req *workflowv1.PollJobsReq
 			StepExecutionId:  j.StepExecutionID,
 			RetriesRemaining: int32(j.RetriesRemaining),
 		}
+		if len(j.Payload) > 0 {
+			var m map[string]any
+			if json.Unmarshal(j.Payload, &m) == nil {
+				if sv, err := structpb.NewStruct(m); err == nil {
+					pj.Variables = sv
+				}
+			}
+		}
 		if j.LockExpiresAt != nil {
 			pj.LockExpiresAt = timestamppb.New(*j.LockExpiresAt)
 		}
@@ -270,6 +278,34 @@ func (s *EngineServer) SignalWait(ctx context.Context, req *workflowv1.SignalWai
 		return nil, mapResumeErr(err)
 	}
 	return &workflowv1.SignalWaitResponse{}, nil
+}
+
+// RetryStep handles the RetryStep RPC: re-runs a FAILED step on a FAILED instance.
+func (s *EngineServer) RetryStep(ctx context.Context, req *workflowv1.RetryStepRequest) (*workflowv1.RetryStepResponse, error) {
+	if req.InstanceId == "" || req.StepId == "" {
+		return nil, engineapi.GRPCInvalidArgument("instance_id and step_id are required")
+	}
+	vars := structToMap(req.Variables)
+	inst, err := s.instSvc.RetryFailedStep(ctx, req.InstanceId, req.StepId, vars)
+	if err != nil {
+		return nil, mapRetryErr(err)
+	}
+	return &workflowv1.RetryStepResponse{Instance: internalInstToProto(inst)}, nil
+}
+
+// mapRetryErr translates RetryFailedStep sentinel errors into gRPC status codes.
+func mapRetryErr(err error) error {
+	switch {
+	case errors.Is(err, instance.ErrInstanceNotFound):
+		return engineapi.GRPCNotFound(err.Error())
+	case errors.Is(err, instance.ErrInstanceNotFailed),
+		errors.Is(err, instance.ErrStepNotRetryable):
+		return engineapi.GRPCFailedPrecondition(err.Error())
+	case errors.Is(err, instance.ErrBusinessKeyConflict):
+		return engineapi.GRPCAlreadyExists(err.Error())
+	default:
+		return engineapi.GRPCInternal(err)
+	}
 }
 
 // mapResumeErr translates instance-layer sentinel errors into gRPC status codes.
