@@ -543,5 +543,41 @@ func (s *InstanceStore) CountCompletedBranchLeafs(ctx context.Context, tx db.Tx,
 	return n, nil
 }
 
+func (s *InstanceStore) GetLatestStepExecutionStatus(ctx context.Context, tx db.Tx, instanceID, stepID string) (instance.StepExecutionStatus, error) {
+	var status string
+	err := Unwrap(tx).QueryRow(ctx,
+		`SELECT status FROM step_execution
+		  WHERE instance_id = $1 AND step_id = $2
+		  ORDER BY attempt_number DESC
+		  LIMIT 1`,
+		instanceID, stepID,
+	).Scan(&status)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", instance.ErrStepNotRetryable
+		}
+		return "", fmt.Errorf("get latest step_execution status: %w", err)
+	}
+	return instance.StepExecutionStatus(status), nil
+}
+
+func (s *InstanceStore) ReactivateInstance(ctx context.Context, tx db.Tx, instanceID string) error {
+	_, err := Unwrap(tx).Exec(ctx,
+		`UPDATE workflow_instance
+		    SET status = 'ACTIVE', failure_reason = NULL, completed_at = NULL
+		  WHERE id = $1`,
+		instanceID,
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" &&
+			pgErr.ConstraintName == "uniq_workflow_instance_bk_def_active" {
+			return instance.ErrBusinessKeyConflict
+		}
+		return fmt.Errorf("reactivate instance: %w", err)
+	}
+	return nil
+}
+
 // Compile-time interface assertion.
 var _ instance.Store = (*InstanceStore)(nil)

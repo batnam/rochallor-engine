@@ -157,4 +157,18 @@ type Store interface {
 	// CountCompletedBranchLeafs counts distinct COMPLETED step_ids from the
 	// supplied set on the given instance. Used by handleJoinGateway.
 	CountCompletedBranchLeafs(ctx context.Context, tx db.Tx, instanceID string, leafStepIDs []string) (int, error)
+
+	// GetLatestStepExecutionStatus returns the status of the most recent
+	// step_execution row for (instanceID, stepID), ordered by attempt_number
+	// desc. Returns ErrStepNotRetryable if no row exists for the pair.
+	// Used by RetryFailedStep to validate the target step actually failed.
+	GetLatestStepExecutionStatus(ctx context.Context, tx db.Tx, instanceID, stepID string) (StepExecutionStatus, error)
+
+	// ReactivateInstance flips a FAILED instance back to ACTIVE, clearing
+	// failure_reason and completed_at. Used by RetryFailedStep. Returns
+	// ErrBusinessKeyConflict if the partial unique index on
+	// (business_key, definition_id) WHERE status IN ('ACTIVE','WAITING')
+	// rejects the transition because another in-flight instance already
+	// holds the same business_key.
+	ReactivateInstance(ctx context.Context, tx db.Tx, instanceID string) error
 }

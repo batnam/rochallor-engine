@@ -71,6 +71,7 @@ func NewRouter(
 	r.Get("/v1/instances/{id}", instH.Get)
 	r.Get("/v1/instances/{id}/history", instH.GetHistory)
 	r.Post("/v1/instances/{id}/cancel", instH.Cancel)
+	r.Post("/v1/instances/{id}/steps/{stepId}/retry", instH.RetryStep)
 
 	// Jobs
 	if dispatchMode == "kafka_outbox" {

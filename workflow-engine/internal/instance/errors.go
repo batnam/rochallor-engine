@@ -35,6 +35,17 @@ var (
 	// ('ACTIVE','WAITING') added in migration 0010. Mapped to HTTP 409 /
 	// gRPC ALREADY_EXISTS.
 	ErrBusinessKeyConflict = errors.New("business key already in use by an in-flight instance of this definition")
+
+	// ErrStepNotRetryable — manual retry was requested for a step that is not
+	// in a retryable state: either it has no step_execution row on the
+	// instance, or the latest attempt is not FAILED (RUNNING, COMPLETED or
+	// SKIPPED). Mapped to HTTP 409 / gRPC FAILED_PRECONDITION.
+	ErrStepNotRetryable = errors.New("step is not in a retryable state")
+
+	// ErrInstanceNotFailed — manual retry requires the instance to be in the
+	// FAILED state. ACTIVE / WAITING / COMPLETED / CANCELLED instances are
+	// rejected. Mapped to HTTP 409 / gRPC FAILED_PRECONDITION.
+	ErrInstanceNotFailed = errors.New("instance is not FAILED; manual retry only applies to FAILED instances")
 )
 
 // Decision-table runtime failure prefixes.

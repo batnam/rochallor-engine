@@ -84,6 +84,8 @@ def handle(ctx):
     return {"emailSent": True}
 ```
 
+> **Note** — `retryCount` only controls **automatic** retries. When auto retries are exhausted (or `retryCount` is 0) and the step fails, the instance lands in `FAILED`. Operators can still rerun the failed step on the same instance via the **manual retry** endpoint, optionally patching variables to correct bad input data. See [Architecture → Manual retry](architecture.md#manual-retry-operator-driven) for the full contract.
+
 ---
 
 ### `USER_TASK` — human action required

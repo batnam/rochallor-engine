@@ -208,6 +208,32 @@ func (c *Client) ListInstancesByDefAndBusinessKey(ctx context.Context, defID, bu
 	return envelope.Items, nil
 }
 
+// RetryStep calls POST /v1/instances/{id}/steps/{stepId}/retry to manually
+// re-run a FAILED step on a FAILED instance. When vars is non-empty its keys
+// are shallow-merged into the instance variables before re-dispatch.
+func (c *Client) RetryStep(ctx context.Context, instanceID, stepID string, vars map[string]any) (scenarios.Instance, error) {
+	var body io.Reader
+	if len(vars) > 0 {
+		b, err := json.Marshal(map[string]any{"variables": vars})
+		if err != nil {
+			return scenarios.Instance{}, fmt.Errorf("retry step: marshal request: %w", err)
+		}
+		body = bytes.NewReader(b)
+	}
+
+	path := "v1/instances/" + instanceID + "/steps/" + stepID + "/retry"
+	req, err := c.newRequest(ctx, http.MethodPost, path, body)
+	if err != nil {
+		return scenarios.Instance{}, fmt.Errorf("retry step: %w", err)
+	}
+
+	var inst scenarios.Instance
+	if err := c.doRequest(req, &inst); err != nil {
+		return scenarios.Instance{}, fmt.Errorf("retry step: %w", err)
+	}
+	return inst, nil
+}
+
 // SignalWait calls POST /v1/instances/{instanceId}/signals/{waitStepId}.
 // The body IS the variable map (not wrapped in {"variables": …}); an empty map
 // is valid — the signal itself is the event.

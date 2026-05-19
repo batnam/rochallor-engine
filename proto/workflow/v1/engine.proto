@@ -42,6 +42,12 @@ service WorkflowEngine {
 
   // Signals — resume a WAIT step by stable step id.
   rpc SignalWait(SignalWaitRequest) returns (SignalWaitResponse);
+
+  // Manual retry — re-run a FAILED step on a FAILED instance. The instance
+  // transitions back to ACTIVE, a new step_execution row is created with
+  // attempt_number incremented, and the step is re-dispatched through the
+  // same lifecycle path used by the first attempt.
+  rpc RetryStep(RetryStepRequest) returns (RetryStepResponse);
 }
 
 // ---------- Enums ----------
@@ -365,3 +371,19 @@ message SignalWaitRequest {
 }
 
 message SignalWaitResponse {}
+
+message RetryStepRequest {
+  string instance_id = 1;
+  string step_id     = 2; // stable step id from the workflow definition
+
+  // Optional. When non-empty, the keys are shallow-merged into the instance
+  // variables before the step is re-dispatched, so the new step_execution's
+  // input_snapshot and (for SERVICE_TASK) the dispatched job payload pick up
+  // the patched values. Lets operators fix the variable values that caused
+  // the original failure without having to start a brand-new instance.
+  google.protobuf.Struct variables = 3;
+}
+
+message RetryStepResponse {
+  WorkflowInstance instance = 1;
+}

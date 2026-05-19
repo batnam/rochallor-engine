@@ -348,6 +348,54 @@ Example in the workflow definition:
 
 With `retryCount: 3`, a plain exception will retry up to 3 times before the job is permanently failed. A `NonRetryableException` skips all 3 retries.
 
+### Manual retry (operator-driven)
+
+Auto retry handles transient failures. For everything else — bad input data, downstream system fixed after the fact, a config bug ops repaired by hand — the engine exposes a manual retry endpoint that re-runs a failed step on a FAILED instance.
+
+```
+POST /v1/instances/{id}/steps/{stepId}/retry
+Content-Type: application/json    (optional body)
+
+{ "variables": { "corrected": true, "amount": 100 } }   # optional patch
+```
+
+The same operation is on the gRPC surface as `WorkflowEngine.RetryStep` with fields `instance_id`, `step_id`, and an optional `variables` map.
+
+**What the engine does, atomically**
+
+1. Validates the instance is `FAILED` and the latest `step_execution` attempt for `stepId` is `FAILED`. RUNNING / COMPLETED / SKIPPED attempts are rejected with HTTP 409.
+2. Flips the instance back to `ACTIVE`, clearing `failure_reason` and `completed_at`.
+3. If `variables` is non-empty, shallow-merges its keys into the instance variables (same semantics as `CompleteJob` / `SignalWait` / `CompleteUserTask`).
+4. Inserts a **new** `step_execution` row with `attempt_number` incremented — the previously FAILED row is left in place for audit.
+5. Re-dispatches the step. For `SERVICE_TASK`, a fresh `UNLOCKED` job is enqueued with `retries_remaining` reset from the definition's `retryCount`; the previously FAILED job row is untouched (status stays `FAILED`, so workers ignore it).
+
+From the worker's point of view the retry is indistinguishable from a normal dispatch — it sees a new job with the (possibly patched) variables in its payload. When the worker completes, the engine advances to the next step exactly as it would on the first attempt, so the entire downstream workflow continues automatically.
+
+**When to use it**
+
+- **Transient failure that auto retry didn't cover.** External system was down longer than `retryCount` rounds. Fix the system, hit retry.
+- **Bad input data.** Validation step failed because a variable was wrong. Send the corrected value in the request body — the new dispatch reads the patched variables.
+- **Long workflows you don't want to restart.** Step 49 of 50 failed; restarting from step 1 would re-do expensive prior side effects. Retry preserves the existing instance state and history.
+
+**When *not* to use it**
+
+- Step is fundamentally buggy and will fail every time — fix the workflow definition or the worker code first, otherwise you'll just trigger the same failure with one extra row of audit noise.
+- Step's side effects are not idempotent (charged a card, sent an email) AND the prior failed attempt may have partially succeeded. Make the worker idempotent (idempotency key on external calls) before relying on manual retry.
+- Instance is `COMPLETED` or `CANCELLED` — retry only works on FAILED instances. To re-run a successful step, start a new instance.
+
+**Error responses**
+
+| HTTP / gRPC | Meaning |
+|-------------|---------|
+| 404 / `NOT_FOUND` | Instance id does not exist. |
+| 409 / `FAILED_PRECONDITION` | Instance is not in status `FAILED`, or the latest attempt for the named step is not `FAILED`. |
+| 409 / `ALREADY_EXISTS` | Another in-flight instance now holds the same `business_key` for this definition — the ACTIVE flip would violate the partial unique index. Cancel the other instance, or pick a different retry strategy. |
+| 400 / `INVALID_ARGUMENT` | Malformed request body or empty `instance_id` / `step_id`. |
+
+**Audit trail**
+
+Every retry creates a new `step_execution` row with `attempt_number` one greater than the latest existing row. `GET /v1/instances/{id}/history` lists all attempts in start order, so you can always tell which were auto retries (same row, no new attempt — auto retries reuse one `step_execution`) versus manual retries (new row per retry).
+
 ### Graceful shutdown
 
 When the runner receives a shutdown signal (SIGINT/SIGTERM or context cancellation), it:

@@ -229,6 +229,66 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /v1/instances/{id}/steps/{stepId}/retry:
+    post:
+      tags: [instances]
+      summary: Manually retry a FAILED step on a FAILED instance
+      description: |
+        Re-runs a previously failed step. The instance must be in status FAILED
+        and the latest step_execution attempt for the target step must be FAILED
+        (RUNNING / COMPLETED / SKIPPED are rejected). The engine flips the
+        instance back to ACTIVE (clearing failure_reason and completed_at),
+        creates a new step_execution row with attempt_number incremented, and
+        re-dispatches the step through the same path used by the first attempt
+        (for SERVICE_TASK steps a new UNLOCKED job is enqueued — the previously
+        FAILED job row is left untouched, so workers ignore it).
+
+        The optional request body may carry a `variables` map. When present
+        its keys are shallow-merged into the instance variables BEFORE the
+        re-dispatch, so the new step_execution's input_snapshot and the
+        dispatched job payload observe the corrected values. This is the
+        supported path for fixing the bad input data that caused the original
+        failure without having to start a new instance. An empty body is
+        valid: the path alone identifies the step to retry.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+          description: Workflow instance id returned by POST /v1/instances
+        - in: path
+          name: stepId
+          required: true
+          schema: { type: string }
+          description: Stable step id from the workflow definition
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryStepRequest'
+      responses:
+        '200':
+          description: Step re-dispatched; instance reactivated to ACTIVE.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstanceSummary'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            Returned when the instance is not FAILED, when the latest
+            step_execution attempt for the named step is not FAILED, or when
+            another in-flight instance now holds the same business_key under
+            the partial unique index on (business_key, definition_id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /v1/jobs/poll:
     post:
       tags: [jobs]
@@ -587,6 +647,20 @@ components:
         result:
           type: object
           additionalProperties: true
+
+    RetryStepRequest:
+      type: object
+      description: |
+        Optional body for POST /v1/instances/{id}/steps/{stepId}/retry. When
+        `variables` is present its keys are shallow-merged into the instance
+        variables before the failed step is re-dispatched, letting operators
+        correct the bad input that caused the original failure. May be omitted
+        entirely; an empty body is also valid.
+      properties:
+        variables:
+          type: object
+          additionalProperties: true
+          description: Keys to shallow-merge into the instance variables prior to re-dispatch.
 
     Error:
       type: object

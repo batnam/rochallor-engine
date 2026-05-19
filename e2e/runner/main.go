@@ -166,6 +166,8 @@ func runSDKSuite(transport string, client scenarios.ClientIface, sdk, scenariosD
 		{"loan-approval", scenarios.RunLoanApproval},
 		{"transformation", scenarios.RunTransformation},
 		{"retry-exhausted", scenarios.RunRetryExhausted},
+		{"retry-manual", scenarios.RunRetryManual},
+		{"retry-manual-with-vars", scenarios.RunRetryManualWithVars},
 		{"cancel", scenarios.RunCancel},
 		{"decision-no-match", scenarios.RunDecisionNoMatch},
 		{"business-key", scenarios.RunBusinessKey},
