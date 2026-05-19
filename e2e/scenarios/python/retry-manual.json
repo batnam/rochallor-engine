@@ -1,0 +1,19 @@
+{
+  "id": "e2e-python-retry-manual",
+  "name": "E2E Python Manual Retry",
+  "steps": [
+    {
+      "id": "python-manual-retry-step",
+      "name": "Manual Retry Step",
+      "type": "SERVICE_TASK",
+      "jobType": "python-manual-retry",
+      "retryCount": 1,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}

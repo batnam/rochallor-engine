@@ -8,6 +8,7 @@ import com.batnam.rochallor_engine.workflow_sdk_java.runner.KafkaRunner;
 import com.batnam.rochallor_engine.workflow_sdk_java.runner.Runner;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Worker {
 
@@ -66,6 +67,32 @@ public class Worker {
 
         // Retry-exhausted scenario handler: always fails to exhaust all retries
         registry.register("java-always-fail", ctx -> { throw new RuntimeException("always fails"); });
+
+        // Manual-retry scenario handler. With retryCount=1 in the definition the
+        // engine performs at most 2 auto attempts before flipping the instance
+        // to FAILED. We want both auto attempts to fail and the third
+        // invocation — triggered by the scenario's manual RetryStep call — to
+        // succeed. ConcurrentHashMap because runner threads are concurrent.
+        final ConcurrentHashMap<String, Integer> manualRetryAttempts = new ConcurrentHashMap<>();
+        registry.register("java-manual-retry", ctx -> {
+            int n = manualRetryAttempts.merge(ctx.instanceId(), 1, Integer::sum);
+            if (n < 3) {
+                throw new RuntimeException("simulated failure attempt " + n);
+            }
+            return Map.of("manualRetry", "done", "attempts", (double) n);
+        });
+
+        // Manual-retry-with-variables scenario handler. Fails until the
+        // instance variables carry `corrected == true`, which only happens
+        // after the scenario issues RetryStep with a {"corrected": true}
+        // patch. retryCount=0 makes the first failure terminal.
+        registry.register("java-needs-fix", ctx -> {
+            Object corrected = ctx.variables().get("corrected");
+            if (!(corrected instanceof Boolean) || !((Boolean) corrected)) {
+                throw new RuntimeException("missing corrected=true; bad input data");
+            }
+            return Map.of("fixed", true);
+        });
 
         // Decision-no-match scenario handler: sets result to "rejected" so no branch matches
         registry.register("java-prepare-no-match", ctx -> Map.of("result", "rejected"));

@@ -52,7 +52,8 @@ func RunRetryManual(t TestReporter, client ClientIface, scenariosDir, prefix str
 	t.Logf("[%s/retry-manual] FAILED as expected with reason %q — issuing manual retry", prefix, inst.FailureReason)
 
 	// 2. Manual retry of the failed step.
-	retried, err := client.RetryStep(ctx, instanceID, "go-manual-retry-step", nil)
+	stepID := prefix + "-manual-retry-step"
+	retried, err := client.RetryStep(ctx, instanceID, stepID, nil)
 	if err != nil {
 		t.Errorf("[%s/retry-manual] RetryStep: %v", prefix, err)
 		return
@@ -89,7 +90,7 @@ func RunRetryManual(t TestReporter, client ClientIface, scenariosDir, prefix str
 	}
 	failed, completed := 0, 0
 	for _, se := range hist {
-		if se.StepID != "go-manual-retry-step" {
+		if se.StepID != stepID {
 			continue
 		}
 		switch se.Status {

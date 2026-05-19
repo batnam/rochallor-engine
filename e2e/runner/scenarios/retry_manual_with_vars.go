@@ -51,7 +51,7 @@ func RunRetryManualWithVars(t TestReporter, client ClientIface, scenariosDir, pr
 		prefix, inst.FailureReason)
 
 	// 2. Retry with the variable patch that fixes the bad data.
-	retried, err := client.RetryStep(ctx, instanceID, "go-needs-fix-step",
+	retried, err := client.RetryStep(ctx, instanceID, prefix+"-needs-fix-step",
 		map[string]any{"corrected": true})
 	if err != nil {
 		t.Errorf("[%s/retry-manual-with-vars] RetryStep: %v", prefix, err)

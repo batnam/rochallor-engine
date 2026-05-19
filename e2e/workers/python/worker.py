@@ -90,6 +90,35 @@ def main() -> None:
         raise Exception("always fails")
     registry.register("python-always-fail", _py_always_fail)
 
+    # Manual-retry scenario handler. retryCount=1 in the definition means
+    # the engine performs at most 2 auto attempts before marking the
+    # instance FAILED. We want both auto attempts to fail and the third
+    # invocation — triggered by the scenario's RetryStep call — to succeed.
+    import threading
+    _manual_retry_lock = threading.Lock()
+    _manual_retry_attempts: dict[str, int] = {}
+
+    def _py_manual_retry(ctx):
+        instance_id = ctx.get("instanceId", "")
+        with _manual_retry_lock:
+            _manual_retry_attempts[instance_id] = _manual_retry_attempts.get(instance_id, 0) + 1
+            n = _manual_retry_attempts[instance_id]
+        if n < 3:
+            raise Exception(f"simulated failure attempt {n}")
+        return {"manualRetry": "done", "attempts": float(n)}
+
+    registry.register("python-manual-retry", _py_manual_retry)
+
+    # Manual-retry-with-variables scenario handler. Fails until variables
+    # carry `corrected == True`, which only happens after RetryStep with a
+    # {"corrected": True} patch. retryCount=0 → first failure is terminal.
+    def _py_needs_fix(ctx):
+        if ctx.get("variables", {}).get("corrected") is not True:
+            raise Exception("missing corrected=True; bad input data")
+        return {"fixed": True}
+
+    registry.register("python-needs-fix", _py_needs_fix)
+
     # Decision-no-match scenario handler: sets result to "rejected" so no branch matches
     registry.register("python-prepare-no-match", lambda ctx: {"result": "rejected"})
 
