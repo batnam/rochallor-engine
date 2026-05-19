@@ -72,15 +72,17 @@ export async function layoutWithElk(
       ports: nodePorts(n),
       layoutOptions: { 'elk.portConstraints': 'FIXED_SIDE' },
     })),
-    edges: edges
-      .filter((e) => nodeById.has(e.from) && nodeById.has(e.to))
-      .map(
-        (e): ElkExtendedEdge => ({
+    edges: edges.flatMap((e): ElkExtendedEdge[] => {
+      const src = nodeById.get(e.from);
+      if (!src || !nodeById.has(e.to)) return [];
+      return [
+        {
           id: e.id,
-          sources: [elkSourcePort(e, nodeById.get(e.from)!)],
+          sources: [elkSourcePort(e, src)],
           targets: [`${e.to}__in`],
-        }),
-      ),
+        },
+      ];
+    }),
   };
 
   const laid = await elk.layout(graph);

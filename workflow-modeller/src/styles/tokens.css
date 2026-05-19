@@ -1525,3 +1525,89 @@ body,
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+/* Drafts dialog */
+.wm-drafts-save {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.wm-drafts-save .wm-dialog-primary {
+  justify-self: end;
+  font: inherit;
+  padding: 0.375rem 1rem;
+  border-radius: 4px;
+  border: 1px solid var(--step-service-task);
+  background: var(--step-service-task);
+  color: white;
+  cursor: pointer;
+}
+
+.wm-drafts-save .wm-dialog-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wm-drafts-list {
+  max-height: 280px;
+  overflow: auto;
+  border-top: 1px solid var(--surface-border);
+  padding-top: 0.5rem;
+}
+
+.wm-drafts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.375rem;
+}
+
+.wm-drafts-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.wm-drafts-item-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wm-drafts-item-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wm-drafts-item-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.wm-drafts-item-actions {
+  display: flex;
+  gap: 0.375rem;
+  flex-shrink: 0;
+}
+
+.wm-drafts-item-actions button {
+  font: inherit;
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-muted);
+  color: var(--text);
+  cursor: pointer;
+}

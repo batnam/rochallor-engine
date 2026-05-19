@@ -73,7 +73,7 @@ export function EngineBrowser({ open, onClose, onLoaded }: EngineBrowserProps): 
         className="wm-dialog wm-dialog--wide"
         aria-labelledby="wm-engine-browser-heading"
       >
-        <h2 id="wm-engine-browser-heading">Load from engine</h2>
+        <h2 id="wm-engine-browser-heading">Load Workflow from engine</h2>
         <p className="wm-dialog-hint">{engine.baseUrl}</p>
         <div className="wm-engine-search">
           <input

@@ -172,23 +172,11 @@ function CanvasInner(): ReactNode {
         });
         break;
       }
-      case 'DECISION_TABLE': {
-        const column = window.prompt('Input column name (leave empty for catch-all rule):', '');
-        if (column === null) return;
-        const expr = column
-          ? window.prompt(`Cell expression for "${column}" (boolean):`, 'value == "X"')
-          : '';
-        if (expr === null) return;
-        const newRule = {
-          when: column ? { [column]: expr } : {},
-          then: target,
-        };
-        state.updateStepProperty(source, 'decisionTable', {
-          ...src.decisionTable,
-          rules: [...src.decisionTable.rules, newRule],
-        });
+      case 'DECISION_TABLE':
+        // 007: routing is at step-level nextStep, not per-rule. Rules carry
+        // input cells + outputs only; they're edited via DecisionTableForm.
+        state.updateStepProperty(source, 'nextStep', target);
         break;
-      }
       case 'PARALLEL_GATEWAY': {
         if (src.parallelNextSteps.includes(target)) return;
         state.updateStepProperty(source, 'parallelNextSteps', [...src.parallelNextSteps, target]);

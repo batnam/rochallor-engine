@@ -75,7 +75,7 @@ test.describe('engine integration (mocked)', () => {
     await page.getByRole('button', { name: 'Save' }).click();
 
     // Open the engine browser, list returns one definition.
-    await page.getByRole('button', { name: 'Load from engine' }).click();
+    await page.getByRole('button', { name: 'Load Workflow from engine' }).click();
     const row = page.locator('.wm-engine-row', { hasText: SAMPLE.id });
     await expect(row).toBeVisible();
 

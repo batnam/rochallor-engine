@@ -2,6 +2,7 @@ import { Canvas } from '@/canvas/Canvas';
 import type { StepId } from '@/domain/types';
 import { Banner, type BannerTone } from '@/panels/Banner';
 import { DeleteStepDialog } from '@/panels/DeleteStepDialog';
+import { DraftsDialog } from '@/panels/DraftsDialog';
 import { EngineBrowser } from '@/panels/EngineBrowser';
 import { ExportDialog } from '@/panels/ExportDialog';
 import { ImportDialog } from '@/panels/ImportDialog';
@@ -26,6 +27,7 @@ export function App(): ReactNode {
   const [exportOpen, setExportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [engineBrowserOpen, setEngineBrowserOpen] = useState(false);
+  const [draftsOpen, setDraftsOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StepId | null>(null);
   const [banner, setBanner] = useState<BannerState | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -85,6 +87,7 @@ export function App(): ReactNode {
                 onExport={() => setExportOpen(true)}
                 onOpenSettings={() => setSettingsOpen(true)}
                 onOpenEngineBrowser={() => setEngineBrowserOpen(true)}
+                onOpenDrafts={() => setDraftsOpen(true)}
                 onUploadResult={(r) =>
                   setBanner({ tone: r.ok ? 'info' : 'error', messages: [r.message] })
                 }
@@ -151,6 +154,18 @@ export function App(): ReactNode {
         }
       />
       <DeleteStepDialog stepId={deleteTarget} onClose={() => setDeleteTarget(null)} />
+      <DraftsDialog
+        open={draftsOpen}
+        onClose={() => setDraftsOpen(false)}
+        onMessage={(m) =>
+          setBanner({
+            tone: m.tone,
+            messages: [m.text],
+            floating: m.tone === 'info',
+            autoDismissMs: m.tone === 'info' ? 3000 : undefined,
+          })
+        }
+      />
     </ReactFlowProvider>
   );
 }

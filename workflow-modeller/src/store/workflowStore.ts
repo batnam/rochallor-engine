@@ -10,6 +10,14 @@ import type {
 import { validate } from '@/domain/validate';
 import { type EngineClient, createEngineClient } from '@/engine/client';
 import { EngineError } from '@/engine/types';
+import {
+  type DraftSummary,
+  type SaveDraftResult,
+  deleteDraft as deleteDraftIO,
+  getDraft as getDraftIO,
+  listDrafts as listDraftsIO,
+  saveDraft as saveDraftIO,
+} from '@/io/drafts';
 import { embedLayout, exportJson as ioExport } from '@/io/export';
 import { importJson as ioImport } from '@/io/import';
 import { temporal } from 'zundo';
@@ -70,6 +78,17 @@ export interface WorkflowActions {
   addEdge(from: StepId, to: StepId, variant: EdgeVariant, meta?: Record<string, unknown>): void;
   removeEdge(from: StepId, to: StepId, variant: EdgeVariant, key?: string): void;
   setDefinitionMeta(patch: Partial<WorkflowDefinition>): void;
+  /** Clear the current workflow and start fresh. Engine config is preserved. */
+  newWorkflow(): void;
+
+  /** Save the current workflow as a named draft in localStorage. */
+  saveDraft(name: string): SaveDraftResult;
+  /** Replace the current workflow with the named draft. Returns false if not found. */
+  loadDraft(id: string): boolean;
+  /** Remove a draft from localStorage. */
+  deleteDraft(id: string): void;
+  /** Read all drafts (non-reactive — call when opening the drafts UI). */
+  listDrafts(): DraftSummary[];
 
   setLayout(id: StepId, pos: { x: number; y: number }): void;
   setEdgeHandle(edgeId: string, handles: EdgeHandles[string]): void;
@@ -231,6 +250,54 @@ const creator = (
 
   setDefinitionMeta(patch) {
     set((state) => ({ definition: { ...state.definition, ...patch }, dirty: true }));
+  },
+
+  newWorkflow() {
+    set({
+      definition: emptyDefinition(),
+      layout: {},
+      edgeHandles: {},
+      selection: { kind: 'none' },
+      validation: { diagnostics: [] },
+      dirty: false,
+      importWarnings: [],
+      source: { kind: 'new' },
+      // engine connection intentionally preserved.
+    });
+  },
+
+  saveDraft(name) {
+    const state = get();
+    return saveDraftIO({
+      name,
+      definition: state.definition,
+      layout: state.layout,
+      edgeHandles: state.edgeHandles,
+    });
+  },
+
+  loadDraft(id) {
+    const draft = getDraftIO(id);
+    if (!draft) return false;
+    set({
+      definition: draft.definition,
+      layout: draft.layout,
+      edgeHandles: draft.edgeHandles,
+      selection: { kind: 'none' },
+      validation: { diagnostics: [] },
+      dirty: false,
+      importWarnings: [],
+      source: { kind: 'new' },
+    });
+    return true;
+  },
+
+  deleteDraft(id) {
+    deleteDraftIO(id);
+  },
+
+  listDrafts() {
+    return listDraftsIO();
   },
 
   setLayout(id, pos) {
@@ -431,6 +498,11 @@ function scrubRefs(def: WorkflowDefinition, removedId: StepId): WorkflowDefiniti
         return { ...step, conditionalNextSteps: Object.fromEntries(entries) };
       }
       case 'DECISION_TABLE': {
+        // Step-level nextStep (007 format) is the canonical routing target.
+        const nextStep = step.nextStep === removedId ? '' : step.nextStep;
+        // Legacy `r.then` / `defaultNextStep` (pre-007) is still scrubbed
+        // defensively in case a legacy fixture was loaded; the validator
+        // flags both as errors so the user can clean them up.
         const rules = step.decisionTable.rules.map((r) =>
           r.then === removedId ? { ...r, then: '' } : r,
         );
@@ -440,7 +512,7 @@ function scrubRefs(def: WorkflowDefinition, removedId: StepId): WorkflowDefiniti
           rules,
           ...(defaultNextStep && defaultNextStep !== removedId ? { defaultNextStep } : {}),
         };
-        return { ...step, decisionTable: next };
+        return { ...step, nextStep, decisionTable: next };
       }
       case 'PARALLEL_GATEWAY': {
         const parallelNextSteps = step.parallelNextSteps.filter((t) => t !== removedId);

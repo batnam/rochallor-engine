@@ -1,8 +1,10 @@
+import { _clearAllDrafts } from '@/io/drafts';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 beforeEach(() => {
   useWorkflowStore.getState().reset();
+  _clearAllDrafts();
 });
 
 describe('addStep', () => {
@@ -158,6 +160,24 @@ describe('deleteStep scrubs DECISION_TABLE references', () => {
     expect(dt.decisionTable.rules[0]?.then).toBe('a');
   });
 
+  it('clears step-level nextStep (007 format) when the target is deleted', () => {
+    const store = useWorkflowStore.getState();
+    store.addStep({ type: 'DECISION_TABLE', id: 'dt' });
+    store.addStep({ type: 'END', id: 'after' });
+    store.updateStepProperty('dt', 'nextStep', 'after');
+    store.updateStepProperty('dt', 'decisionTable', {
+      rules: [{ when: {}, outputs: { tier: 'GOLD' } }],
+    });
+
+    store.deleteStep('after');
+
+    const dt = useWorkflowStore.getState().definition.steps.find((s) => s.id === 'dt');
+    if (dt?.type !== 'DECISION_TABLE') throw new Error('dt missing');
+    expect(dt.nextStep).toBe('');
+    // Rules untouched (no legacy `then` to scrub).
+    expect(dt.decisionTable.rules).toHaveLength(1);
+  });
+
   it('leaves unrelated rules and defaultNextStep alone', () => {
     const store = useWorkflowStore.getState();
     store.addStep({ type: 'DECISION_TABLE', id: 'dt' });
@@ -179,6 +199,83 @@ describe('deleteStep scrubs DECISION_TABLE references', () => {
     expect(dt.decisionTable.rules[0]?.then).toBe('');
     expect(dt.decisionTable.rules[1]?.then).toBe('b');
     expect(dt.decisionTable.defaultNextStep).toBe('c');
+  });
+});
+
+describe('newWorkflow', () => {
+  it('clears the definition, layout, selection, and dirty flag', () => {
+    const store = useWorkflowStore.getState();
+    store.addStep({ type: 'SERVICE_TASK', id: 'svc' });
+    store.setLayout('svc', { x: 100, y: 200 });
+    store.select({ kind: 'step', id: 'svc' });
+    expect(useWorkflowStore.getState().definition.steps).toHaveLength(1);
+    expect(useWorkflowStore.getState().dirty).toBe(true);
+
+    store.newWorkflow();
+
+    const s = useWorkflowStore.getState();
+    expect(s.definition.steps).toEqual([]);
+    expect(s.layout).toEqual({});
+    expect(s.edgeHandles).toEqual({});
+    expect(s.selection).toEqual({ kind: 'none' });
+    expect(s.validation.diagnostics).toEqual([]);
+    expect(s.dirty).toBe(false);
+    expect(s.source).toEqual({ kind: 'new' });
+  });
+
+  it('preserves the engine connection settings', () => {
+    const store = useWorkflowStore.getState();
+    store.setEngineConnection({ baseUrl: 'http://engine.example:9000', authHeader: 'Bearer xyz' });
+    store.addStep({ type: 'END' });
+
+    store.newWorkflow();
+
+    const engine = useWorkflowStore.getState().engine;
+    expect(engine.baseUrl).toBe('http://engine.example:9000');
+    expect(engine.authHeader).toBe('Bearer xyz');
+  });
+});
+
+describe('saveDraft / loadDraft / deleteDraft', () => {
+  it('round-trips the current workflow as a draft', () => {
+    const store = useWorkflowStore.getState();
+    store.addStep({ type: 'SERVICE_TASK', id: 'svc' });
+    store.setLayout('svc', { x: 50, y: 60 });
+
+    const r = store.saveDraft('snapshot-1');
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error('save failed');
+
+    // Wipe the active workflow, then restore the draft.
+    store.newWorkflow();
+    expect(useWorkflowStore.getState().definition.steps).toHaveLength(0);
+
+    const ok = store.loadDraft(r.draft.id);
+    expect(ok).toBe(true);
+
+    const s = useWorkflowStore.getState();
+    expect(s.definition.steps).toHaveLength(1);
+    expect(s.layout.svc).toEqual({ x: 50, y: 60 });
+    expect(s.dirty).toBe(false);
+  });
+
+  it('loadDraft returns false for an unknown id and leaves state untouched', () => {
+    const store = useWorkflowStore.getState();
+    store.addStep({ type: 'END', id: 'finish' });
+
+    const ok = store.loadDraft('nope');
+    expect(ok).toBe(false);
+    expect(useWorkflowStore.getState().definition.steps).toHaveLength(1);
+  });
+
+  it('deleteDraft removes it from listDrafts', () => {
+    const store = useWorkflowStore.getState();
+    const r = store.saveDraft('to-delete');
+    if (!r.ok) throw new Error('save failed');
+
+    expect(store.listDrafts()).toHaveLength(1);
+    store.deleteDraft(r.draft.id);
+    expect(store.listDrafts()).toHaveLength(0);
   });
 });
 

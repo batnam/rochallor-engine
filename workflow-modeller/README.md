@@ -16,7 +16,7 @@ Open the URL Vite prints (default `http://localhost:5173`).
 
 You should see an empty canvas with a palette on the left, a property panel on the right, and a toolbar across the top.
 
-To connect to a running engine: open **Settings**, point it at your engine base URL (default `http://localhost:8080`), click **Test connection**, **Save**, then **Load from engine**. Without an engine the editor is fully usable for offline authoring.
+To connect to a running engine: open **Settings**, point it at your engine base URL (default `http://localhost:8080`), click **Test connection**, **Save**, then **Load Workflow from engine**. Without an engine the editor is fully usable for offline authoring.
 
 ## Scripts
 
