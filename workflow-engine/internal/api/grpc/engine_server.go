@@ -224,6 +224,14 @@ func (s *EngineServer) PollJobs(ctx context.Context, req *workflowv1.PollJobsReq
 			StepExecutionId:  j.StepExecutionID,
 			RetriesRemaining: int32(j.RetriesRemaining),
 		}
+		if len(j.Payload) > 0 {
+			var m map[string]any
+			if json.Unmarshal(j.Payload, &m) == nil {
+				if sv, err := structpb.NewStruct(m); err == nil {
+					pj.Variables = sv
+				}
+			}
+		}
 		if j.LockExpiresAt != nil {
 			pj.LockExpiresAt = timestamppb.New(*j.LockExpiresAt)
 		}
