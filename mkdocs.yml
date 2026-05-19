@@ -64,6 +64,7 @@ nav:
     - Polling vs Kafka: tradeoffs.md
   - SDK:
     - Go: sdk/go.md
+    - Go — Worker Tutorial (LOS example): sdk/go-worker-tutorial.md
     - Python: sdk/python.md
     - Node / TypeScript: sdk/node.md
     - Java: sdk/java.md

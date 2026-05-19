@@ -335,18 +335,6 @@ Validation is enforced at upload time. The full set is in the [Validation Rules]
 
 The following step-level fields are **not valid** on a `DECISION_TABLE` step (they belong to other step types): `conditionalNextSteps`, `transformations`, `parallelNextSteps`, `joinStep`, `jobType`, `delegateClass`, `retryCount`, `boundaryEvents`.
 
-#### Migration from 005
-
-The 007 redesign replaces the 005 shape outright (no auto-conversion). Field-level deltas:
-
-| 005 | 007 | Notes |
-|-----|-----|-------|
-| `rules[].then` (target step ID per rule) | **removed** | Rules produce outputs; routing moves to a downstream `DECISION`. |
-| `decisionTable.defaultNextStep` | **removed** | No-match is now a runtime failure (`DecisionTableNoRuleMatched`). Use a catch-all rule (empty `when`) for fallback. |
-| step-level `nextStep` (forbidden on DT) | **required** | The single linear successor; mirrors `TRANSFORMATION`. |
-| (no `hitPolicy` field) | `hitPolicy` (default `U`) | Selects how matched rules contribute to outputs. |
-| `rules[].outputs` (optional) | `rules[].outputs` (optional) | Unchanged encoding. |
-
 ---
 
 ### `TRANSFORMATION` — variable mutation

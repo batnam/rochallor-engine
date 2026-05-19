@@ -1,0 +1,310 @@
+{
+  "id": "LOS::loan-application-full",
+  "name": "Full Loan Application Workflow",
+  "description": "Validates, scores, and approves/rejects a loan application with parallel checks.",
+  "autoStartNextWorkflow": true,
+  "nextWorkflowId": "LOS::loan-disbursement-workflow",
+  "steps": [
+    {
+      "id": "validate-application",
+      "name": "Validate Application Data",
+      "type": "SERVICE_TASK",
+      "nextStep": "parallel-risk-checks",
+      "jobType": "validate-application",
+      "retryCount": 2
+    },
+    {
+      "id": "parallel-risk-checks",
+      "name": "Parallel Risk Checks",
+      "type": "PARALLEL_GATEWAY",
+      "parallelNextSteps": [
+        "credit-score-check",
+        "fraud-screening"
+      ],
+      "joinStep": "merge-risk-results"
+    },
+    {
+      "id": "credit-score-check",
+      "name": "Credit Score Check",
+      "type": "SERVICE_TASK",
+      "nextStep": "merge-risk-results",
+      "jobType": "credit-score",
+      "retryCount": 3
+    },
+    {
+      "id": "fraud-screening",
+      "name": "Fraud Screening",
+      "type": "SERVICE_TASK",
+      "nextStep": "merge-risk-results",
+      "jobType": "fraud-screen",
+      "retryCount": 3
+    },
+    {
+      "id": "merge-risk-results",
+      "name": "Merge Risk Results",
+      "type": "JOIN_GATEWAY",
+      "nextStep": "classify-risk-tier"
+    },
+    {
+      "id": "classify-risk-tier",
+      "name": "Classify Risk Tier",
+      "description": "Decision table: classify the application into a risk tier and assign indicative pricing.",
+      "type": "DECISION_TABLE",
+      "hitPolicy": "F",
+      "nextStep": "route-application",
+      "decisionTable": {
+        "rules": [
+          {
+            "when": {
+              "credit": "creditScore < 500"
+            },
+            "outputs": {
+              "riskTier": "HIGH",
+              "decisionReason": "Credit score below acceptable threshold",
+              "interestRatePct": 0
+            }
+          },
+          {
+            "when": {
+              "fraud": "fraudScore > 0.8"
+            },
+            "outputs": {
+              "riskTier": "HIGH",
+              "decisionReason": "Fraud signal above acceptable threshold",
+              "interestRatePct": 0
+            }
+          },
+          {
+            "when": {
+              "credit": "creditScore < 650"
+            },
+            "outputs": {
+              "riskTier": "MEDIUM",
+              "decisionReason": "Mid-range credit score, manual underwriting required",
+              "interestRatePct": 12.5
+            }
+          },
+          {
+            "when": {
+              "credit": "creditScore >= 750"
+            },
+            "outputs": {
+              "riskTier": "PREMIUM",
+              "decisionReason": "Excellent credit profile",
+              "interestRatePct": 6.5
+            }
+          },
+          {
+            "when": {},
+            "outputs": {
+              "riskTier": "STANDARD",
+              "decisionReason": "Standard credit profile",
+              "interestRatePct": 9
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "route-application",
+      "name": "Route Application",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#riskTier == 'HIGH'": "end-rejected",
+        "#riskTier == 'MEDIUM'": "manual-review-task",
+        "#riskTier == 'PREMIUM'": "auto-approve",
+        "#riskTier == 'STANDARD'": "auto-approve"
+      }
+    },
+    {
+      "id": "manual-review-task",
+      "name": "Manual Review by Underwriter",
+      "type": "USER_TASK",
+      "nextStep": "process-review-decision",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT48H",
+          "interrupting": false,
+          "targetStepId": "escalate-review"
+        }
+      ]
+    },
+    {
+      "id": "escalate-review",
+      "name": "Escalate Overdue Review",
+      "type": "SERVICE_TASK",
+      "nextStep": "end-escalated",
+      "jobType": "escalate-review"
+    },
+    {
+      "id": "process-review-decision",
+      "name": "Process Review Decision",
+      "type": "DECISION",
+      "conditionalNextSteps": {
+        "#reviewDecision == 'APPROVED'": "auto-approve",
+        "#reviewDecision == 'REJECTED'": "end-rejected"
+      }
+    },
+    {
+      "id": "auto-approve",
+      "name": "Auto-Approve Application",
+      "type": "SERVICE_TASK",
+      "nextStep": "end-approved",
+      "jobType": "approve-loan",
+      "retryCount": 3
+    },
+    {
+      "id": "end-approved",
+      "name": "Application Approved",
+      "type": "END"
+    },
+    {
+      "id": "end-rejected",
+      "name": "Application Rejected",
+      "type": "END"
+    },
+    {
+      "id": "end-escalated",
+      "name": "Review Escalated",
+      "type": "END"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "category": "LOAN_PROCESSING",
+    "tags": [
+      "loan",
+      "credit-check",
+      "fraud",
+      "manual-review"
+    ],
+    "complexity": "HIGH",
+    "workflowModeller": {
+      "layout": {
+        "validate-application": {
+          "x": 20.287577522229896,
+          "y": 56.862257150983396
+        },
+        "parallel-risk-checks": {
+          "x": 350,
+          "y": 75.26666666666667
+        },
+        "credit-score-check": {
+          "x": 537.177977468155,
+          "y": -81.61715677209487
+        },
+        "fraud-screening": {
+          "x": 525,
+          "y": 208.6
+        },
+        "merge-risk-results": {
+          "x": 861.4174155055814,
+          "y": 73.26991013933022
+        },
+        "classify-risk-tier": {
+          "x": 1033.9060219984249,
+          "y": 56.60000000000002
+        },
+        "route-application": {
+          "x": 1389.7589242081021,
+          "y": 67.60932334742158
+        },
+        "manual-review-task": {
+          "x": 1744.0558821609452,
+          "y": 71.33021096060585
+        },
+        "escalate-review": {
+          "x": 1742.7181900537769,
+          "y": 251.28975321654585
+        },
+        "process-review-decision": {
+          "x": 2197.7393541252172,
+          "y": 73.88130009608237
+        },
+        "auto-approve": {
+          "x": 1894.8997404849042,
+          "y": -296.9608469894715
+        },
+        "end-approved": {
+          "x": 1900.0318971397926,
+          "y": -460.2190833036616
+        },
+        "end-rejected": {
+          "x": 1323.0716702103368,
+          "y": 523.6341808739608
+        },
+        "end-escalated": {
+          "x": 1743.5819991873216,
+          "y": 396.11080476429396
+        }
+      },
+      "edgeHandles": {
+        "validate-application--sequential-->parallel-risk-checks": {
+          "sourceHandle": null,
+          "targetHandle": "in-c-left"
+        },
+        "parallel-risk-checks--parallel-->fraud-screening": {
+          "sourceHandle": "out-edge-bl",
+          "targetHandle": null
+        },
+        "parallel-risk-checks--parallel-->credit-score-check": {
+          "sourceHandle": "out-c-top",
+          "targetHandle": null
+        },
+        "fraud-screening--sequential-->merge-risk-results": {
+          "sourceHandle": null,
+          "targetHandle": "in-c-bottom"
+        },
+        "merge-risk-results--join-out-->classify-risk-tier": {
+          "sourceHandle": "out-c-right",
+          "targetHandle": null
+        },
+        "classify-risk-tier--sequential-->route-application": {
+          "sourceHandle": null,
+          "targetHandle": "in-c-left"
+        },
+        "route-application--conditional:#riskTier == 'STANDARD'-->auto-approve": {
+          "sourceHandle": "out-edge-tr",
+          "targetHandle": "in-bottom"
+        },
+        "route-application--conditional:#riskTier == 'PREMIUM'-->auto-approve": {
+          "sourceHandle": "out-edge-tl",
+          "targetHandle": null
+        },
+        "route-application--conditional:#riskTier == 'MEDIUM'-->manual-review-task": {
+          "sourceHandle": "out-c-right",
+          "targetHandle": null
+        },
+        "process-review-decision--conditional:#reviewDecision == 'APPROVED'-->auto-approve": {
+          "sourceHandle": "out-c-top",
+          "targetHandle": "in-right"
+        },
+        "process-review-decision--conditional:#reviewDecision == 'REJECTED'-->end-rejected": {
+          "sourceHandle": "branch:#reviewDecision == 'APPROVED'",
+          "targetHandle": "in-right"
+        },
+        "manual-review-task--boundary:0-->escalate-review": {
+          "sourceHandle": "out-bottom",
+          "targetHandle": "in-top"
+        },
+        "auto-approve--sequential-->end-approved": {
+          "sourceHandle": "out-top",
+          "targetHandle": "in-bottom"
+        },
+        "manual-review-task--sequential-->process-review-decision": {
+          "sourceHandle": "out",
+          "targetHandle": "in-c-left"
+        },
+        "route-application--conditional:#riskTier == 'HIGH'-->end-rejected": {
+          "sourceHandle": "branch:#riskTier == 'HIGH'",
+          "targetHandle": "in-top"
+        },
+        "escalate-review--sequential-->end-escalated": {
+          "sourceHandle": "out-bottom",
+          "targetHandle": "in-top"
+        }
+      }
+    }
+  }
+}

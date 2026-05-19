@@ -2,6 +2,11 @@
 
 **Module**: `github.com/batnam/rochallor-engine/workflow-sdk-go`
 
+> Looking for a step-by-step walkthrough that builds a real worker against a
+> chained workflow? See the
+> [Loan Origination Worker tutorial](./go-worker-tutorial.md), which annotates
+> the example in [`docs/example/go-rochallor-worker`](https://github.com/batnam/rochallor-engine/tree/main/docs/example/go-rochallor-worker).
+
 ## Key types
 
 | Package | Type / Function | Purpose |
