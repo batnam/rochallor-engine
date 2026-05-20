@@ -190,11 +190,25 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 
 // DispatchBoundaryStep routes an instance to targetStepID from a
 // non-interrupting TIMER boundary event (called by the boundary sweeper).
-func (s *Service) DispatchBoundaryStep(ctx context.Context, instanceID, targetStepID string) error {
+func (s *Service) DispatchBoundaryStep(ctx context.Context, instanceID, stepExecutionID, targetStepID string) error {
 	return s.db.RunInTx(ctx, "instance.dispatch_boundary", func(tx db.Tx) error {
 		inst, err := s.store.GetInstanceForUpdate(ctx, tx, instanceID)
 		if err != nil {
 			return fmt.Errorf("dispatch boundary: %w", err)
+		}
+		if inst.Status == InstanceStatusCompleted || inst.Status == InstanceStatusFailed || inst.Status == InstanceStatusCancelled {
+			return nil // already terminal — boundary event is a no-op
+		}
+		// Suppress firing when the parent step has already left RUNNING
+		// (COMPLETED/FAILED/SKIPPED). The instance FOR UPDATE serialises this
+		// read against CompleteJobAndAdvance / FailStep paths, so the status
+		// reflects the committed transition.
+		stepStatus, err := s.store.GetStepExecutionStatusByID(ctx, tx, stepExecutionID)
+		if err != nil {
+			return fmt.Errorf("dispatch boundary: %w", err)
+		}
+		if stepStatus != StepExecutionStatusRunning {
+			return nil
 		}
 		def, err := s.defRepo.GetVersion(ctx, inst.DefinitionID, inst.DefinitionVersion)
 		if err != nil {
@@ -216,6 +230,17 @@ func (s *Service) InterruptStepAndDispatchBoundary(ctx context.Context, instance
 		}
 		if inst.Status == InstanceStatusCompleted || inst.Status == InstanceStatusFailed || inst.Status == InstanceStatusCancelled {
 			return nil // already terminal — boundary event is a no-op
+		}
+
+		// Suppress when the parent step has already left RUNNING — otherwise
+		// the interrupting timer would FAIL a step_execution that has already
+		// transitioned to COMPLETED/FAILED/SKIPPED.
+		stepStatus, err := s.store.GetStepExecutionStatusByID(ctx, tx, stepExecutionID)
+		if err != nil {
+			return fmt.Errorf("interrupt boundary: %w", err)
+		}
+		if stepStatus != StepExecutionStatusRunning {
+			return nil
 		}
 
 		interruptedStepID, err := s.store.GetStepExecutionStepID(ctx, tx, stepExecutionID)

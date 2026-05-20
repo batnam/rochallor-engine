@@ -118,6 +118,11 @@ type Store interface {
 	// (transactional variant).
 	GetStepExecutionStepID(ctx context.Context, tx db.Tx, stepExecID string) (string, error)
 
+	// GetStepExecutionStatusByID returns the lifecycle status of a
+	// step_execution by id (transactional). Used by the boundary dispatch path
+	// to suppress firing when the parent step has already left RUNNING.
+	GetStepExecutionStatusByID(ctx context.Context, tx db.Tx, stepExecID string) (StepExecutionStatus, error)
+
 	// InsertJob creates an UNLOCKED job row with the supplied payload.
 	InsertJob(ctx context.Context, tx db.Tx,
 		id, instanceID, stepExecID, jobType string, retriesRemaining int, payload []byte,

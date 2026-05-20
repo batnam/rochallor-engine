@@ -129,6 +129,7 @@ func run() error {
 	// ── Background workers ────────────────────────────────────────────────────
 	job.StartLeaseSweeper(ctx, dbConn, jobStore, dispatchRT.Dispatcher(), 15*time.Second)
 	boundary.StartTimerSweeper(ctx, dbConn, bndStore, instSvc, 5*time.Second)
+	boundary.StartBoundaryHousekeeper(ctx, dbConn, bndStore, 1*time.Hour, 24*time.Hour)
 	// ── REST server ───────────────────────────────────────────────────────────
 	restHandler := rest.NewRouter(dbConn, jobStore, defRepo, instSvc, dispatchRT.Dispatcher(), cfg.DispatchMode)
 	restServer := &http.Server{

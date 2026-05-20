@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -39,6 +40,22 @@ func (s *BoundaryStore) FetchAndMarkFiredBoundaryEvents(ctx context.Context) ([]
 		due = append(due, e)
 	}
 	return due, rows.Err()
+}
+
+func (s *BoundaryStore) DeleteObsoleteBoundaryEvents(ctx context.Context, retention time.Duration) (int64, error) {
+	tag, err := s.pool.Exec(ctx,
+		`DELETE FROM boundary_event_schedule b
+		 WHERE (b.fired = true AND b.fire_at < now() - $1::interval)
+		    OR (b.fired = false AND EXISTS (
+		           SELECT 1 FROM step_execution se
+		           WHERE se.id = b.step_execution_id AND se.status <> 'RUNNING'
+		       ))`,
+		retention,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("delete obsolete boundary events: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 // Compile-time interface assertion.

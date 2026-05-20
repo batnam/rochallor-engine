@@ -353,6 +353,20 @@ func (m *mockStore) GetLatestStepExecutionStatus(ctx context.Context, _ db.Tx, i
 	return StepExecutionStatus(status), nil
 }
 
+func (m *mockStore) GetStepExecutionStatusByID(ctx context.Context, _ db.Tx, stepExecID string) (StepExecutionStatus, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key, ok := m.stepExecsByID[stepExecID]
+	if !ok {
+		return "", errors.New("step_execution not found")
+	}
+	status, ok := m.stepExecsByStep[key]
+	if !ok {
+		return "", errors.New("step_execution status not found")
+	}
+	return StepExecutionStatus(status), nil
+}
+
 func (m *mockStore) ReactivateInstance(ctx context.Context, _ db.Tx, instanceID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

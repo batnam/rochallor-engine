@@ -429,6 +429,17 @@ func (s *InstanceStore) GetStepExecutionStepID(ctx context.Context, tx db.Tx, st
 	return stepID, nil
 }
 
+func (s *InstanceStore) GetStepExecutionStatusByID(ctx context.Context, tx db.Tx, stepExecID string) (instance.StepExecutionStatus, error) {
+	var status string
+	if err := Unwrap(tx).QueryRow(ctx,
+		`SELECT status FROM step_execution WHERE id = $1`,
+		stepExecID,
+	).Scan(&status); err != nil {
+		return "", fmt.Errorf("get step_execution status: %w", err)
+	}
+	return instance.StepExecutionStatus(status), nil
+}
+
 func (s *InstanceStore) InsertJob(ctx context.Context, tx db.Tx,
 	id, instanceID, stepExecID, jobType string, retriesRemaining int, payload []byte,
 ) error {

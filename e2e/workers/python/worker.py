@@ -66,6 +66,16 @@ def main() -> None:
     registry.register("python-before-wait", lambda ctx: {"beforeWait": "done"})
     registry.register("python-timer-fired", lambda ctx: {"timerFired": "done"})
 
+    # timer-suppressed-after-complete: fast-noop returns immediately so the
+    # parent step transitions to COMPLETED long before the PT2S timer fires.
+    # If the boundary still fires, should-not-fire raises and the scenario
+    # detects the bug via either the worker error or the history check.
+    registry.register("python-fast-noop", lambda ctx: {"fastNoop": "done"})
+
+    def _py_should_not_fire(ctx):
+        raise Exception("boundary timer fired after parent step COMPLETED — fix regression")
+    registry.register("python-should-not-fire", _py_should_not_fire)
+
     # Retry-fail scenario handler: fails on first attempt (retriesRemaining == 2 == retryCount)
     def _py_flaky(ctx: dict) -> dict:
         if ctx.get("retriesRemaining", 0) == 2:

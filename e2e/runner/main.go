@@ -176,6 +176,7 @@ func runSDKSuite(transport string, client scenarios.ClientIface, sdk, scenariosD
 		{"definition-api", scenarios.RunDefinitionAPI},
 		{"parallel-user-task", scenarios.RunParallelUserTask},
 		{"timer-interrupting", scenarios.RunTimerInterrupting},
+		{"timer-suppressed-after-complete", scenarios.RunTimerSuppressedAfterComplete},
 	}
 
 	var results []Result

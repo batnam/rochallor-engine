@@ -19,8 +19,10 @@ const timerSweeperLockKey int64 = 0x6C756F6E_676C7473 // "luonglts" low bits
 // import cycles between the boundary and instance packages).
 type InstanceDispatcher interface {
 	// DispatchBoundaryStep spawns targetStepID alongside running work
-	// (non-interrupting path).
-	DispatchBoundaryStep(ctx context.Context, instanceID, targetStepID string) error
+	// (non-interrupting path). stepExecutionID identifies the parent step the
+	// boundary is attached to so the dispatcher can suppress firing when it
+	// has already left RUNNING.
+	DispatchBoundaryStep(ctx context.Context, instanceID, stepExecutionID, targetStepID string) error
 	// InterruptStepAndDispatchBoundary cancels the running step_execution
 	// identified by stepExecutionID, cancels its job, then dispatches
 	// targetStepID (interrupting path).
@@ -66,7 +68,7 @@ func sweepTimers(ctx context.Context, dbConn db.DB, store BoundaryStore, svc Ins
 		if e.Interrupting {
 			dispatchErr = svc.InterruptStepAndDispatchBoundary(ctx, e.InstanceID, e.StepExecutionID, e.TargetStepID)
 		} else {
-			dispatchErr = svc.DispatchBoundaryStep(ctx, e.InstanceID, e.TargetStepID)
+			dispatchErr = svc.DispatchBoundaryStep(ctx, e.InstanceID, e.StepExecutionID, e.TargetStepID)
 		}
 		if dispatchErr != nil {
 			slog.Error("timer sweeper: dispatch failed",

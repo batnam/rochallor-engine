@@ -1,0 +1,41 @@
+{
+  "id": "e2e-python-timer-suppressed-after-complete",
+  "name": "E2E Python Timer Suppressed After Step Complete",
+  "steps": [
+    {
+      "id": "python-fast-noop",
+      "name": "Fast Noop",
+      "type": "SERVICE_TASK",
+      "jobType": "python-fast-noop",
+      "retryCount": 0,
+      "nextStep": "python-park",
+      "boundaryEvents": [
+        {
+          "type": "TIMER",
+          "duration": "PT2S",
+          "interrupting": false,
+          "targetStepId": "python-should-not-fire"
+        }
+      ]
+    },
+    {
+      "id": "python-park",
+      "name": "Park Until Signal",
+      "type": "WAIT",
+      "nextStep": "end"
+    },
+    {
+      "id": "python-should-not-fire",
+      "name": "Should Not Fire",
+      "type": "SERVICE_TASK",
+      "jobType": "python-should-not-fire",
+      "retryCount": 0,
+      "nextStep": "end"
+    },
+    {
+      "id": "end",
+      "name": "End",
+      "type": "END"
+    }
+  ]
+}
