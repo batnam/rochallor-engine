@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "io.github.batnam"
-version = "1.0.0"
+version = "1.0.1"
 
 java {
     toolchain {
@@ -21,7 +21,7 @@ java {
 // ──────────────────────────────────────────────────────────────────────────────
 // Dependency versions
 // ──────────────────────────────────────────────────────────────────────────────
-val grpcVersion = "1.71.0"
+val grpcVersion = "1.75.0"
 val protobufVersion = "4.30.2"
 val jacksonVersion = "2.18.3"
 val micrometerVersion = "1.14.5"
@@ -65,8 +65,8 @@ dependencies {
     compileOnly("org.apache.tomcat:annotations-api:6.0.53") // javax.annotation for generated stubs
 
     // Protobuf
-    implementation("com.google.protobuf:protobuf-java:3.25.3")
-    implementation("org.apache.kafka:kafka-clients:3.7.0")
+    implementation("com.google.protobuf:protobuf-java:$protobufVersion")
+    implementation("org.apache.kafka:kafka-clients:3.9.2")
     implementation("com.google.protobuf:protobuf-java-util:$protobufVersion")
 
     // JSON
