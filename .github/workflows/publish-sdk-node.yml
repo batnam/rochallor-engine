@@ -36,6 +36,9 @@ jobs:
         working-directory: workflow-sdk-node
         run: npm run build
 
+      - name: Upgrade npm for Trusted Publishing (OIDC)
+        run: npm install -g npm@latest
+
       - name: Set version and publish
         working-directory: workflow-sdk-node
         run: |
@@ -46,8 +49,6 @@ jobs:
           else
             npm publish --access public
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   github-release:
     name: Create GitHub Release
