@@ -41,12 +41,12 @@ docker compose -f docker-compose.quickstart.yml up -d
 
 Services started:
 
-| Service | URL |
-|---------|-----|
-| Workflow Modeller | http://localhost:3000 |
-| Engine REST API | http://localhost:8080 |
-| gRPC | localhost:9090 |
-| Prometheus metrics | http://localhost:9091/metrics |
+| Service | URL                            |
+|---------|--------------------------------|
+| Workflow Modeller | http://localhost:13000         |
+| Engine REST API | http://localhost:18080         |
+| gRPC | localhost:19090                |
+| Prometheus metrics | http://localhost:19091/metrics |
 
 PostgreSQL data persists in a named Docker volume.
 

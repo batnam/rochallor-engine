@@ -6,10 +6,10 @@
 # Usage:
 #   docker compose -f docker-compose.quickstart.yml up
 #
-# Modeller: http://localhost:3000
-# Engine:   http://localhost:8080
-# gRPC:     localhost:9090
-# Metrics:  http://localhost:9091/metrics
+# Modeller: http://localhost:13000
+# Engine:   http://localhost:18080
+# gRPC:     localhost:19090
+# Metrics:  http://localhost:19091/metrics
 
 services:
   postgres:
@@ -19,6 +19,8 @@ services:
       POSTGRES_USER: workflow
       POSTGRES_PASSWORD: workflow
       POSTGRES_DB: workflow
+    ports:
+      - "5434:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -35,9 +37,9 @@ services:
       WE_DISPATCH_MODE: polling
       WE_LOG_LEVEL: info
     ports:
-      - "8080:8080"
-      - "9090:9090"
-      - "9091:9091"
+      - "18080:8080"
+      - "19090:9090"
+      - "19091:9091"
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,7 +53,7 @@ services:
     image: ghcr.io/batnam/rochallor-modeller:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "13000:3000"
 
 volumes:
   pgdata:
