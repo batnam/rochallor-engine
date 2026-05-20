@@ -254,6 +254,64 @@ The engine's `complete_job` / `fail_job` calls are already idempotent — a seco
 
 ---
 
+### TLS / SASL (production)
+
+The basic config above connects to brokers in **plaintext with no authentication**. For production, pass standard librdkafka properties through `extra_kafka_config` — anything set there is merged into the consumer config (and overrides defaults). Full key reference: [librdkafka CONFIGURATION.md](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
+
+```python
+import os
+from workflow_sdk.runner.kafka_runner import KafkaRunner
+
+# SASL/SCRAM-SHA-512 over TLS — common for MSK, Confluent Cloud, Aiven, Redpanda
+runner = KafkaRunner(
+    worker_id="py-worker-1",
+    brokers="kafka-1.prod:9093,kafka-2.prod:9093",
+    client=client,
+    registry=registry,
+    extra_kafka_config={
+        "security.protocol": "SASL_SSL",
+        "sasl.mechanism":    "SCRAM-SHA-512",
+        "sasl.username":     os.environ["KAFKA_SASL_USERNAME"],
+        "sasl.password":     os.environ["KAFKA_SASL_PASSWORD"],
+        # Optional — only when the broker uses a private CA
+        # "ssl.ca.location": "/etc/kafka/ca.pem",
+    },
+)
+runner.run()
+```
+
+Other mechanisms:
+
+```python
+# SASL/PLAIN over TLS
+extra_kafka_config = {
+    "security.protocol": "SASL_SSL",
+    "sasl.mechanism":    "PLAIN",
+    "sasl.username":     "...",
+    "sasl.password":     "...",
+}
+
+# SASL/OAUTHBEARER (AWS MSK IAM, Azure Event Hubs, custom IdP)
+# Use confluent-kafka's OAuthBearer token refresh callback.
+extra_kafka_config = {
+    "security.protocol":     "SASL_SSL",
+    "sasl.mechanism":        "OAUTHBEARER",
+    "oauth_cb":              lambda cfg: (fetch_access_token(), time.time() + 900),
+}
+
+# Mutual TLS only (no SASL)
+extra_kafka_config = {
+    "security.protocol":      "SSL",
+    "ssl.certificate.location": "/etc/kafka/client.crt",
+    "ssl.key.location":         "/etc/kafka/client.key",
+    "ssl.ca.location":          "/etc/kafka/ca.pem",
+}
+```
+
+Plaintext brokers should be restricted to local dev (`docker compose`) — never deploy without `SASL_SSL` (or `SSL` with mutual TLS) on a shared network.
+
+---
+
 ### KafkaRunner constructor reference
 
 | Parameter | Type | Default | Description |
@@ -263,7 +321,7 @@ The engine's `complete_job` / `fail_job` calls are already idempotent — a seco
 | `client` | `EngineClient` | *(required)* | REST client for completion callbacks. |
 | `registry` | `HandlerRegistry` | *(required)* | Maps job types to handlers. |
 | `dedup_window_seconds` | float | `600.0` | Window (seconds) for in-memory deduplication (default 10m). |
-| `extra_kafka_config` | dict | `None` | Optional overrides for the Kafka Consumer (passed to `confluent_kafka`). |
+| `extra_kafka_config` | dict | `None` | Overrides merged into the Kafka Consumer config — set `security.protocol`, `sasl.*`, `ssl.*` here for production. |
 
 ---
 

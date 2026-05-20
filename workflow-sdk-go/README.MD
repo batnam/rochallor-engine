@@ -1,35 +1,36 @@
-# Go SDK
+# Node / TypeScript SDK
 
-**Module**: `github.com/batnam/rochallor-engine/workflow-sdk-go`
+**Package**: `rochallor-workflow-sdk-node` ([npm](https://www.npmjs.com/package/rochallor-workflow-sdk-node))
 
 ## Key types
 
-| Package | Type / Function | Purpose |
-|---------|----------------|---------|
-| `client` | `NewRest(baseURL, workerID)` | REST client (default) |
-| `client` | `NewGrpc(target, workerID, ...opts)` | gRPC client |
-| `client` | `EngineClient` interface | Transport abstraction |
-| `handler` | `New()` | Create a handler registry |
-| `handler` | `Registry.Register(jobType, Handler)` | Register a handler |
-| `handler` | `JobContext` | Passed to every handler — carries `JobID`, `InstanceID`, `JobType`, `Variables`, `RetriesRemaining` |
-| `handler` | `Result{VariablesToSet}` | Return value — variables merged into the instance on completion |
-| `retry` | `NonRetryable{Cause}` | Wrap a handler error to skip the retry budget |
-| `runner` | `New(Config, engine, registry)` | Create a runner |
-| `runner` | `Config{WorkerID, Parallelism, PollInterval}` | Runner settings (defaults: 64 goroutines, 500 ms poll) |
-| `runner` | `Runner.Run(ctx)` | Start the loop; blocks until `ctx` is cancelled |
+| Module | Type | Purpose |
+|--------|------|---------|
+| `src/client/rest.ts` | `RestEngineClient(baseUrl)` | REST client using `undici` |
+| `src/client/grpc.ts` | `GrpcEngineClient(target, credentials?)` | gRPC client using `@grpc/grpc-js` |
+| `src/client/types.ts` | `EngineClient` interface | Transport abstraction |
+| `src/client/types.ts` | `Job` | Job record returned by `pollJobs` |
+| `src/handler/registry.ts` | `HandlerRegistry` | Maps `jobType` strings to `Handler` functions |
+| `src/handler/registry.ts` | `JobContext` | Passed to every handler — `jobId`, `instanceId`, `jobType`, `retriesRemaining`, `variables` |
+| `src/handler/registry.ts` | `HandlerResult` | `{ variablesToSet?: Record<string, unknown> }` |
+| `src/handler/registry.ts` | `Handler` | `(ctx: JobContext) => Promise<HandlerResult>` |
+| `src/handler/registry.ts` | `NonRetryableError` | Throw to bypass the retry budget |
+| `src/runner/runner.ts` | `Runner(engine, registry, config)` | Poll/dispatch loop |
+| `src/runner/runner.ts` | `RunnerConfig` | `{ workerId, concurrency?, pollIntervalMs? }` |
+| `src/runner/runner.ts` | `Runner.run(signal)` | Async; resolves when `signal.aborted` and in-flight jobs drain |
 
 ---
 
 ## How the runner works
 
-`handler.New()` + `registry.Register(...)` just build a `jobType → function` map in memory — no connection, no I/O. The `Runner` is what drives everything:
+`new HandlerRegistry()` + `registry.register(...)` just build a `jobType → Handler` map in memory — no connection, no I/O. The `Runner` is what drives everything:
 
-1. A ticker fires every `PollInterval` (default 500 ms) and calls `POST /v1/jobs/poll`.
+1. A `setInterval` loop fires every `pollIntervalMs` (default 500 ms) and calls `POST /v1/jobs/poll`.
 2. The engine claims available jobs atomically with `FOR UPDATE SKIP LOCKED` and returns them.
-3. Each job is dispatched to a goroutine (bounded by `Parallelism`, default 64).
-4. The goroutine calls your registered handler, then calls `CompleteJob` or `FailJob` based on the result.
+3. Each job is dispatched as an async task (bounded by `concurrency`, default 64 in-flight promises).
+4. The task calls your registered handler, then calls `completeJob` or `failJob` based on the result.
 
-**Error handling**: return a plain `error` → `FailJob(retryable=true)` → engine retries up to `retryCount`. Wrap with `&retry.NonRetryable{Cause: err}` → `FailJob(retryable=false)` → fails immediately regardless of retry budget.
+**Error handling**: throw a plain `Error` → `failJob(retryable=true)` → engine retries up to `retryCount`. Throw `NonRetryableError` → `failJob(retryable=false)` → fails immediately regardless of retry budget.
 
 For the full model (sequence diagram, retry flow, graceful shutdown), see [architecture.md — Worker polling model](../architecture.md#worker-polling-model).
 
@@ -37,173 +38,161 @@ For the full model (sequence diagram, retry flow, graceful shutdown), see [archi
 
 ## Minimal example — REST transport
 
-```go
-package main
+```typescript
+import { RestEngineClient } from './src/client/rest.js'
+import { HandlerRegistry } from './src/handler/registry.js'
+import { Runner } from './src/runner/runner.js'
 
-import (
-    "context"
-    "os/signal"
-    "syscall"
+const engine   = new RestEngineClient('http://localhost:8080')
+const registry = new HandlerRegistry()
 
-    "github.com/batnam/rochallor-engine/workflow-sdk-go/client"
-    "github.com/batnam/rochallor-engine/workflow-sdk-go/handler"
-    "github.com/batnam/rochallor-engine/workflow-sdk-go/runner"
-)
+registry.register('process-order', async ctx => {
+  const orderId = ctx.variables['orderId'] as string
+  // ... process order ...
+  return { variablesToSet: { processed: true, orderId } }
+})
 
-func main() {
-    engine := client.NewRest("http://localhost:8080", "go-worker-1")
+const controller = new AbortController()
+process.on('SIGINT',  () => controller.abort())
+process.on('SIGTERM', () => controller.abort())
 
-    registry := handler.New()
-    registry.Register("process-order", func(ctx context.Context, job handler.JobContext) (handler.Result, error) {
-        // Read input variables
-        orderID, _ := job.Variables["orderId"].(string)
-        _ = orderID // call your business logic here
-
-        // Return variables to merge into the workflow instance
-        return handler.Result{VariablesToSet: map[string]any{"processed": true}}, nil
-    })
-
-    r := runner.New(runner.Config{WorkerID: "go-worker-1"}, engine, registry)
-
-    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-    defer stop()
-
-    r.Run(ctx) // blocks until SIGINT / SIGTERM
-}
+const runner = new Runner(engine, registry, { workerId: 'node-worker-1' })
+await runner.run(controller.signal)
 ```
 
 ---
 
 ## Full demo — multiple handlers, non-retryable errors, gRPC transport
 
-```go
-package main
+```typescript
+import * as grpc from '@grpc/grpc-js'
+import { GrpcEngineClient }  from './src/client/grpc.js'
+import { HandlerRegistry, NonRetryableError } from './src/handler/registry.js'
+import { Runner } from './src/runner/runner.js'
 
-import (
-    "context"
-    "errors"
-    "fmt"
-    "log/slog"
-    "os/signal"
-    "syscall"
-    "time"
+// Use gRPC transport — swap for new RestEngineClient('http://...') to use REST
+const engine   = new GrpcEngineClient('localhost:9090', grpc.credentials.createInsecure())
+const registry = new HandlerRegistry()
 
-    "github.com/batnam/rochallor-engine/workflow-sdk-go/client"
-    "github.com/batnam/rochallor-engine/workflow-sdk-go/handler"
-    "github.com/batnam/rochallor-engine/workflow-sdk-go/retry"
-    "github.com/batnam/rochallor-engine/workflow-sdk-go/runner"
-)
+// Handler: validate-application
+registry.register('validate-application', async ctx => {
+  const applicantId = ctx.variables['applicantId'] as string | undefined
+  if (!applicantId) {
+    // NonRetryableError — engine will not retry regardless of retryCount
+    throw new NonRetryableError('applicantId is required')
+  }
+  console.log(`Validating applicant ${applicantId} (retries left: ${ctx.retriesRemaining})`)
+  // ... call validation service ...
+  return {
+    variablesToSet: {
+      validationPassed: true,
+      validatedAt: new Date().toISOString(),
+    },
+  }
+})
 
-func main() {
-    // Use gRPC transport — swap for client.NewRest to use REST
-    engine, err := client.NewGrpc("localhost:9090", "go-worker-1")
-    if err != nil {
-        slog.Error("dial failed", "err", err)
-        return
-    }
-    defer engine.Close()
+// Handler: credit-score
+// Any thrown Error (other than NonRetryableError) is treated as retryable.
+registry.register('credit-score', async ctx => {
+  const applicantId = ctx.variables['applicantId'] as string
+  const score = await fetchCreditScore(applicantId)  // may throw on transient error
+  return { variablesToSet: { creditScore: score } }
+})
 
-    registry := handler.New()
+// Handler: send-notification (no output variables)
+registry.register('send-notification', async ctx => {
+  const email = ctx.variables['email'] as string
+  console.log(`Sending notification to ${email}`)
+  // ... send email ...
+  return { variablesToSet: { notificationSent: true } }
+})
 
-    // Handler: validate-application
-    // Returns a non-retryable error when the input is permanently invalid.
-    registry.Register("validate-application", func(ctx context.Context, job handler.JobContext) (handler.Result, error) {
-        applicantID, ok := job.Variables["applicantId"].(string)
-        if !ok || applicantID == "" {
-            // NonRetryable — engine will not retry regardless of retryCount
-            return handler.Result{}, &retry.NonRetryable{
-                Cause: errors.New("applicantId is required and must be a string"),
-            }
-        }
-        slog.Info("validating application", "applicantId", applicantID, "attempt", job.Attempt)
-        // ... call validation service ...
-        return handler.Result{VariablesToSet: map[string]any{
-            "validationPassed": true,
-            "validatedAt":      time.Now().UTC().Format(time.RFC3339),
-        }}, nil
-    })
+const controller = new AbortController()
+process.on('SIGINT',  () => controller.abort())
+process.on('SIGTERM', () => controller.abort())
 
-    // Handler: credit-score
-    // Returns a retryable error on transient failures (network, timeout).
-    registry.Register("credit-score", func(ctx context.Context, job handler.JobContext) (handler.Result, error) {
-        applicantID := job.Variables["applicantId"].(string)
-        score, err := fetchCreditScore(ctx, applicantID) // hypothetical call
-        if err != nil {
-            // Returning a plain error is retryable — runner calls FailJob(retryable=true)
-            return handler.Result{}, fmt.Errorf("credit bureau unavailable: %w", err)
-        }
-        return handler.Result{VariablesToSet: map[string]any{"creditScore": score}}, nil
-    })
+const runner = new Runner(engine, registry, {
+  workerId:      'node-worker-1',
+  concurrency:   32,    // parallel async dispatches
+  pollIntervalMs: 250,
+})
 
-    // Handler: send-notification
-    registry.Register("send-notification", func(ctx context.Context, job handler.JobContext) (handler.Result, error) {
-        email, _ := job.Variables["email"].(string)
-        slog.Info("sending notification", "email", email, "jobId", job.JobID)
-        // ... send email ...
-        return handler.Result{VariablesToSet: map[string]any{"notificationSent": true}}, nil
-    })
+console.log('Worker starting')
+await runner.run(controller.signal)
+console.log('Worker stopped')
 
-    r := runner.New(runner.Config{
-        WorkerID:     "go-worker-1",
-        Parallelism:  32,               // concurrent goroutines
-        PollInterval: 250 * time.Millisecond,
-    }, engine, registry)
-
-    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-    defer stop()
-
-    slog.Info("worker starting")
-    r.Run(ctx)
-    slog.Info("worker stopped")
+async function fetchCreditScore(_applicantId: string): Promise<number> {
+  return 720  // placeholder
 }
+```
 
-func fetchCreditScore(_ context.Context, _ string) (int, error) {
-    return 720, nil // placeholder
-}
+---
+
+## Upload a definition from Node
+
+```typescript
+import { RestEngineClient } from './src/client/rest.js'
+
+const client = new RestEngineClient('http://localhost:8080')
+
+// The Node client exposes pollJobs / completeJob / failJob (worker interface).
+// Use the REST API directly for admin operations (upload, start instance, etc.):
+const resp = await fetch('http://localhost:8080/v1/definitions', {
+  method:  'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    id:    'greet-workflow',
+    name:  'Greet Workflow',
+    steps: [
+      { id: 'say-hello', name: 'Say Hello', type: 'SERVICE_TASK',
+        jobType: 'greet', nextStep: 'end' },
+      { id: 'end', name: 'End', type: 'END' },
+    ],
+  }),
+})
+const definition = await resp.json()
+console.log('Uploaded:', definition.id, 'v' + definition.version)
 ```
 
 ---
 
 ## Kafka Dispatch (Opt-In)
 
-The Go SDK supports an alternative, push-based dispatch mode via Kafka. This mode provides higher throughput and lower latency than polling.
+The Node.js SDK supports push-based job dispatch via Kafka for high-scale environments.
 
 ### Usage
 
-```go
-import (
-    "github.com/batnam/rochallor-engine/workflow-sdk-go/kafkarunner"
+```typescript
+import { KafkaRunner } from './src/runner/kafka_runner.js'
+
+const runner = new KafkaRunner(
+  {
+    workerId: 'node-worker-1',
+    brokers: ['localhost:9092'],
+  },
+  engine,
+  registry
 )
 
-func main() {
-    // ... setup engine client and registry as before ...
-
-    r := kafkarunner.New(kafkarunner.Config{
-        WorkerID:    "go-worker-1",
-        SeedBrokers: "localhost:9092",
-        JobTypes:    []string{"process-order"},
-    }, engine, registry)
-
-    r.Run(ctx)
-}
+await runner.start()
 ```
 
 ### At-least-once delivery and idempotent handlers
 
-`kafkarunner` delivers jobs with **at-least-once** semantics. An in-process dedup window (default 10 min) absorbs most duplicates transparently — but a handler **can** be invoked more than once for the same `JobID` when:
+`KafkaRunner` delivers jobs with **at-least-once** semantics. An in-process dedup window (default 10 min) absorbs most duplicates transparently — but a handler **can** be invoked more than once for the same `jobId` when:
 
-- The relay was down longer than `DedupWindow` before republishing.
+- The relay was down longer than `dedupWindowMs` before republishing.
 - This runner restarted between the original message and a relay-republished duplicate.
 
-**Handlers must be idempotent.** Use `job.JobID` as the idempotency key for every external side-effect:
+**Handlers must be idempotent.** Use `job.jobId` as the idempotency key for every external side-effect:
 
-```go
-registry.Register("send-invoice", func(ctx context.Context, job handler.JobContext) (handler.Result, error) {
-    // Guard: skip if this JobID was already processed.
-    if sent, _ := db.InvoiceAlreadySent(ctx, job.JobID); sent {
-        return handler.Result{}, nil
-    }
-    return handler.Result{}, sendInvoice(ctx, job.Variables, job.JobID)
+```typescript
+registry.register('send-invoice', async (job) => {
+  // Guard: skip if this jobId was already processed.
+  if (await db.invoiceAlreadySent(job.jobId)) {
+    return {}
+  }
+  return sendInvoiceToCustomer(job.variables, { idempotencyKey: job.jobId })
 })
 ```
 
@@ -212,24 +201,21 @@ Common patterns:
 | Side-effect | Idempotency approach |
 |-------------|----------------------|
 | DB write | Upsert on a `job_id` unique column or check-before-insert |
-| HTTP call | Pass `job.JobID` as `Idempotency-Key` header (Stripe, Adyen, etc.) |
+| HTTP call | Pass `job.jobId` as `Idempotency-Key` header (Stripe, Adyen, etc.) |
 | Email / push | Insert into `notifications_sent(job_id)` with UNIQUE; skip if row exists |
-| File write | Write to `<job_id>.tmp`, rename; check existence before starting |
 
-The engine's `CompleteJob` / `FailJob` calls are already idempotent — a second call with the same `JobID` is a no-op. Only your external side-effects need to be guarded.
+The engine's `completeJob` / `failJob` calls are already idempotent — a second call with the same `jobId` is a no-op. Only your external side-effects need to be guarded.
 
 ---
 
-### Kafka Configuration Reference
-
-When using `kafkarunner`, the following configuration fields are available:
+### KafkaRunner configuration reference
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `WorkerID` | string | *(required)* | Unique identifier for this worker. |
-| `SeedBrokers` | string | *(required)* | Comma-separated list of brokers (e.g. `localhost:9092`). |
-| `JobTypes` | `[]string` | *(required)* | List of job types to handle. |
-| `DedupWindow` | `time.Duration` | `10m` | Window for in-memory deduplication of Kafka messages. |
+| `workerId` | string | *(required)* | Unique identifier for this worker. |
+| `brokers` | string[] | *(required)* | Array of Kafka broker addresses. |
+| `clientId` | string | `workerId` | Kafka client identifier. |
+| `dedupWindowMs` | number | `600000` | Window (ms) for in-memory deduplication (default 10m). |
 
 ---
 
@@ -237,6 +223,6 @@ When using `kafkarunner`, the following configuration fields are available:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `WorkerID` | string | *(required)* | Unique identifier for this worker process. |
-| `Parallelism` | int | `64` | Maximum concurrent in-flight job goroutines. |
-| `PollInterval` | `time.Duration` | `500ms` | Interval between poll rounds when the queue is empty. |
+| `workerId` | string | *(required)* | Unique identifier for this worker process. |
+| `concurrency` | number | `64` | Maximum parallel in-flight async dispatches. |
+| `pollIntervalMs` | number | `500` | Milliseconds to sleep between poll rounds when the queue is empty. |

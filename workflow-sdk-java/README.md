@@ -194,6 +194,67 @@ public class KafkaWorker {
 }
 ```
 
+### TLS / SASL (production)
+
+The basic config above connects to brokers in **plaintext with no authentication**. For production, pass standard Kafka client properties through the `extraKafkaProps` argument — anything set there is merged into the consumer config (and overrides defaults).
+
+```java
+import org.apache.kafka.clients.CommonClientConfigs;
+import org.apache.kafka.common.config.SaslConfigs;
+import org.apache.kafka.common.config.SslConfigs;
+
+import java.util.Properties;
+import com.batnam.workflow.sdk.runner.KafkaRunner;
+
+// SASL/SCRAM-SHA-512 over TLS — common for MSK, Confluent Cloud, Aiven, Redpanda
+var props = new Properties();
+props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
+props.put(SaslConfigs.SASL_MECHANISM,                   "SCRAM-SHA-512");
+props.put(SaslConfigs.SASL_JAAS_CONFIG,
+    "org.apache.kafka.common.security.scram.ScramLoginModule required "
+    + "username=\"" + System.getenv("KAFKA_SASL_USERNAME") + "\" "
+    + "password=\"" + System.getenv("KAFKA_SASL_PASSWORD") + "\";");
+// Optional — needed only when the broker uses a private CA
+props.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, "/etc/kafka/truststore.jks");
+props.put(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, System.getenv("KAFKA_TRUSTSTORE_PASSWORD"));
+
+var runner = new KafkaRunner(
+    "java-worker-1",
+    "kafka-1.prod:9093,kafka-2.prod:9093",
+    client,
+    registry,
+    props
+);
+runner.start();
+```
+
+Other mechanisms:
+
+```java
+// SASL/PLAIN over TLS
+props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
+props.put(SaslConfigs.SASL_MECHANISM, "PLAIN");
+props.put(SaslConfigs.SASL_JAAS_CONFIG,
+    "org.apache.kafka.common.security.plain.PlainLoginModule required "
+    + "username=\"...\" password=\"...\";");
+
+// SASL/OAUTHBEARER — e.g. AWS MSK IAM via aws-msk-iam-auth, Azure Event Hubs
+props.put(SaslConfigs.SASL_MECHANISM, "OAUTHBEARER");
+props.put(SaslConfigs.SASL_JAAS_CONFIG, "software.amazon.msk.auth.iam.IAMLoginModule required;");
+props.put(SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS,
+    "software.amazon.msk.auth.iam.IAMClientCallbackHandler");
+
+// Mutual TLS only (no SASL)
+props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SSL");
+props.put(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, "/etc/kafka/keystore.jks");
+props.put(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, "...");
+props.put(SslConfigs.SSL_KEY_PASSWORD_CONFIG,       "...");
+```
+
+Plaintext brokers should be restricted to local dev (`docker compose`) — never deploy without `SASL_SSL` (or `SSL` with mutual TLS) on a shared network.
+
+---
+
 ### KafkaRunner constructor reference
 
 | Parameter | Type | Default | Description |
@@ -202,7 +263,7 @@ public class KafkaWorker {
 | `brokers` | String | *(required)* | Comma-separated list of Kafka brokers. |
 | `engine` | `EngineClient` | *(required)* | REST or gRPC client for completion callbacks. |
 | `registry` | `HandlerRegistry` | *(required)* | Maps job types to handlers. |
-| `extraKafkaProps` | `Properties` | `null` | Optional overrides for the Kafka Consumer. |
+| `extraKafkaProps` | `Properties` | `null` | Overrides merged into the Kafka Consumer config — pass `security.protocol`, `sasl.*`, `ssl.*` here for production. |
 
 ---
 

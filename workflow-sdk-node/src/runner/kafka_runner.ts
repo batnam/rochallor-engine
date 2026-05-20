@@ -13,6 +13,10 @@ export interface KafkaRunnerConfig {
   brokers: string[];
   clientId?: string;
   dedupWindowMs?: number;
+  /** Enable TLS for broker connections. Required with SASL/PLAIN in production. */
+  ssl?: boolean;
+  /** SASL authentication options (PLAIN, SCRAM-SHA-256/512, OAUTHBEARER). */
+  sasl?: KafkaJS.SASLOptions;
 }
 
 export class KafkaRunner {
@@ -30,6 +34,8 @@ export class KafkaRunner {
       kafkaJS: {
         clientId: config.clientId || config.workerId,
         brokers: config.brokers,
+        ...(config.ssl !== undefined && { ssl: config.ssl }),
+        ...(config.sasl !== undefined && { sasl: config.sasl }),
       }
     });
     this.dedupCache = new DeduplicationCache(config.dedupWindowMs);

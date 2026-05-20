@@ -32,7 +32,7 @@
 
 **Error handling**: throw a plain `Error` → `failJob(retryable=true)` → engine retries up to `retryCount`. Throw `NonRetryableError` → `failJob(retryable=false)` → fails immediately regardless of retry budget.
 
-For the full model (sequence diagram, retry flow, graceful shutdown), see [architecture.md — Worker polling model](../architecture.md#worker-polling-model).
+For the full model (sequence diagram, retry flow, graceful shutdown), see [architecture.md — Worker polling model](https://batnam.github.io/rochallor-engine/architecture/#worker-polling-model).
 
 ---
 
@@ -208,6 +208,52 @@ The engine's `completeJob` / `failJob` calls are already idempotent — a second
 
 ---
 
+### TLS / SASL (production)
+
+The default config above connects to brokers in **plaintext with no authentication**. For any production Kafka cluster, enable TLS and SASL via the `ssl` and `sasl` fields. The type of `sasl` is `KafkaJS.SASLOptions` from `@confluentinc/kafka-javascript`, so all four standard mechanisms are supported.
+
+```typescript
+// SASL/SCRAM-SHA-512 over TLS — common for MSK, Confluent Cloud, Aiven, Redpanda
+const runner = new KafkaRunner(
+  {
+    workerId: 'node-worker-1',
+    brokers:  ['kafka-1.prod:9093', 'kafka-2.prod:9093'],
+    ssl:      true,
+    sasl: {
+      mechanism: 'scram-sha-512',
+      username:  process.env.KAFKA_SASL_USERNAME!,
+      password:  process.env.KAFKA_SASL_PASSWORD!,
+    },
+  },
+  engine,
+  registry,
+)
+```
+
+Other mechanisms:
+
+```typescript
+// SASL/PLAIN over TLS — only safe with ssl: true
+sasl: { mechanism: 'plain',           username: '...', password: '...' }
+
+// SCRAM-SHA-256
+sasl: { mechanism: 'scram-sha-256',   username: '...', password: '...' }
+
+// OAUTHBEARER (e.g. AWS MSK IAM, Azure Event Hubs)
+sasl: {
+  mechanism: 'oauthbearer',
+  oauthBearerProvider: async () => ({
+    value:     await fetchAccessToken(),
+    principal: 'svc-account',
+    lifetime:  900_000,
+  }),
+}
+```
+
+Plaintext brokers should be restricted to local dev (`docker compose`) — never deploy without `ssl: true` and a `sasl` mechanism on a shared network.
+
+---
+
 ### KafkaRunner configuration reference
 
 | Field | Type | Default | Description |
@@ -216,6 +262,8 @@ The engine's `completeJob` / `failJob` calls are already idempotent — a second
 | `brokers` | string[] | *(required)* | Array of Kafka broker addresses. |
 | `clientId` | string | `workerId` | Kafka client identifier. |
 | `dedupWindowMs` | number | `600000` | Window (ms) for in-memory deduplication (default 10m). |
+| `ssl` | boolean | `false` | Enable TLS for broker connections. Required with `sasl` in production. |
+| `sasl` | `KafkaJS.SASLOptions` | *(none)* | SASL auth: `plain`, `scram-sha-256`, `scram-sha-512`, or `oauthbearer`. |
 
 ---
 
