@@ -88,13 +88,13 @@ var (
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "code"})
 
-	// ── Engine DB performance (feature 005) ───────────────────────────────────
+	// ── Engine DB performance ─────────────────────────────────────────────────
 
 	// DBTransactionDuration is a histogram of pgx transaction durations in
 	// seconds, labelled by tx_type (e.g. "instance.lifecycle",
 	// "instance.signal_wait", "instance.complete_user_task"). It measures the
 	// wall-clock from BeginTx to Commit/Rollback and surfaces regressions in
-	// the narrowed FOR UPDATE window delivered by US1.
+	// the narrowed FOR UPDATE window.
 	DBTransactionDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "engine_db_transaction_duration_seconds",
 		Help:    "Duration of engine database transactions in seconds, labelled by tx_type.",
@@ -120,7 +120,7 @@ var (
 
 	// JobPickupLatency is a histogram of end-to-end job pickup latency in
 	// seconds: time.Since(job.created_at) at the successful claim site in
-	// Poll. Primary signal for SC-003 verification.
+	// Poll.
 	JobPickupLatency = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name: "engine_job_pickup_latency_seconds",
 		Help: "End-to-end latency from job creation to successful worker claim, in seconds.",

@@ -1,16 +1,16 @@
 // k6 load scenario: 1,000 concurrent active workflow instances.
 //
-// Executor:  ramping-vus (1 VU == 1 active workflow, per research R1)
+// Executor:  ramping-vus (1 VU == 1 active workflow)
 // Phases:    ramp-up → steady-state (1,000 VUs) → ramp-down (configurable via env)
 // Operations: workflow.start → workflow.poll@200ms → workflow.history (+ workflow.list every 10)
-// Teardown:  count non-terminal workflows 10 s after steady-state (FR-005)
+// Teardown:  count non-terminal workflows 10 s after steady-state
 //
-// Phase 4 additions (T018/T019):
+// Additional features:
 //   - failure_kind counters per category (engine_error, engine_timeout,
 //     engine_unresponsive, generator_side)
 //   - phase tag on every request (ramp-up / steady-state / ramp-down)
 //
-// Design decisions: specs/003-performance-load-testing/research.md §R1–R5
+// Design decisions: specs/003-performance-load-testing/research.md
 // Threshold contract: specs/003-performance-load-testing/data-model.md §ThresholdSet
 
 import { sleep } from 'k6';
@@ -36,7 +36,7 @@ const STEADY        = __ENV.PERF_STEADY     || '10m';
 const RAMP_DOWN     = __ENV.PERF_RAMP_DOWN  || '1m';
 const TARGET_VUS    = parseInt(__ENV.PERF_TARGET_VUS || '1000', 10);
 
-// Poll cadence and per-iteration deadline (research R2)
+// Poll cadence and per-iteration deadline
 const POLL_INTERVAL_MS   = 200;
 const ITERATION_DEADLINE = 60; // seconds
 
@@ -45,10 +45,10 @@ const LIST_EVERY_N_ITERATIONS = 10;
 
 // --- Custom metrics ---
 
-// Counts workflows still non-terminal 10 s after steady-state (FR-005)
+// Counts workflows still non-terminal 10 s after steady-state
 const unfinishedCounter = new Counter('workflows_unfinished_after_steady_state');
 
-// Failure classification (research R5, FR-006).
+// Failure classification.
 // One counter per category; each incremented on any failure event.
 const failKind = {
   engine_error:        new Counter('failure_kind_engine_error'),
@@ -94,7 +94,7 @@ function parseDurationMs(s) {
 const RAMP_UP_MS = parseDurationMs(RAMP_UP);
 const STEADY_MS  = parseDurationMs(STEADY);
 
-// Returns "ramp-up" | "steady-state" | "ramp-down" based on elapsed time (T019).
+// Returns "ramp-up" | "steady-state" | "ramp-down" based on elapsed time.
 function currentPhase(testStartMs) {
   const elapsed = Date.now() - testStartMs;
   if (elapsed < RAMP_UP_MS) return 'ramp-up';
@@ -102,7 +102,7 @@ function currentPhase(testStartMs) {
   return 'ramp-down';
 }
 
-// Classify a k6 response into one of the four failure categories (T018 / research R5).
+// Classify a k6 response into one of the four failure categories.
 // Returns null if the response is not a failure.
 function classifyFailure(res, iterationDeadlineExpired) {
   if (iterationDeadlineExpired) return 'engine_unresponsive';
@@ -131,7 +131,7 @@ export function setup() {
   return {
     definitionId: DEFINITION_ID,
     baseUrl: BASE_URL,
-    testStartMs: Date.now(),  // used for phase tagging (T019)
+    testStartMs: Date.now(),  // used for phase tagging
   };
 }
 
@@ -139,7 +139,7 @@ export function setup() {
 export default function (data) {
   const { definitionId, baseUrl, testStartMs } = data;
 
-  // T019: tag all requests in this iteration with the current phase.
+  // tag all requests in this iteration with the current phase.
   exec.vu.tags['phase'] = currentPhase(testStartMs);
 
   // --- workflow.start ---
@@ -151,7 +151,7 @@ export default function (data) {
   });
 
   if (!startOk) {
-    // T018: classify and count the failure kind
+    // classify and count the failure kind
     const kind = classifyFailure(startRes, false);
     if (kind) failKind[kind].add(1);
     return;
@@ -196,7 +196,7 @@ export default function (data) {
   }
 
   if (!terminal) {
-    // Per-iteration deadline expired — engine_unresponsive (T018, research R5)
+    // Per-iteration deadline expired — engine_unresponsive
     failKind.engine_unresponsive.add(1);
     console.warn(`[perf] workflow ${instanceId} did not complete within ${ITERATION_DEADLINE}s`);
   }
@@ -227,7 +227,7 @@ export default function (data) {
   }
 }
 
-// teardown() runs once after all VUs finish (research R2, FR-005 §4).
+// teardown() runs once after all VUs finish.
 // Waits 10 s, then counts non-terminal instances created by this run.
 export function teardown(data) {
   const { baseUrl } = data;

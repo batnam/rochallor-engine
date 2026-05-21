@@ -400,7 +400,7 @@ const creator = (
       return { version: summary.version };
     } catch (e) {
       if (e instanceof EngineError && e.kind === 'http' && e.status >= 400 && e.status < 500) {
-        // Surface engine validation rejection verbatim — drift signal per R-010.
+        // Surface engine validation rejection verbatim — drift signal.
         const drift: Diagnostic = {
           code: 'STEP_TYPE_VALID',
           severity: 'error',

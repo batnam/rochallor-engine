@@ -192,7 +192,7 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// ─── DECISION_TABLE handler tests (US1 — U/F) ─────────────────────────────────
+// ─── DECISION_TABLE handler tests (U/F) ──────────────────────────────────────
 
 // dtDef builds a minimal workflow with one DECISION_TABLE step routing to
 // `end`. The caller sets the rules and hit policy.
@@ -338,7 +338,7 @@ func TestHandleDecisionTable_U_MultipleMatches_UniqueViolation(t *testing.T) {
 	}
 }
 
-// ─── DECISION_TABLE handler tests (US2 — A / R / C / aggregators) ────────────
+// ─── DECISION_TABLE handler tests (A / R / C / aggregators) ─────────────────
 
 // TestHandleDecisionTable_A_Agreement_Succeeds verifies that hit policy A
 // with matching rules whose outputs agree on every column merges one set of
@@ -457,7 +457,7 @@ func TestHandleDecisionTable_C_NoAggregator_MatchesR(t *testing.T) {
 
 // TestHandleDecisionTable_R_NoMatch_FailsNoRuleMatched verifies that R/C
 // with zero matches surfaces DecisionTableNoRuleMatched (no implicit empty
-// list fallback per FR-014).
+// list fallback).
 func TestHandleDecisionTable_R_NoMatch_FailsNoRuleMatched(t *testing.T) {
 	def := dtDef([]definition.DecisionTableRule{
 		{When: map[string]string{"a": "a == true"}, Outputs: map[string]json.RawMessage{"v": json.RawMessage(`1`)}},
@@ -579,9 +579,9 @@ func TestHandleDecisionTable_CHash_NonNumeric_Succeeds(t *testing.T) {
 	}
 }
 
-// TestHandleDecisionTable_FR011_OutputsDoNotShadowInputCells verifies FR-011:
-// input cells must be evaluated against the pre-step variable snapshot, even
-// when the matched rule's outputs overwrite an input variable name.
+// TestHandleDecisionTable_OutputsDoNotShadowInputCells verifies that input
+// cells must be evaluated against the pre-step variable snapshot, even when
+// the matched rule's outputs overwrite an input variable name.
 //
 // Setup: two rules. Rule 0 matches when score >= 700 and writes
 // `score = 0` (overwriting the input). Rule 1 matches when score < 100. Under
@@ -590,12 +590,10 @@ func TestHandleDecisionTable_CHash_NonNumeric_Succeeds(t *testing.T) {
 // R (rule order, multi-match capable) so a leak from rule 0 → rule 1 would
 // show up as two matches instead of one.
 //
-// Because R is stubbed in US1, the assertion checks that the instance fails
-// for the "stubbed policy" reason rather than for spurious multi-match
-// behaviour — i.e. matching happens against pre-step variables.
-//
-// US2 will tighten this test to assert the actual R semantics.
-func TestHandleDecisionTable_FR011_OutputsDoNotShadowInputCells(t *testing.T) {
+// Because R is stubbed, the assertion checks that the instance fails for the
+// "stubbed policy" reason rather than for spurious multi-match behaviour —
+// i.e. matching happens against pre-step variables.
+func TestHandleDecisionTable_OutputsDoNotShadowInputCells(t *testing.T) {
 	def := dtDef([]definition.DecisionTableRule{
 		{
 			When: map[string]string{"score": "score >= 700"},

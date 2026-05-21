@@ -3,8 +3,8 @@
 //
 //	so any *.json file from legacy-workflow-engine can be unmarshalled directly into WorkflowDefinition without transformation.
 //
-// The delegateClass field is preserved as an advisory string per R-010 —
-// the Engine never loads or instantiates it.
+// The delegateClass field is preserved as an advisory string — the Engine
+// never loads or instantiates it.
 package definition
 
 import "encoding/json"
@@ -25,7 +25,7 @@ const (
 )
 
 // BoundaryEventType discriminates boundary-event behaviour.
-// Only TIMER is in scope per R-005.
+// Only TIMER is in scope.
 type BoundaryEventType string
 
 const (
@@ -81,16 +81,20 @@ type WorkflowStep struct {
 
 	// DECISION_TABLE: hit policy code. One of "U", "F", "A", "R", "C",
 	// "C+", "C#", "C>", "C<". Omitted/empty defaults to "U" (Unique) at
-	// runtime per specs/007-decision-table-outputs/research.md R2.
+	// runtime per specs/007-decision-table-outputs/research.md.
 	HitPolicy string `json:"hitPolicy,omitempty"`
 
 	// SERVICE_TASK / USER_TASK
 	JobType       string `json:"jobType,omitempty"`
-	DelegateClass string `json:"delegateClass,omitempty"` // advisory only — R-010
+	DelegateClass string `json:"delegateClass,omitempty"` // advisory only
 	RetryCount    int    `json:"retryCount,omitempty"`
 
 	// Boundary events (SERVICE_TASK, USER_TASK, WAIT)
 	BoundaryEvents []BoundaryEvent `json:"boundaryEvents,omitempty"`
+
+	// SERVICE_TASK only: optional schema for the variables the worker is
+	// expected to return. Validated at job completion before merge.
+	OutputsSchema *Schema `json:"outputs_schema,omitempty"`
 }
 
 // DecisionTable is the payload for a DECISION_TABLE step. Rules are
@@ -152,4 +156,8 @@ type WorkflowDefinition struct {
 	Steps []WorkflowStep `json:"steps"`
 	// Metadata is free-form, stored as opaque JSONB and round-tripped untouched.
 	Metadata map[string]json.RawMessage `json:"metadata,omitempty"`
+	// InputSchema is an optional declaration of expected starting variables.
+	// When set, the engine validates StartInstance.Variables against it and
+	// rejects the call on violation.
+	InputSchema *Schema `json:"input_schema,omitempty"`
 }

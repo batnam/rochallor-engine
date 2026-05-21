@@ -84,7 +84,7 @@ enum StepExecutionStatus {
 
 enum BoundaryEventType {
   BOUNDARY_EVENT_TYPE_UNSPECIFIED = 0;
-  BOUNDARY_EVENT_TYPE_TIMER = 1; // the only type in scope per research R-005
+  BOUNDARY_EVENT_TYPE_TIMER = 1; // the only type in scope
 }
 
 // ---------- Definition messages ----------
@@ -98,6 +98,13 @@ message WorkflowDefinition {
   string next_workflow_id = 6;
   repeated WorkflowStep steps = 7;
   google.protobuf.Struct metadata = 8;
+
+  // OPTIONAL input variable schema (subset of JSON Schema). When set, the
+  // engine validates the variables supplied to StartInstance against this
+  // schema and rejects the call on violation. Shape (JSON):
+  //   { "properties": { "<name>": { "type": "string|number|integer|boolean" }, ... },
+  //     "required":   [ "<name>", ... ]  // optional }
+  google.protobuf.Struct input_schema = 9;
 }
 
 message WorkflowStep {
@@ -119,7 +126,7 @@ message WorkflowStep {
 
   // Service task
   string job_type = 40;
-  string delegate_class = 41; // advisory only per R-010
+  string delegate_class = 41; // advisory only
   int32 retry_count = 42;
 
   // Boundary events (optional; most commonly attached to SERVICE_TASK / USER_TASK / WAIT)
@@ -131,6 +138,12 @@ message WorkflowStep {
   // Hit policy for DECISION_TABLE steps. One of "U", "F", "A", "R", "C",
   // "C+", "C#", "C>", "C<". Empty defaults to "U" at runtime.
   string hit_policy = 61;
+
+  // OPTIONAL outputs variable schema (subset of JSON Schema, same shape as
+  // WorkflowDefinition.input_schema). v1 honors this only when
+  // type == STEP_TYPE_SERVICE_TASK; setting it on any other step type causes
+  // the definition upload to be rejected.
+  google.protobuf.Struct outputs_schema = 70;
 }
 
 // DecisionTable is the payload for a DECISION_TABLE step. Rules are evaluated
@@ -200,9 +213,9 @@ message Job {
 }
 
 // JobDispatchEvent is the canonical wire format for one dispatch of a
-// SERVICE_TASK job when the engine runs in kafka_outbox mode (FR-016).
+// SERVICE_TASK job when the engine runs in kafka_outbox mode.
 // Producers: the relay serializes this and publishes to
-// workflow.jobs.<jobType>, keyed by instance_id (R-002).
+// workflow.jobs.<jobType>, keyed by instance_id.
 // Consumers: the Go SDK KafkaRunner and any in-house consumer in another
 // language reuse generated types from this package so REST, gRPC, and
 // broker all describe the same job with the same schema.

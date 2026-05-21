@@ -42,20 +42,6 @@ services:
       timeout: 10s
       retries: 10
 
-  e2e-kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: e2e-kafka-ui
-    restart: unless-stopped
-    ports:
-      - "28080:8080"
-    environment:
-      KAFKA_CLUSTERS_0_NAME: 'Local-Kafka-Dev'
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: 'e2e-kafka:29092'
-      DYNAMIC_CONFIG_ENABLED: 'true'
-    depends_on:
-      e2e-kafka:
-        condition: service_healthy
-
   e2e-kafka-setup:
     image: confluentinc/cp-kafka:7.7.8
     container_name: e2e-kafka-setup

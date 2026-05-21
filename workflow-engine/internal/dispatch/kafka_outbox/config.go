@@ -4,23 +4,37 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 )
 
 // Config is the dependency bundle passed into New(). The fields mirror the
 // WE_KAFKA_* env var surface defined in config.KafkaConfig, plus the engine
-// pool and the logger.
+// DB handles and the logger.
 //
 // Secrets (SASLPassword) arrive via the env-only path in config.Load and are
 // carried through here; they MUST never be logged.
 type Config struct {
-	// Pool is the engine's pgxpool — used for the relay drain queries.
+	// DB is the storage abstraction used by the relay to open the
+	// claim/publish/delete transaction via RunInTx.
+	DB db.DB
+
+	// Store is the dispatch_outbox + audit_log repository. The hot-path
+	// Dispatcher.Enqueue and the relay's drain cycle delegate all SQL
+	// through this interface — no raw pgx access in this package.
+	Store OutboxStore
+
+	// Pool is retained only for the advisory-lock leader-election loop
+	// (advisory_lock.go), which hijacks a dedicated connection to hold a
+	// session-scoped lock and ping it for liveness. All outbox SQL —
+	// including the migration-applied startup check — goes through Store.
 	Pool *pgxpool.Pool
 
 	// SeedBrokers is a comma-separated list of host:port pairs.
 	SeedBrokers string
 
 	// JobTypes is the list of every job_type present in the system.
-	// Used to validate Kafka topics at startup (R-008).
+	// Used to validate Kafka topics at startup.
 	JobTypes []string
 
 	// Transport selects the wire security posture: "plaintext" or

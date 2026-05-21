@@ -21,7 +21,7 @@ func TestNewProducesNonEmptyString(t *testing.T) {
 }
 
 // TestUniquenessUnder10kConcurrentGenerations asserts that 10 000 concurrent
-// calls to New() produce 10 000 distinct values (per T039 spec requirement).
+// calls to New() produce 10 000 distinct values.
 func TestUniquenessUnder10kConcurrentGenerations(t *testing.T) {
 	const n = 10_000
 	ids := make([]string, n)

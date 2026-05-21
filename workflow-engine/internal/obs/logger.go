@@ -30,7 +30,7 @@ const traceparentKey = "traceparent"
 
 // TraceparentMiddleware extracts the W3C traceparent header from inbound HTTP
 // requests and stores a request-scoped *slog.Logger (with the traceparent
-// attached) into the request context (per R-013).
+// attached) into the request context.
 func TraceparentMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if tp := r.Header.Get(traceparentKey); tp != "" {

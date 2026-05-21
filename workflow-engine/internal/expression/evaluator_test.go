@@ -1,12 +1,13 @@
 package expression_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/expression"
 )
 
-// TestBoolExpressions covers boolean expressions used in DECISION steps (R-003).
+// TestBoolExpressions covers boolean expressions used in DECISION steps.
 func TestBoolExpressions(t *testing.T) {
 	tests := []struct {
 		name string
@@ -259,6 +260,125 @@ func TestEvaluateErrorCases(t *testing.T) {
 		_, err := expression.Evaluate("${missingBrace == true", map[string]any{"missingBrace": true})
 		if err == nil {
 			t.Fatal("expected error for unclosed ${")
+		}
+	})
+}
+
+// TestCoercion covers numeric/boolean operators tolerating string-typed
+// operands when expression.CoercionEnabled is true (the default).
+func TestCoercion(t *testing.T) {
+	t.Run("string coerces to number in comparison", func(t *testing.T) {
+		got, err := expression.Evaluate("amount > 50", map[string]any{"amount": "100.5"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != true {
+			t.Errorf("want true, got %v", got)
+		}
+	})
+
+	t.Run("string coerces to number in arithmetic", func(t *testing.T) {
+		got, err := expression.Evaluate("amount + 1", map[string]any{"amount": "100.5"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != 101.5 {
+			t.Errorf("want 101.5, got %v (%T)", got, got)
+		}
+	})
+
+	t.Run("non-numeric string returns coercion error", func(t *testing.T) {
+		_, err := expression.Evaluate("amount > 50", map[string]any{"amount": "abc"})
+		if err == nil {
+			t.Fatal("expected coercion error")
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "abc") {
+			t.Errorf("error message should contain offending value %q; got: %s", "abc", msg)
+		}
+	})
+
+	t.Run("string \"true\" coerces in boolean context", func(t *testing.T) {
+		got, err := expression.Evaluate("enabled && other", map[string]any{"enabled": "true", "other": true})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != true {
+			t.Errorf("want true, got %v", got)
+		}
+	})
+
+	t.Run("string \"false\" coerces in boolean context", func(t *testing.T) {
+		got, err := expression.Evaluate("enabled || other", map[string]any{"enabled": "false", "other": false})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != false {
+			t.Errorf("want false, got %v", got)
+		}
+	})
+
+	t.Run("non-bool string returns coercion error in boolean context", func(t *testing.T) {
+		_, err := expression.Evaluate("enabled && other", map[string]any{"enabled": "yes", "other": true})
+		if err == nil {
+			t.Fatal("expected coercion error for \"yes\"")
+		}
+	})
+
+	t.Run("empty string does NOT coerce to 0 in numeric context", func(t *testing.T) {
+		_, err := expression.Evaluate("amount > 0", map[string]any{"amount": ""})
+		if err == nil {
+			t.Fatal("expected coercion error for empty string in numeric context")
+		}
+	})
+
+	t.Run("empty string does NOT coerce to false in boolean context", func(t *testing.T) {
+		_, err := expression.Evaluate("flag && true", map[string]any{"flag": ""})
+		if err == nil {
+			t.Fatal("expected coercion error for empty string in boolean context")
+		}
+	})
+
+	t.Run("array operand is not coerced", func(t *testing.T) {
+		_, err := expression.Evaluate("items > 0", map[string]any{"items": []any{1, 2}})
+		if err == nil {
+			t.Fatal("expected error when comparing an array to a number")
+		}
+	})
+
+	t.Run("string == string still works", func(t *testing.T) {
+		got, err := expression.Evaluate(`name == "Alice"`, map[string]any{"name": "Alice"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != true {
+			t.Errorf("want true, got %v", got)
+		}
+	})
+
+	t.Run("string == number coerces numeric side via __coerceNumber", func(t *testing.T) {
+		got, err := expression.Evaluate("amount == 5", map[string]any{"amount": "5"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != true {
+			t.Errorf(`want "5" == 5 to be true after coercion, got %v`, got)
+		}
+	})
+
+	t.Run("disabling coercion restores lexicographic comparison", func(t *testing.T) {
+		expression.SetCoercionEnabled(false)
+		defer expression.SetCoercionEnabled(true)
+
+		// With coercion off, "100.5" > 50 either errors (type mismatch) or
+		// falls back to a non-numeric compare. The point is: it does NOT
+		// return true via numeric coercion.
+		got, err := expression.Evaluate("amount > 50", map[string]any{"amount": "100.5"})
+		if err == nil && got == true {
+			// String compared to number returning true would only happen via
+			// our coercion path. If we get here with no error, the result
+			// must reflect a non-numeric compare — not the truthy numeric one.
+			t.Errorf("expected coercion-disabled path to NOT evaluate \"100.5\" > 50 as true; got %v", got)
 		}
 	})
 }

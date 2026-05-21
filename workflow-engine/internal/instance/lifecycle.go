@@ -77,6 +77,14 @@ func (s *Service) Start(ctx context.Context, definitionID string, definitionVers
 	if variables == nil {
 		variables = map[string]any{}
 	}
+	// If the definition declares an input schema, validate the caller-supplied
+	// variables strictly (no coercion) and reject the call before any
+	// persistence happens.
+	if def.InputSchema != nil {
+		if vs := def.InputSchema.Validate(variables); len(vs) > 0 {
+			return nil, &definition.SchemaViolationError{Violations: vs}
+		}
+	}
 	varJSON, err := json.Marshal(variables)
 	if err != nil {
 		return nil, fmt.Errorf("start: marshal variables: %w", err)
@@ -137,7 +145,9 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 		return fmt.Errorf("step %q not found in definition", completedStepID)
 	}
 
-	return s.db.RunInTx(ctx, "instance.complete_job", func(tx db.Tx) error {
+	var schemaErr *definition.SchemaViolationError
+
+	txErr := s.db.RunInTx(ctx, "instance.complete_job", func(tx db.Tx) error {
 		// Lock the job row and check idempotency / cancellation. FOR UPDATE
 		// serialises concurrent CompleteJobAndAdvance calls for the same job:
 		// the second caller blocks here until the first commits, then reads
@@ -148,6 +158,27 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 		}
 		if status == "COMPLETED" || status == "CANCELLED" {
 			return nil
+		}
+
+		// If the step declares an outputs schema, validate the worker-supplied
+		// variables BEFORE marking the job complete. On violation, cancel the
+		// job, fail the step + instance with the violation message, and surface
+		// the typed error to the caller. retry_count is intentionally bypassed:
+		// schema violations are deterministic.
+		if completedStep.Type == definition.StepTypeServiceTask && completedStep.OutputsSchema != nil {
+			if vs := completedStep.OutputsSchema.Validate(variablesToSet); len(vs) > 0 {
+				schemaErr = &definition.SchemaViolationError{Violations: vs}
+				if err := s.store.CancelJobByStepExecution(ctx, tx, stepExecID); err != nil {
+					return err
+				}
+				if err := s.store.FailStepExecutionByID(ctx, tx, stepExecID, schemaErr.Error()); err != nil {
+					return err
+				}
+				if err := s.store.FailInstance(ctx, tx, instanceID, schemaErr.Error()); err != nil {
+					return err
+				}
+				return nil // commit the failure state
+			}
 		}
 
 		if err := s.store.MarkJobCompleted(ctx, tx, jobID, workerID); err != nil {
@@ -186,6 +217,13 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 		}
 		return s.advancePastStep(ctx, tx, inst, def, completedStep)
 	})
+	if txErr != nil {
+		return txErr
+	}
+	if schemaErr != nil {
+		return schemaErr
+	}
+	return nil
 }
 
 // DispatchBoundaryStep routes an instance to targetStepID from a

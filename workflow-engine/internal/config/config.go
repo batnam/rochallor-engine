@@ -87,7 +87,7 @@ type KafkaConfig struct {
 	SASLUsername string `yaml:"-"`
 
 	// SASLPassword is the SASL credential. Secret — env-only, never logged,
-	// never read from YAML (mirrors WE_POSTGRES_DSN handling per FR-012).
+	// never read from YAML (mirrors WE_POSTGRES_DSN handling).
 	// Environment variable: WE_KAFKA_SASL_PASSWORD.
 	SASLPassword string `yaml:"-"`
 
@@ -217,7 +217,7 @@ func LoadFromPath(path string) (Config, error) {
 		cfg.DBMinConns = n
 	}
 
-	// Dispatch-mode overrides (FR-001). Empty env leaves the YAML/default value.
+	// Dispatch-mode overrides. Empty env leaves the YAML/default value.
 	if v := os.Getenv("WE_DISPATCH_MODE"); v != "" {
 		cfg.DispatchMode = v
 	}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -123,6 +124,9 @@ func (s *EngineServer) StartInstance(ctx context.Context, req *workflowv1.StartI
 	vars := structToMap(req.Variables)
 	inst, err := s.instSvc.Start(ctx, req.DefinitionId, int(req.DefinitionVersion), vars, req.BusinessKey)
 	if err != nil {
+		if sv, ok := definition.IsSchemaViolation(err); ok {
+			return nil, engineapi.GRPCInvalidArgument(sv.Error())
+		}
 		if errors.Is(err, instance.ErrBusinessKeyConflict) {
 			return nil, engineapi.GRPCAlreadyExists(err.Error())
 		}
@@ -243,6 +247,9 @@ func (s *EngineServer) PollJobs(ctx context.Context, req *workflowv1.PollJobsReq
 func (s *EngineServer) CompleteJob(ctx context.Context, req *workflowv1.CompleteJobRequest) (*workflowv1.CompleteJobResponse, error) {
 	vars := structToMap(req.VariablesToSet)
 	if err := s.instSvc.CompleteJobAndAdvance(ctx, req.JobId, req.WorkerId, vars); err != nil {
+		if sv, ok := definition.IsSchemaViolation(err); ok {
+			return nil, engineapi.GRPCInvalidArgument(sv.Error())
+		}
 		return nil, engineapi.GRPCInternal(err)
 	}
 	return &workflowv1.CompleteJobResponse{}, nil
@@ -337,6 +344,45 @@ func structToMap(s *structpb.Struct) map[string]any {
 	return m
 }
 
+// structToSchema converts a protobuf Struct carrying a JSON-Schema-subset
+// declaration into the internal Schema type. Returns nil if the input is nil.
+// Malformed shapes are surfaced as nil with an error so the caller can decide
+// whether to reject the definition upload.
+func structToSchema(s *structpb.Struct) (*definition.Schema, error) {
+	if s == nil {
+		return nil, nil
+	}
+	b, err := s.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("schema marshal: %w", err)
+	}
+	var sc definition.Schema
+	if err := json.Unmarshal(b, &sc); err != nil {
+		return nil, fmt.Errorf("schema unmarshal: %w", err)
+	}
+	return &sc, nil
+}
+
+// schemaToStruct is the inverse of structToSchema. Returns nil if s is nil.
+func schemaToStruct(s *definition.Schema) *structpb.Struct {
+	if s == nil {
+		return nil
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil
+	}
+	sv, err := structpb.NewStruct(m)
+	if err != nil {
+		return nil
+	}
+	return sv
+}
+
 func protoDefToInternal(p *workflowv1.WorkflowDefinition) *definition.WorkflowDefinition {
 	d := &definition.WorkflowDefinition{
 		ID:                    p.Id,
@@ -344,6 +390,9 @@ func protoDefToInternal(p *workflowv1.WorkflowDefinition) *definition.WorkflowDe
 		Description:           p.Description,
 		AutoStartNextWorkflow: p.AutoStartNextWorkflow,
 		NextWorkflowId:        p.NextWorkflowId,
+	}
+	if sc, err := structToSchema(p.InputSchema); err == nil {
+		d.InputSchema = sc
 	}
 	for _, ps := range p.Steps {
 		// NOTE: protobuf map<string, string> does not preserve insertion
@@ -406,6 +455,9 @@ func protoDefToInternal(p *workflowv1.WorkflowDefinition) *definition.WorkflowDe
 			}
 			s.DecisionTable = dt
 		}
+		if sc, err := structToSchema(ps.OutputsSchema); err == nil {
+			s.OutputsSchema = sc
+		}
 		d.Steps = append(d.Steps, s)
 	}
 	return d
@@ -417,6 +469,7 @@ func internalDefToProto(d *definition.WorkflowDefinition) *workflowv1.WorkflowDe
 		Version:     int32(d.Version),
 		Name:        d.Name,
 		Description: d.Description,
+		InputSchema: schemaToStruct(d.InputSchema),
 	}
 }
 

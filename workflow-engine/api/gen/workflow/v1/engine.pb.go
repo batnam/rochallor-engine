@@ -219,7 +219,7 @@ type BoundaryEventType int32
 
 const (
 	BoundaryEventType_BOUNDARY_EVENT_TYPE_UNSPECIFIED BoundaryEventType = 0
-	BoundaryEventType_BOUNDARY_EVENT_TYPE_TIMER       BoundaryEventType = 1 // the only type in scope per research R-005
+	BoundaryEventType_BOUNDARY_EVENT_TYPE_TIMER       BoundaryEventType = 1 // the only type in scope
 )
 
 // Enum value maps for BoundaryEventType.
@@ -271,8 +271,15 @@ type WorkflowDefinition struct {
 	NextWorkflowId        string                 `protobuf:"bytes,6,opt,name=next_workflow_id,json=nextWorkflowId,proto3" json:"next_workflow_id,omitempty"`
 	Steps                 []*WorkflowStep        `protobuf:"bytes,7,rep,name=steps,proto3" json:"steps,omitempty"`
 	Metadata              *structpb.Struct       `protobuf:"bytes,8,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// OPTIONAL input variable schema (subset of JSON Schema). When set, the
+	// engine validates the variables supplied to StartInstance against this
+	// schema and rejects the call on violation. Shape (JSON):
+	//
+	//	{ "properties": { "<name>": { "type": "string|number|integer|boolean" }, ... },
+	//	  "required":   [ "<name>", ... ]  // optional }
+	InputSchema   *structpb.Struct `protobuf:"bytes,9,opt,name=input_schema,json=inputSchema,proto3" json:"input_schema,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WorkflowDefinition) Reset() {
@@ -361,6 +368,13 @@ func (x *WorkflowDefinition) GetMetadata() *structpb.Struct {
 	return nil
 }
 
+func (x *WorkflowDefinition) GetInputSchema() *structpb.Struct {
+	if x != nil {
+		return x.InputSchema
+	}
+	return nil
+}
+
 type WorkflowStep struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -377,7 +391,7 @@ type WorkflowStep struct {
 	Transformations map[string]*structpb.Value `protobuf:"bytes,30,rep,name=transformations,proto3" json:"transformations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Service task
 	JobType       string `protobuf:"bytes,40,opt,name=job_type,json=jobType,proto3" json:"job_type,omitempty"`
-	DelegateClass string `protobuf:"bytes,41,opt,name=delegate_class,json=delegateClass,proto3" json:"delegate_class,omitempty"` // advisory only per R-010
+	DelegateClass string `protobuf:"bytes,41,opt,name=delegate_class,json=delegateClass,proto3" json:"delegate_class,omitempty"` // advisory only
 	RetryCount    int32  `protobuf:"varint,42,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`
 	// Boundary events (optional; most commonly attached to SERVICE_TASK / USER_TASK / WAIT)
 	BoundaryEvents []*BoundaryEvent `protobuf:"bytes,50,rep,name=boundary_events,json=boundaryEvents,proto3" json:"boundary_events,omitempty"`
@@ -385,7 +399,12 @@ type WorkflowStep struct {
 	DecisionTable *DecisionTable `protobuf:"bytes,60,opt,name=decision_table,json=decisionTable,proto3" json:"decision_table,omitempty"`
 	// Hit policy for DECISION_TABLE steps. One of "U", "F", "A", "R", "C",
 	// "C+", "C#", "C>", "C<". Empty defaults to "U" at runtime.
-	HitPolicy     string `protobuf:"bytes,61,opt,name=hit_policy,json=hitPolicy,proto3" json:"hit_policy,omitempty"`
+	HitPolicy string `protobuf:"bytes,61,opt,name=hit_policy,json=hitPolicy,proto3" json:"hit_policy,omitempty"`
+	// OPTIONAL outputs variable schema (subset of JSON Schema, same shape as
+	// WorkflowDefinition.input_schema). v1 honors this only when
+	// type == STEP_TYPE_SERVICE_TASK; setting it on any other step type causes
+	// the definition upload to be rejected.
+	OutputsSchema *structpb.Struct `protobuf:"bytes,70,opt,name=outputs_schema,json=outputsSchema,proto3" json:"outputs_schema,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -523,6 +542,13 @@ func (x *WorkflowStep) GetHitPolicy() string {
 		return x.HitPolicy
 	}
 	return ""
+}
+
+func (x *WorkflowStep) GetOutputsSchema() *structpb.Struct {
+	if x != nil {
+		return x.OutputsSchema
+	}
+	return nil
 }
 
 // DecisionTable is the payload for a DECISION_TABLE step. Rules are evaluated
@@ -1045,7 +1071,8 @@ func (x *Job) GetLockExpiresAt() *timestamppb.Timestamp {
 // language reuse generated types from this package so REST, gRPC, and
 // broker all describe the same job with the same schema.
 // Field numbers are the contract; names are cosmetic. Removed fields go to
-// `reserved` and are never renumbered.
+// `reserved` and are never renumbered. See
+// specs/006-kafka-outbox-dispatch/contracts/dispatch-event.proto.md.
 type JobDispatchEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Monotonic schema version. Starts at 1. Consumers MUST ignore fields they
@@ -2614,7 +2641,7 @@ var File_workflow_v1_engine_proto protoreflect.FileDescriptor
 
 const file_workflow_v1_engine_proto_rawDesc = "" +
 	"\n" +
-	"\x18workflow/v1/engine.proto\x12\vworkflow.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbd\x02\n" +
+	"\x18workflow/v1/engine.proto\x12\vworkflow.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf9\x02\n" +
 	"\x12WorkflowDefinition\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x05R\aversion\x12\x12\n" +
@@ -2623,7 +2650,8 @@ const file_workflow_v1_engine_proto_rawDesc = "" +
 	"\x18auto_start_next_workflow\x18\x05 \x01(\bR\x15autoStartNextWorkflow\x12(\n" +
 	"\x10next_workflow_id\x18\x06 \x01(\tR\x0enextWorkflowId\x12/\n" +
 	"\x05steps\x18\a \x03(\v2\x19.workflow.v1.WorkflowStepR\x05steps\x123\n" +
-	"\bmetadata\x18\b \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\xdd\x06\n" +
+	"\bmetadata\x18\b \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12:\n" +
+	"\finput_schema\x18\t \x01(\v2\x17.google.protobuf.StructR\vinputSchema\"\x9d\a\n" +
 	"\fWorkflowStep\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12)\n" +
@@ -2642,7 +2670,8 @@ const file_workflow_v1_engine_proto_rawDesc = "" +
 	"\x0fboundary_events\x182 \x03(\v2\x1a.workflow.v1.BoundaryEventR\x0eboundaryEvents\x12A\n" +
 	"\x0edecision_table\x18< \x01(\v2\x1a.workflow.v1.DecisionTableR\rdecisionTable\x12\x1d\n" +
 	"\n" +
-	"hit_policy\x18= \x01(\tR\thitPolicy\x1aG\n" +
+	"hit_policy\x18= \x01(\tR\thitPolicy\x12>\n" +
+	"\x0eoutputs_schema\x18F \x01(\v2\x17.google.protobuf.StructR\routputsSchema\x1aG\n" +
 	"\x19ConditionalNextStepsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aZ\n" +
@@ -2921,78 +2950,80 @@ var file_workflow_v1_engine_proto_goTypes = []any{
 var file_workflow_v1_engine_proto_depIdxs = []int32{
 	5,  // 0: workflow.v1.WorkflowDefinition.steps:type_name -> workflow.v1.WorkflowStep
 	45, // 1: workflow.v1.WorkflowDefinition.metadata:type_name -> google.protobuf.Struct
-	0,  // 2: workflow.v1.WorkflowStep.type:type_name -> workflow.v1.StepType
-	41, // 3: workflow.v1.WorkflowStep.conditional_next_steps:type_name -> workflow.v1.WorkflowStep.ConditionalNextStepsEntry
-	42, // 4: workflow.v1.WorkflowStep.transformations:type_name -> workflow.v1.WorkflowStep.TransformationsEntry
-	8,  // 5: workflow.v1.WorkflowStep.boundary_events:type_name -> workflow.v1.BoundaryEvent
-	6,  // 6: workflow.v1.WorkflowStep.decision_table:type_name -> workflow.v1.DecisionTable
-	7,  // 7: workflow.v1.DecisionTable.rules:type_name -> workflow.v1.DecisionTableRule
-	43, // 8: workflow.v1.DecisionTableRule.when:type_name -> workflow.v1.DecisionTableRule.WhenEntry
-	44, // 9: workflow.v1.DecisionTableRule.outputs:type_name -> workflow.v1.DecisionTableRule.OutputsEntry
-	3,  // 10: workflow.v1.BoundaryEvent.type:type_name -> workflow.v1.BoundaryEventType
-	1,  // 11: workflow.v1.WorkflowInstance.status:type_name -> workflow.v1.InstanceStatus
-	45, // 12: workflow.v1.WorkflowInstance.variables:type_name -> google.protobuf.Struct
-	46, // 13: workflow.v1.WorkflowInstance.started_at:type_name -> google.protobuf.Timestamp
-	46, // 14: workflow.v1.WorkflowInstance.completed_at:type_name -> google.protobuf.Timestamp
-	0,  // 15: workflow.v1.StepExecution.step_type:type_name -> workflow.v1.StepType
-	2,  // 16: workflow.v1.StepExecution.status:type_name -> workflow.v1.StepExecutionStatus
-	46, // 17: workflow.v1.StepExecution.started_at:type_name -> google.protobuf.Timestamp
-	46, // 18: workflow.v1.StepExecution.ended_at:type_name -> google.protobuf.Timestamp
-	45, // 19: workflow.v1.Job.variables:type_name -> google.protobuf.Struct
-	46, // 20: workflow.v1.Job.lock_expires_at:type_name -> google.protobuf.Timestamp
-	46, // 21: workflow.v1.JobDispatchEvent.created_at:type_name -> google.protobuf.Timestamp
-	4,  // 22: workflow.v1.UploadDefinitionRequest.definition:type_name -> workflow.v1.WorkflowDefinition
-	46, // 23: workflow.v1.UploadDefinitionResponse.uploaded_at:type_name -> google.protobuf.Timestamp
-	4,  // 24: workflow.v1.GetDefinitionResponse.definition:type_name -> workflow.v1.WorkflowDefinition
-	4,  // 25: workflow.v1.ListDefinitionsResponse.definitions:type_name -> workflow.v1.WorkflowDefinition
-	45, // 26: workflow.v1.StartInstanceRequest.variables:type_name -> google.protobuf.Struct
-	9,  // 27: workflow.v1.StartInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
-	9,  // 28: workflow.v1.GetInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
-	10, // 29: workflow.v1.GetInstanceHistoryResponse.executions:type_name -> workflow.v1.StepExecution
-	9,  // 30: workflow.v1.CancelInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
-	1,  // 31: workflow.v1.ListInstancesRequest.status:type_name -> workflow.v1.InstanceStatus
-	9,  // 32: workflow.v1.ListInstancesResponse.instances:type_name -> workflow.v1.WorkflowInstance
-	11, // 33: workflow.v1.PollJobsResponse.jobs:type_name -> workflow.v1.Job
-	45, // 34: workflow.v1.CompleteJobRequest.variables_to_set:type_name -> google.protobuf.Struct
-	45, // 35: workflow.v1.CompleteUserTaskRequest.result:type_name -> google.protobuf.Struct
-	45, // 36: workflow.v1.SignalWaitRequest.variables:type_name -> google.protobuf.Struct
-	45, // 37: workflow.v1.RetryStepRequest.variables:type_name -> google.protobuf.Struct
-	9,  // 38: workflow.v1.RetryStepResponse.instance:type_name -> workflow.v1.WorkflowInstance
-	47, // 39: workflow.v1.WorkflowStep.TransformationsEntry.value:type_name -> google.protobuf.Value
-	47, // 40: workflow.v1.DecisionTableRule.OutputsEntry.value:type_name -> google.protobuf.Value
-	13, // 41: workflow.v1.WorkflowEngine.UploadDefinition:input_type -> workflow.v1.UploadDefinitionRequest
-	15, // 42: workflow.v1.WorkflowEngine.GetDefinition:input_type -> workflow.v1.GetDefinitionRequest
-	17, // 43: workflow.v1.WorkflowEngine.ListDefinitions:input_type -> workflow.v1.ListDefinitionsRequest
-	19, // 44: workflow.v1.WorkflowEngine.StartInstance:input_type -> workflow.v1.StartInstanceRequest
-	21, // 45: workflow.v1.WorkflowEngine.GetInstance:input_type -> workflow.v1.GetInstanceRequest
-	23, // 46: workflow.v1.WorkflowEngine.GetInstanceHistory:input_type -> workflow.v1.GetInstanceHistoryRequest
-	25, // 47: workflow.v1.WorkflowEngine.CancelInstance:input_type -> workflow.v1.CancelInstanceRequest
-	27, // 48: workflow.v1.WorkflowEngine.ListInstances:input_type -> workflow.v1.ListInstancesRequest
-	29, // 49: workflow.v1.WorkflowEngine.PollJobs:input_type -> workflow.v1.PollJobsRequest
-	31, // 50: workflow.v1.WorkflowEngine.CompleteJob:input_type -> workflow.v1.CompleteJobRequest
-	33, // 51: workflow.v1.WorkflowEngine.FailJob:input_type -> workflow.v1.FailJobRequest
-	35, // 52: workflow.v1.WorkflowEngine.CompleteUserTask:input_type -> workflow.v1.CompleteUserTaskRequest
-	37, // 53: workflow.v1.WorkflowEngine.SignalWait:input_type -> workflow.v1.SignalWaitRequest
-	39, // 54: workflow.v1.WorkflowEngine.RetryStep:input_type -> workflow.v1.RetryStepRequest
-	14, // 55: workflow.v1.WorkflowEngine.UploadDefinition:output_type -> workflow.v1.UploadDefinitionResponse
-	16, // 56: workflow.v1.WorkflowEngine.GetDefinition:output_type -> workflow.v1.GetDefinitionResponse
-	18, // 57: workflow.v1.WorkflowEngine.ListDefinitions:output_type -> workflow.v1.ListDefinitionsResponse
-	20, // 58: workflow.v1.WorkflowEngine.StartInstance:output_type -> workflow.v1.StartInstanceResponse
-	22, // 59: workflow.v1.WorkflowEngine.GetInstance:output_type -> workflow.v1.GetInstanceResponse
-	24, // 60: workflow.v1.WorkflowEngine.GetInstanceHistory:output_type -> workflow.v1.GetInstanceHistoryResponse
-	26, // 61: workflow.v1.WorkflowEngine.CancelInstance:output_type -> workflow.v1.CancelInstanceResponse
-	28, // 62: workflow.v1.WorkflowEngine.ListInstances:output_type -> workflow.v1.ListInstancesResponse
-	30, // 63: workflow.v1.WorkflowEngine.PollJobs:output_type -> workflow.v1.PollJobsResponse
-	32, // 64: workflow.v1.WorkflowEngine.CompleteJob:output_type -> workflow.v1.CompleteJobResponse
-	34, // 65: workflow.v1.WorkflowEngine.FailJob:output_type -> workflow.v1.FailJobResponse
-	36, // 66: workflow.v1.WorkflowEngine.CompleteUserTask:output_type -> workflow.v1.CompleteUserTaskResponse
-	38, // 67: workflow.v1.WorkflowEngine.SignalWait:output_type -> workflow.v1.SignalWaitResponse
-	40, // 68: workflow.v1.WorkflowEngine.RetryStep:output_type -> workflow.v1.RetryStepResponse
-	55, // [55:69] is the sub-list for method output_type
-	41, // [41:55] is the sub-list for method input_type
-	41, // [41:41] is the sub-list for extension type_name
-	41, // [41:41] is the sub-list for extension extendee
-	0,  // [0:41] is the sub-list for field type_name
+	45, // 2: workflow.v1.WorkflowDefinition.input_schema:type_name -> google.protobuf.Struct
+	0,  // 3: workflow.v1.WorkflowStep.type:type_name -> workflow.v1.StepType
+	41, // 4: workflow.v1.WorkflowStep.conditional_next_steps:type_name -> workflow.v1.WorkflowStep.ConditionalNextStepsEntry
+	42, // 5: workflow.v1.WorkflowStep.transformations:type_name -> workflow.v1.WorkflowStep.TransformationsEntry
+	8,  // 6: workflow.v1.WorkflowStep.boundary_events:type_name -> workflow.v1.BoundaryEvent
+	6,  // 7: workflow.v1.WorkflowStep.decision_table:type_name -> workflow.v1.DecisionTable
+	45, // 8: workflow.v1.WorkflowStep.outputs_schema:type_name -> google.protobuf.Struct
+	7,  // 9: workflow.v1.DecisionTable.rules:type_name -> workflow.v1.DecisionTableRule
+	43, // 10: workflow.v1.DecisionTableRule.when:type_name -> workflow.v1.DecisionTableRule.WhenEntry
+	44, // 11: workflow.v1.DecisionTableRule.outputs:type_name -> workflow.v1.DecisionTableRule.OutputsEntry
+	3,  // 12: workflow.v1.BoundaryEvent.type:type_name -> workflow.v1.BoundaryEventType
+	1,  // 13: workflow.v1.WorkflowInstance.status:type_name -> workflow.v1.InstanceStatus
+	45, // 14: workflow.v1.WorkflowInstance.variables:type_name -> google.protobuf.Struct
+	46, // 15: workflow.v1.WorkflowInstance.started_at:type_name -> google.protobuf.Timestamp
+	46, // 16: workflow.v1.WorkflowInstance.completed_at:type_name -> google.protobuf.Timestamp
+	0,  // 17: workflow.v1.StepExecution.step_type:type_name -> workflow.v1.StepType
+	2,  // 18: workflow.v1.StepExecution.status:type_name -> workflow.v1.StepExecutionStatus
+	46, // 19: workflow.v1.StepExecution.started_at:type_name -> google.protobuf.Timestamp
+	46, // 20: workflow.v1.StepExecution.ended_at:type_name -> google.protobuf.Timestamp
+	45, // 21: workflow.v1.Job.variables:type_name -> google.protobuf.Struct
+	46, // 22: workflow.v1.Job.lock_expires_at:type_name -> google.protobuf.Timestamp
+	46, // 23: workflow.v1.JobDispatchEvent.created_at:type_name -> google.protobuf.Timestamp
+	4,  // 24: workflow.v1.UploadDefinitionRequest.definition:type_name -> workflow.v1.WorkflowDefinition
+	46, // 25: workflow.v1.UploadDefinitionResponse.uploaded_at:type_name -> google.protobuf.Timestamp
+	4,  // 26: workflow.v1.GetDefinitionResponse.definition:type_name -> workflow.v1.WorkflowDefinition
+	4,  // 27: workflow.v1.ListDefinitionsResponse.definitions:type_name -> workflow.v1.WorkflowDefinition
+	45, // 28: workflow.v1.StartInstanceRequest.variables:type_name -> google.protobuf.Struct
+	9,  // 29: workflow.v1.StartInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
+	9,  // 30: workflow.v1.GetInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
+	10, // 31: workflow.v1.GetInstanceHistoryResponse.executions:type_name -> workflow.v1.StepExecution
+	9,  // 32: workflow.v1.CancelInstanceResponse.instance:type_name -> workflow.v1.WorkflowInstance
+	1,  // 33: workflow.v1.ListInstancesRequest.status:type_name -> workflow.v1.InstanceStatus
+	9,  // 34: workflow.v1.ListInstancesResponse.instances:type_name -> workflow.v1.WorkflowInstance
+	11, // 35: workflow.v1.PollJobsResponse.jobs:type_name -> workflow.v1.Job
+	45, // 36: workflow.v1.CompleteJobRequest.variables_to_set:type_name -> google.protobuf.Struct
+	45, // 37: workflow.v1.CompleteUserTaskRequest.result:type_name -> google.protobuf.Struct
+	45, // 38: workflow.v1.SignalWaitRequest.variables:type_name -> google.protobuf.Struct
+	45, // 39: workflow.v1.RetryStepRequest.variables:type_name -> google.protobuf.Struct
+	9,  // 40: workflow.v1.RetryStepResponse.instance:type_name -> workflow.v1.WorkflowInstance
+	47, // 41: workflow.v1.WorkflowStep.TransformationsEntry.value:type_name -> google.protobuf.Value
+	47, // 42: workflow.v1.DecisionTableRule.OutputsEntry.value:type_name -> google.protobuf.Value
+	13, // 43: workflow.v1.WorkflowEngine.UploadDefinition:input_type -> workflow.v1.UploadDefinitionRequest
+	15, // 44: workflow.v1.WorkflowEngine.GetDefinition:input_type -> workflow.v1.GetDefinitionRequest
+	17, // 45: workflow.v1.WorkflowEngine.ListDefinitions:input_type -> workflow.v1.ListDefinitionsRequest
+	19, // 46: workflow.v1.WorkflowEngine.StartInstance:input_type -> workflow.v1.StartInstanceRequest
+	21, // 47: workflow.v1.WorkflowEngine.GetInstance:input_type -> workflow.v1.GetInstanceRequest
+	23, // 48: workflow.v1.WorkflowEngine.GetInstanceHistory:input_type -> workflow.v1.GetInstanceHistoryRequest
+	25, // 49: workflow.v1.WorkflowEngine.CancelInstance:input_type -> workflow.v1.CancelInstanceRequest
+	27, // 50: workflow.v1.WorkflowEngine.ListInstances:input_type -> workflow.v1.ListInstancesRequest
+	29, // 51: workflow.v1.WorkflowEngine.PollJobs:input_type -> workflow.v1.PollJobsRequest
+	31, // 52: workflow.v1.WorkflowEngine.CompleteJob:input_type -> workflow.v1.CompleteJobRequest
+	33, // 53: workflow.v1.WorkflowEngine.FailJob:input_type -> workflow.v1.FailJobRequest
+	35, // 54: workflow.v1.WorkflowEngine.CompleteUserTask:input_type -> workflow.v1.CompleteUserTaskRequest
+	37, // 55: workflow.v1.WorkflowEngine.SignalWait:input_type -> workflow.v1.SignalWaitRequest
+	39, // 56: workflow.v1.WorkflowEngine.RetryStep:input_type -> workflow.v1.RetryStepRequest
+	14, // 57: workflow.v1.WorkflowEngine.UploadDefinition:output_type -> workflow.v1.UploadDefinitionResponse
+	16, // 58: workflow.v1.WorkflowEngine.GetDefinition:output_type -> workflow.v1.GetDefinitionResponse
+	18, // 59: workflow.v1.WorkflowEngine.ListDefinitions:output_type -> workflow.v1.ListDefinitionsResponse
+	20, // 60: workflow.v1.WorkflowEngine.StartInstance:output_type -> workflow.v1.StartInstanceResponse
+	22, // 61: workflow.v1.WorkflowEngine.GetInstance:output_type -> workflow.v1.GetInstanceResponse
+	24, // 62: workflow.v1.WorkflowEngine.GetInstanceHistory:output_type -> workflow.v1.GetInstanceHistoryResponse
+	26, // 63: workflow.v1.WorkflowEngine.CancelInstance:output_type -> workflow.v1.CancelInstanceResponse
+	28, // 64: workflow.v1.WorkflowEngine.ListInstances:output_type -> workflow.v1.ListInstancesResponse
+	30, // 65: workflow.v1.WorkflowEngine.PollJobs:output_type -> workflow.v1.PollJobsResponse
+	32, // 66: workflow.v1.WorkflowEngine.CompleteJob:output_type -> workflow.v1.CompleteJobResponse
+	34, // 67: workflow.v1.WorkflowEngine.FailJob:output_type -> workflow.v1.FailJobResponse
+	36, // 68: workflow.v1.WorkflowEngine.CompleteUserTask:output_type -> workflow.v1.CompleteUserTaskResponse
+	38, // 69: workflow.v1.WorkflowEngine.SignalWait:output_type -> workflow.v1.SignalWaitResponse
+	40, // 70: workflow.v1.WorkflowEngine.RetryStep:output_type -> workflow.v1.RetryStepResponse
+	57, // [57:71] is the sub-list for method output_type
+	43, // [43:57] is the sub-list for method input_type
+	43, // [43:43] is the sub-list for extension type_name
+	43, // [43:43] is the sub-list for extension extendee
+	0,  // [0:43] is the sub-list for field type_name
 }
 
 func init() { file_workflow_v1_engine_proto_init() }

@@ -1,5 +1,5 @@
 // Package handler provides the job-type handler registry.
-// Handlers are keyed by jobType string — never by Java delegate class path (R-010).
+// Handlers are keyed by jobType string — never by Java delegate class path.
 package handler
 
 import (

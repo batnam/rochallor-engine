@@ -1,13 +1,12 @@
 /**
- * Drift guard (T068) — pairs the TypeScript validator with the Go engine
- * validator and fails if the two disagree on whether a fixture should be
- * accepted.
+ * Drift guard — pairs the TypeScript validator with the Go engine validator
+ * and fails if the two disagree on whether a fixture should be accepted.
  *
- * The check is intentionally asymmetric: SC-002 only requires that the
- * editor never accepts something the engine rejects. The reverse case
- * (TS rejects, Go accepts) is permitted — the editor is allowed to be
- * stricter than the engine (e.g. it bans nested parallel gateways and
- * lints decision expressions, neither of which the Go validator does).
+ * The check is intentionally asymmetric: the editor must never accept
+ * something the engine rejects. The reverse case (TS rejects, Go accepts)
+ * is permitted — the editor is allowed to be stricter than the engine
+ * (e.g. it bans nested parallel gateways and lints decision expressions,
+ * neither of which the Go validator does).
  */
 import { basename } from 'node:path';
 
@@ -32,7 +31,7 @@ describe.skipIf(!goAvailable)('drift guard — Go vs TS validators', () => {
           accepted: true,
         });
         expect(r.go, `Go rejected: ${r.go.error}`).toMatchObject({ accepted: true });
-        expect(r.drift, 'SC-002 drift detected').toBe(false);
+        expect(r.drift, 'drift detected').toBe(false);
       });
     }
   });
@@ -45,9 +44,9 @@ describe.skipIf(!goAvailable)('drift guard — Go vs TS validators', () => {
           r.ts.accepted,
           `TS accepted an invalid fixture (${basename(fixture)}); expected at least one error diagnostic`,
         ).toBe(false);
-        // SC-002 protection: TS rejecting is sufficient. Go may accept (TS is
-        // stricter on some rules) — that direction is OK.
-        expect(r.drift, 'SC-002 drift: TS accepts but Go rejects').toBe(false);
+        // TS rejecting is sufficient. Go may accept (TS is stricter on some
+        // rules) — that direction is OK.
+        expect(r.drift, 'drift: TS accepts but Go rejects').toBe(false);
       });
     }
   });

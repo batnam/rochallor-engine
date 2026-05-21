@@ -52,7 +52,7 @@ func (s *Service) handleDecisionTable(ctx context.Context, tx db.Tx, inst *Workf
 
 	policy := step.HitPolicy
 	if policy == "" {
-		policy = "U" // R2 default
+		policy = "U" // default
 	}
 
 	// Evaluate each matched rule's outputs once, against the pre-step vars,

@@ -150,7 +150,7 @@ describe('renameStepId for DECISION_TABLE', () => {
     expect(dt.nextStep).toBe('new-target');
   });
 
-  it('does NOT touch any per-rule field (FR-029)', () => {
+  it('does NOT touch any per-rule field', () => {
     const renamed = renameStepId(dtDef(), 'target', 'new-target');
     const dt = renamed.steps.find((s) => s.id === 'dt');
     if (dt?.type !== 'DECISION_TABLE') throw new Error('dt missing');

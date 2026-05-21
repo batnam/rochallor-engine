@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -68,6 +69,8 @@ func run() error {
 		return fmt.Errorf("migrate: %w", err)
 	}
 
+	dbConn := postgres.NewDB(pool)
+
 	// ── Dispatch runtime (mode switch) ────────────────────────────
 	// cfg.DispatchMode has already been validated in config.Load; this switch
 	// is the wiring seam that chooses which Runtime + Dispatcher pair is live
@@ -87,6 +90,8 @@ func run() error {
 		}
 		dispatchRT = kafkaoutbox.New(kafkaoutbox.Config{
 			Pool:          pool,
+			DB:            dbConn,
+			Store:         postgres.NewOutboxStore(pool),
 			SeedBrokers:   cfg.Kafka.SeedBrokers,
 			JobTypes:      jobTypes,
 			Transport:     cfg.Kafka.Transport,
@@ -117,8 +122,12 @@ func run() error {
 
 	// ── Services ──────────────────────────────────────────────────────────────
 	instance.SetExpressionEvaluator(expression.Evaluate)
+	// Expression coercion: default-on, env opt-out.
+	if v := strings.ToLower(os.Getenv("WE_EXPRESSION_COERCION_ENABLED")); v == "0" || v == "false" || v == "no" {
+		expression.SetCoercionEnabled(false)
+		slog.Info("engine: expression coercion disabled via WE_EXPRESSION_COERCION_ENABLED")
+	}
 
-	dbConn := postgres.NewDB(pool)
 	instStore := postgres.NewInstanceStore(pool)
 	jobStore := postgres.NewJobStore(pool)
 	bndStore := postgres.NewBoundaryStore(pool)
