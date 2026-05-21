@@ -57,7 +57,7 @@ func newKafkaClient(cfg Config) (*kgo.Client, error) {
 }
 
 // pingBroker issues a lightweight Metadata request against the broker to
-// validate connectivity + authentication end-to-end (FR-008). Called from
+// validate connectivity + authentication end-to-end. Called from
 // Runtime.Start.
 func pingBroker(ctx context.Context, client *kgo.Client) error {
 	if err := client.Ping(ctx); err != nil {

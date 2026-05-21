@@ -55,7 +55,7 @@ func New(cfg Config) *Runtime {
 
 // Start performs the R-008 validation sequence and launches the leader-
 // election + relay goroutines. Returns an error if any dependency is missing
-// or unreachable — no silent fallback (FR-008).
+// or unreachable — no silent fallback.
 //
 // Validation steps (in order):
 //  1. Config completeness (pool, seed brokers present).
@@ -81,7 +81,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Register Prometheus metrics exactly once per process (FR-010).
+	// Register Prometheus metrics exactly once per process.
 	ensureMetricsRegistered()
 
 	client, err := newKafkaClient(r.cfg)

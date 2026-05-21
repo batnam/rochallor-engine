@@ -112,7 +112,7 @@ var (
 	}, []string{"operation"})
 
 	// JobTimeoutTotal counts jobs that had their lease expire and were
-	// reclaimed by the lease sweeper (FR-007 / SC-005).
+	// reclaimed by the lease sweeper.
 	JobTimeoutTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "engine_job_timeout_total",
 		Help: "Total number of jobs whose lease expired and were recovered by the lease sweeper.",
@@ -132,7 +132,7 @@ var (
 )
 
 // RegisterPollingMetrics registers metrics that only make sense in polling
-// mode. Must be called at startup if DispatchMode is "polling" (FR-010).
+// mode. Must be called at startup if DispatchMode is "polling".
 func RegisterPollingMetrics(r prometheus.Registerer) {
 	r.MustRegister(JobPollLatency)
 	r.MustRegister(JobLockConflictsTotal)

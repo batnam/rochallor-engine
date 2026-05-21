@@ -143,7 +143,7 @@ func (r *relay) drainOnce(ctx context.Context) (int, error) {
 	}
 
 	// Delete the published rows inside the same tx. On commit, the publish
-	// is acked AND the rows are gone — that's the INV-2 atomic step.
+	// is acked AND the rows are gone — that's the atomic step.
 	ids := make([]string, len(batch))
 	for i, o := range batch {
 		ids[i] = o.id
@@ -154,7 +154,7 @@ func (r *relay) drainOnce(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("relay: delete rows: %w", err)
 	}
 
-	// Write the durable dispatch trail to audit_log (FR-015, FR-017).
+	// Write the durable dispatch trail to audit_log.
 	if err := insertAuditEntries(ctx, tx, batch); err != nil {
 		return 0, fmt.Errorf("relay: audit log: %w", err)
 	}

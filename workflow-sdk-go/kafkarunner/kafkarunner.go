@@ -8,10 +8,10 @@
 //     cooperative-sticky consumer group (workflow.workers.<jobType>).
 //   - Decodes JobDispatchEvent protobuf records.
 //   - Deduplicates on DedupId over a 10-minute window to absorb producer-
-//     side retries and relay-crash-induced republishes (FR-007).
+//     side retries and relay-crash-induced republishes.
 //   - Invokes the user-registered Handler from handler.Registry.
 //   - Reports completion through the existing engine CompleteJob / FailJob
-//     RPCs (FR-006) — never writes directly to the DB and never publishes
+//     RPCs — never writes directly to the DB and never publishes
 //     back to the broker.
 package kafkarunner
 

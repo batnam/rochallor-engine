@@ -23,7 +23,7 @@ import (
 // enqueue time. Defining it here (rather than referencing instance.Job)
 // keeps the dependency graph one-way: instance → dispatch.
 //
-// The field set aligns with workflow.v1.JobDispatchEvent (FR-016); the
+// The field set aligns with workflow.v1.JobDispatchEvent; the
 // kafka_outbox Enqueue serializes these into that proto.
 type DispatchJob struct {
 	ID               string

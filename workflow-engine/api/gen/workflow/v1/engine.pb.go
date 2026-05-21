@@ -1038,15 +1038,14 @@ func (x *Job) GetLockExpiresAt() *timestamppb.Timestamp {
 }
 
 // JobDispatchEvent is the canonical wire format for one dispatch of a
-// SERVICE_TASK job when the engine runs in kafka_outbox mode (FR-016).
+// SERVICE_TASK job when the engine runs in kafka_outbox mode.
 // Producers: the relay serializes this and publishes to
-// workflow.jobs.<jobType>, keyed by instance_id (R-002).
+// workflow.jobs.<jobType>, keyed by instance_id.
 // Consumers: the Go SDK KafkaRunner and any in-house consumer in another
 // language reuse generated types from this package so REST, gRPC, and
 // broker all describe the same job with the same schema.
 // Field numbers are the contract; names are cosmetic. Removed fields go to
-// `reserved` and are never renumbered. See
-// specs/006-kafka-outbox-dispatch/contracts/dispatch-event.proto.md.
+// `reserved` and are never renumbered.
 type JobDispatchEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Monotonic schema version. Starts at 1. Consumers MUST ignore fields they

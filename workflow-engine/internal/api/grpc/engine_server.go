@@ -35,7 +35,7 @@ type EngineServer struct {
 
 // NewEngineServer creates an EngineServer. dispatchMode is the current
 // engine dispatch mode (polling / kafka_outbox); when set to kafka_outbox
-// the PollJobs RPC is disabled per FR-004.
+// the PollJobs RPC is disabled.
 func NewEngineServer(
 	defRepo definition.DefinitionRepository,
 	instSvc *instance.Service,
@@ -200,7 +200,7 @@ func (s *EngineServer) ListInstances(ctx context.Context, req *workflowv1.ListIn
 // ── Jobs ──────────────────────────────────────────────────────────────��───────
 
 func (s *EngineServer) PollJobs(ctx context.Context, req *workflowv1.PollJobsRequest) (*workflowv1.PollJobsResponse, error) {
-	// In event-driven mode the poll path is shut off (FR-004, R-005).
+	// In event-driven mode the poll path is shut off.
 	// Returning FailedPrecondition is a loud, actionable signal for operators
 	// who flip the switch but forget to update their workers.
 	if s.dispatchMode == "kafka_outbox" {

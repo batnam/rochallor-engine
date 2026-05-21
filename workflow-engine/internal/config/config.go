@@ -53,8 +53,8 @@ type Config struct {
 	DBMinConns int `yaml:"dbMinConns"`
 
 	// DispatchMode selects how newly created jobs are handed to workers.
-	// "" or "polling" (default): FOR UPDATE SKIP LOCKED claim path (FR-001).
-	// "kafka_outbox": transactional outbox + Kafka event-driven dispatch (FR-002..FR-018).
+	// "" or "polling" (default): FOR UPDATE SKIP LOCKED claim path.
+	// "kafka_outbox": transactional outbox + Kafka event-driven dispatch.
 	// Environment variable: WE_DISPATCH_MODE.
 	DispatchMode string `yaml:"dispatchMode"`
 
@@ -268,7 +268,7 @@ func LoadFromPath(path string) (Config, error) {
 	return cfg, nil
 }
 
-// validateDispatchMode enforces FR-001, FR-008, FR-012 at startup time:
+// validateDispatchMode enforces at startup time:
 //   - unknown mode strings are rejected loudly,
 //   - kafka_outbox mode requires seed brokers + a valid transport mode,
 //   - sasl_scram_tls requires SASL credentials.

@@ -72,8 +72,8 @@ func NewPoolWithOptions(ctx context.Context, dsn string, opts PoolOptions) (*pgx
 }
 
 // RunInTx wraps pgx.BeginTxFunc and records transaction wall-clock duration
-// (Begin → Commit/Rollback) into obs.DBTransactionDuration labelled by
-// txType (FR-007 / SC-005). It also emits one structured log line per
+// (Begin → Commit/Rollback) into obs.DBTransactionDuration labelled by txType.
+// It also emits one structured log line per
 // transaction so every workflow-instance state transition is visible
 // without per-site log calls. The fn's error is returned unchanged.
 func RunInTx(ctx context.Context, pool *pgxpool.Pool, txType string, opts pgx.TxOptions, fn func(tx pgx.Tx) error) error {
