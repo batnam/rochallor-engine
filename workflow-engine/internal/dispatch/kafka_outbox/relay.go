@@ -7,39 +7,31 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 )
 
-// outboxRow is the narrow read-model for dispatch_outbox rows the relay
-// pulls per drain cycle.
-type outboxRow struct {
-	id         string
-	jobID      string
-	instanceID string
-	jobType    string
-	payload    []byte
-}
-
 // relay drains dispatch_outbox rows, publishes them to Kafka, and deletes
-// them in the same transaction that commits the successful publish
+// them in the same transaction that commits the successful publish.
 // Also writes an audit_log row per published job so the durable
 // dispatch trail lives in audit_log.
 type relay struct {
-	pool         *pgxpool.Pool
+	db           db.DB
+	store        OutboxStore
 	kafkaClient  *kgo.Client
 	batchSize    int
 	idleInterval time.Duration
 	logger       *slog.Logger
 }
 
-func newRelay(pool *pgxpool.Pool, kafkaClient *kgo.Client, batchSize int, logger *slog.Logger) *relay {
+func newRelay(database db.DB, store OutboxStore, kafkaClient *kgo.Client, batchSize int, logger *slog.Logger) *relay {
 	if batchSize <= 0 {
 		batchSize = defaultBatchSize
 	}
 	return &relay{
-		pool:         pool,
+		db:           database,
+		store:        store,
 		kafkaClient:  kafkaClient,
 		batchSize:    batchSize,
 		idleInterval: defaultIdleInterval * time.Millisecond,
@@ -83,135 +75,77 @@ func (r *relay) drainOnce(ctx context.Context) (int, error) {
 		relayBatchLatencySecs.Observe(time.Since(started).Seconds())
 	}()
 
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return 0, fmt.Errorf("relay: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-
-	rows, err := tx.Query(ctx,
-		`SELECT id, job_id, instance_id, job_type, payload
-		 FROM dispatch_outbox
-		 ORDER BY created_at
-		 LIMIT $1
-		 FOR UPDATE SKIP LOCKED`,
-		r.batchSize,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("relay: select outbox: %w", err)
-	}
-
-	var batch []outboxRow
-	for rows.Next() {
-		var o outboxRow
-		if err := rows.Scan(&o.id, &o.jobID, &o.instanceID, &o.jobType, &o.payload); err != nil {
-			rows.Close()
-			return 0, fmt.Errorf("relay: scan row: %w", err)
+	var published int
+	err := r.db.RunInTx(ctx, "dispatch-relay", func(tx db.Tx) error {
+		batch, err := r.store.ClaimBatch(ctx, tx, r.batchSize)
+		if err != nil {
+			return fmt.Errorf("claim outbox: %w", err)
 		}
-		batch = append(batch, o)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("relay: iterate rows: %w", err)
-	}
-	if len(batch) == 0 {
-		// Sample backlog opportunistically while the tx is cheap.
-		r.sampleBacklogInTx(ctx, tx)
-		return 0, tx.Commit(ctx)
-	}
+		if len(batch) == 0 {
+			// Sample backlog opportunistically while the tx is cheap.
+			if n, err := r.store.BacklogInTx(ctx, tx); err == nil {
+				outboxBacklog.Set(float64(n))
+			}
+			return nil
+		}
 
-	// Produce the whole batch synchronously (ProduceSync waits for acks).
-	records := make([]*kgo.Record, 0, len(batch))
-	for _, o := range batch {
-		records = append(records, &kgo.Record{
-			Topic: topicFor(o.jobType),
-			Key:   []byte(o.instanceID),
-			Value: o.payload,
-			Headers: []kgo.RecordHeader{
-				{Key: "content-type", Value: []byte("application/x-protobuf; proto=workflow.v1.JobDispatchEvent")},
-				{Key: "dedup-id", Value: []byte(o.id)},
-			},
-		})
-	}
-	results := r.kafkaClient.ProduceSync(ctx, records...)
-	if err := results.FirstErr(); err != nil {
-		// Record per-error code in the producer-errors counter, then fail
-		// the whole cycle. leave rows in place so the next cycle retries them.
-		kafkaProducerErrors.WithLabelValues(classifyKafkaErr(err)).Inc()
-		relayPublishTotal.WithLabelValues("error").Add(float64(len(batch)))
-		return 0, fmt.Errorf("relay: kafka publish: %w", err)
-	}
+		// Produce the whole batch synchronously (ProduceSync waits for acks).
+		records := make([]*kgo.Record, 0, len(batch))
+		for _, o := range batch {
+			records = append(records, &kgo.Record{
+				Topic: topicFor(o.JobType),
+				Key:   []byte(o.InstanceID),
+				Value: o.Payload,
+				Headers: []kgo.RecordHeader{
+					{Key: "content-type", Value: []byte("application/x-protobuf; proto=workflow.v1.JobDispatchEvent")},
+					{Key: "dedup-id", Value: []byte(o.ID)},
+				},
+			})
+		}
+		results := r.kafkaClient.ProduceSync(ctx, records...)
+		if err := results.FirstErr(); err != nil {
+			// Record per-error code in the producer-errors counter, then fail
+			// the whole cycle. Leave rows in place so the next cycle retries.
+			kafkaProducerErrors.WithLabelValues(classifyKafkaErr(err)).Inc()
+			relayPublishTotal.WithLabelValues("error").Add(float64(len(batch)))
+			return fmt.Errorf("kafka publish: %w", err)
+		}
 
-	// Delete the published rows inside the same tx. On commit, the publish
-	// is acked AND the rows are gone — that's the atomic step.
-	ids := make([]string, len(batch))
-	for i, o := range batch {
-		ids[i] = o.id
+		// Delete the published rows inside the same tx. On commit, the publish
+		// is acked AND the rows are gone — that's the atomic step.
+		ids := make([]string, len(batch))
+		for i, o := range batch {
+			ids[i] = o.ID
+		}
+		if err := r.store.DeleteByIDs(ctx, tx, ids); err != nil {
+			return fmt.Errorf("delete rows: %w", err)
+		}
+		if err := r.store.WriteAuditEntries(ctx, tx, batch); err != nil {
+			return fmt.Errorf("audit log: %w", err)
+		}
+		published = len(batch)
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
-	if _, err := tx.Exec(ctx,
-		`DELETE FROM dispatch_outbox WHERE id = ANY($1)`, ids,
-	); err != nil {
-		return 0, fmt.Errorf("relay: delete rows: %w", err)
+	if published > 0 {
+		relayPublishTotal.WithLabelValues("success").Add(float64(published))
+		r.logger.Debug("dispatch: relay batch published", "count", published)
 	}
-
-	// Write the durable dispatch trail to audit_log.
-	if err := insertAuditEntries(ctx, tx, batch); err != nil {
-		return 0, fmt.Errorf("relay: audit log: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("relay: commit: %w", err)
-	}
-
-	relayPublishTotal.WithLabelValues("success").Add(float64(len(batch)))
-	r.logger.Debug("dispatch: relay batch published", "count", len(batch))
-	return len(batch), nil
+	return published, nil
 }
 
 // sampleBacklog runs OUTSIDE any transaction to keep the backlog gauge fresh
 // even during long idle windows.
 func (r *relay) sampleBacklog(ctx context.Context) {
-	var n int64
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM dispatch_outbox`).Scan(&n); err != nil {
-		return
-	}
-	outboxBacklog.Set(float64(n))
-}
-
-func (r *relay) sampleBacklogInTx(ctx context.Context, tx pgx.Tx) {
-	var n int64
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM dispatch_outbox`).Scan(&n); err == nil {
+	if n, err := r.store.Backlog(ctx); err == nil {
 		outboxBacklog.Set(float64(n))
 	}
 }
 
-// insertAuditEntries writes one audit_log row per published dispatch. Uses a
-// single multi-row INSERT for efficiency.
-func insertAuditEntries(ctx context.Context, tx pgx.Tx, batch []outboxRow) error {
-	if len(batch) == 0 {
-		return nil
-	}
-	// One INSERT with unnest arrays keeps this cheap even at batch size 200.
-	instanceIDs := make([]string, len(batch))
-	jobIDs := make([]string, len(batch))
-	for i, o := range batch {
-		instanceIDs[i] = o.instanceID
-		jobIDs[i] = o.jobID
-	}
-	_, err := tx.Exec(ctx,
-		`INSERT INTO audit_log (actor, kind, instance_id, detail)
-		 SELECT 'dispatch-relay', 'DISPATCHED_VIA_BROKER', instance_id, jsonb_build_object('job_id', job_id)
-		 FROM unnest($1::text[], $2::text[]) AS t(instance_id, job_id)`,
-		instanceIDs, jobIDs,
-	)
-	if err != nil {
-		return fmt.Errorf("insert audit rows: %w", err)
-	}
-	return nil
-}
-
 // classifyKafkaErr maps a franz-go error into a stable label value for the
-// producer-errors counter. Returns "unknown" for values outside the library's
+// producer-errors counter. Returns "client" for values outside the library's
 // kerr table.
 func classifyKafkaErr(err error) string {
 	if err == nil {

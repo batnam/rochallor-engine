@@ -68,6 +68,8 @@ func run() error {
 		return fmt.Errorf("migrate: %w", err)
 	}
 
+	dbConn := postgres.NewDB(pool)
+
 	// ── Dispatch runtime (mode switch) ────────────────────────────
 	// cfg.DispatchMode has already been validated in config.Load; this switch
 	// is the wiring seam that chooses which Runtime + Dispatcher pair is live
@@ -87,6 +89,8 @@ func run() error {
 		}
 		dispatchRT = kafkaoutbox.New(kafkaoutbox.Config{
 			Pool:          pool,
+			DB:            dbConn,
+			Store:         postgres.NewOutboxStore(pool),
 			SeedBrokers:   cfg.Kafka.SeedBrokers,
 			JobTypes:      jobTypes,
 			Transport:     cfg.Kafka.Transport,
@@ -118,7 +122,6 @@ func run() error {
 	// ── Services ──────────────────────────────────────────────────────────────
 	instance.SetExpressionEvaluator(expression.Evaluate)
 
-	dbConn := postgres.NewDB(pool)
 	instStore := postgres.NewInstanceStore(pool)
 	jobStore := postgres.NewJobStore(pool)
 	bndStore := postgres.NewBoundaryStore(pool)

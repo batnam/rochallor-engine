@@ -69,6 +69,12 @@ func (r *Runtime) Start(ctx context.Context) error {
 	if r.cfg.Pool == nil {
 		return fmt.Errorf("kafka_outbox: Config.Pool is required")
 	}
+	if r.cfg.DB == nil {
+		return fmt.Errorf("kafka_outbox: Config.DB is required")
+	}
+	if r.cfg.Store == nil {
+		return fmt.Errorf("kafka_outbox: Config.Store is required")
+	}
 	if r.cfg.SeedBrokers == "" {
 		return fmt.Errorf("kafka_outbox: Config.SeedBrokers is required")
 	}
@@ -96,7 +102,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 	}
 
 	r.kafkaClient = client
-	r.relay = newRelay(r.cfg.Pool, client, r.cfg.BatchSize, r.logger)
+	r.relay = newRelay(r.cfg.DB, r.cfg.Store, client, r.cfg.BatchSize, r.logger)
 
 	// rootCtx scopes the election loop's lifetime.
 	r.rootCtx, r.rootCancel = context.WithCancel(context.Background())
@@ -150,13 +156,7 @@ func (r *Runtime) validateTopics(ctx context.Context, client *kgo.Client) error 
 }
 
 func (r *Runtime) checkMigration(ctx context.Context) error {
-	var exists bool
-	err := r.cfg.Pool.QueryRow(ctx, `
-                SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
-                        WHERE  table_schema = 'public'
-                        AND    table_name   = 'dispatch_outbox'
-                )`).Scan(&exists)
+	exists, err := r.cfg.Store.CheckMigrationApplied(ctx)
 	if err != nil {
 		return fmt.Errorf("kafka_outbox: migration check failed: %w", err)
 	}
@@ -237,5 +237,5 @@ func (r *Runtime) Stop(ctx context.Context) error {
 // Dispatcher returns the hot-path Dispatcher for this runtime.
 // The returned value is stateless and stable for the lifetime of the Runtime.
 func (r *Runtime) Dispatcher() dispatch.Dispatcher {
-	return Dispatcher{}
+	return Dispatcher{store: r.cfg.Store}
 }
