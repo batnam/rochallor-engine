@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * US2 design-from-empty journey: build a small workflow entirely via the UI,
+ * Design-from-empty journey: build a small workflow entirely via the UI,
  * export it, re-import, and confirm clean round-trip.
  */
 test('design-from-empty: build → export → re-import round-trips with zero errors', async ({

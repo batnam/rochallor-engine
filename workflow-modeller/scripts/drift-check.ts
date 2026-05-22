@@ -1,10 +1,10 @@
 /**
- * Drift-guard helpers (T068).
+ * Drift-guard helpers.
  *
- * SC-002 requires that every workflow accepted by the editor be accepted by
- * the engine. This module pairs the TypeScript validator with the Go
- * `definition.Validate` (invoked through `workflow-engine/cmd/validate-fixture`)
- * so the drift can be detected mechanically.
+ * Every workflow accepted by the editor must be accepted by the engine. This
+ * module pairs the TypeScript validator with the Go `definition.Validate`
+ * (invoked through `workflow-engine/cmd/validate-fixture`) so the drift can
+ * be detected mechanically.
  *
  * Usage from Vitest: see tests/drift.test.ts.
  */
@@ -33,7 +33,7 @@ export interface FixtureDriftResult {
   fixture: string;
   ts: { accepted: boolean; diagnostics: Diagnostic[] };
   go: GoVerdict;
-  /** True iff TS accepts but Go rejects — the SC-002 drift case. */
+  /** True iff TS accepts but Go rejects — the drift case. */
   drift: boolean;
 }
 

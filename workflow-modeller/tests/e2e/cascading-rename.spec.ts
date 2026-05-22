@@ -7,7 +7,7 @@ const FIXTURE = readFileSync(
 );
 
 /**
- * US2 cascading rename: after renaming a referenced step, every reference site
+ * Cascading rename: after renaming a referenced step, every reference site
  * in the exported JSON reflects the new id.
  */
 test('cascading-rename: every reference site updates in one action', async ({ page }) => {

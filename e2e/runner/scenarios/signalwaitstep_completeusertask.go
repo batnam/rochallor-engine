@@ -131,34 +131,34 @@ func RunSignalWaitStepCompleteUserTask(t TestReporter, client ClientIface, scena
 		t.Logf("[%s/signalwaitstep-completeusertask] COMPLETED ✓", prefix)
 	}
 
-	// US2: Error Handling
-	t.Logf("[%s/signalwaitstep-completeusertask] US2: Testing error handling", prefix)
+	// Error Handling
+	t.Logf("[%s/signalwaitstep-completeusertask] Testing error handling", prefix)
 
-	// T018: Signal invalid step ID
+	// Signal invalid step ID
 	if err = client.SignalWait(ctx, instanceID, "invalid-step", nil); err == nil {
-		t.Errorf("[%s/signalwaitstep-completeusertask] [US2] expected error for invalid step ID, got nil", prefix)
+		t.Errorf("[%s/signalwaitstep-completeusertask] expected error for invalid step ID, got nil", prefix)
 	} else {
-		t.Logf("[%s/signalwaitstep-completeusertask] [US2] correctly rejected invalid step ID signal", prefix)
+		t.Logf("[%s/signalwaitstep-completeusertask] correctly rejected invalid step ID signal", prefix)
 	}
 
-	// T020: Signal non-existent instance
+	// Signal non-existent instance
 	if err = client.SignalWait(ctx, "non-existent-id", waitStepID, nil); err == nil {
-		t.Errorf("[%s/signalwaitstep-completeusertask] [US2] expected error for non-existent instance ID, got nil", prefix)
+		t.Errorf("[%s/signalwaitstep-completeusertask] expected error for non-existent instance ID, got nil", prefix)
 	} else {
-		t.Logf("[%s/signalwaitstep-completeusertask] [US2] correctly rejected non-existent instance ID signal", prefix)
+		t.Logf("[%s/signalwaitstep-completeusertask] correctly rejected non-existent instance ID signal", prefix)
 	}
 
-	// T019: Complete user task in invalid state (instance already COMPLETED)
+	// Complete user task in invalid state (instance already COMPLETED)
 	if err = client.CompleteUserTaskByStableID(ctx, instanceID, userTaskStepID, nil); err == nil {
-		t.Errorf("[%s/signalwaitstep-completeusertask] [US2] expected error for completion in COMPLETED state, got nil", prefix)
+		t.Errorf("[%s/signalwaitstep-completeusertask] expected error for completion in COMPLETED state, got nil", prefix)
 	} else {
-		t.Logf("[%s/signalwaitstep-completeusertask] [US2] correctly rejected task completion in invalid state", prefix)
+		t.Logf("[%s/signalwaitstep-completeusertask] correctly rejected task completion in invalid state", prefix)
 	}
 
-	// T021: GetInstance with a non-existent ID must return an error.
+	// GetInstance with a non-existent ID must return an error.
 	if _, err = client.GetInstance(ctx, "nonexistent-instance-id-000"); err == nil {
-		t.Errorf("[%s/signalwaitstep-completeusertask] [US2] expected error for nonexistent instance lookup, got nil", prefix)
+		t.Errorf("[%s/signalwaitstep-completeusertask] expected error for nonexistent instance lookup, got nil", prefix)
 	} else {
-		t.Logf("[%s/signalwaitstep-completeusertask] [US2] correctly rejected nonexistent instance lookup", prefix)
+		t.Logf("[%s/signalwaitstep-completeusertask] correctly rejected nonexistent instance lookup", prefix)
 	}
 }

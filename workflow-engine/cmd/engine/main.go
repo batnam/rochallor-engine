@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -121,6 +122,11 @@ func run() error {
 
 	// ── Services ──────────────────────────────────────────────────────────────
 	instance.SetExpressionEvaluator(expression.Evaluate)
+	// Expression coercion: default-on, env opt-out.
+	if v := strings.ToLower(os.Getenv("WE_EXPRESSION_COERCION_ENABLED")); v == "0" || v == "false" || v == "no" {
+		expression.SetCoercionEnabled(false)
+		slog.Info("engine: expression coercion disabled via WE_EXPRESSION_COERCION_ENABLED")
+	}
 
 	instStore := postgres.NewInstanceStore(pool)
 	jobStore := postgres.NewJobStore(pool)

@@ -8,7 +8,7 @@
 //   - Status:    InstanceStatus string enum names (protobuf JSON mapping)
 //   - Teardown:  res.message.instances (not .items as in the REST response)
 //
-// Design decisions: specs/003-performance-load-testing/research.md §R1–R8
+// Design decisions: specs/003-performance-load-testing/research.md
 
 import { sleep } from 'k6';
 import { Counter } from 'k6/metrics';
@@ -94,7 +94,7 @@ function currentPhase(testStartMs) {
   return 'ramp-down';
 }
 
-// gRPC failure classification (research R5, data-model §FailureClassification).
+// gRPC failure classification (data-model §FailureClassification).
 // No generator_side category — network failures surface as StatusUnavailable.
 function classifyGrpcFailure(res, deadlineExpired) {
   if (deadlineExpired) return 'engine_unresponsive';

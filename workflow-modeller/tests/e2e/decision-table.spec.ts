@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * US4 (feature 007): drag a Decision Table from the palette, set hit policy +
- * linear nextStep, add a single rule, and verify the canvas shows exactly one
- * outbound edge (no per-rule fan-out).
+ * Drag a Decision Table from the palette, set hit policy + linear nextStep,
+ * add a single rule, and verify the canvas shows exactly one outbound edge
+ * (no per-rule fan-out).
  *
  * NOTE: selector strategy mirrors the other e2e specs (.wm-palette-item +
  * accessible names). Fix selectors here before deleting tests if the UI

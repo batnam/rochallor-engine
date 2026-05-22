@@ -216,7 +216,7 @@ type BoundaryEventType int32
 
 const (
 	BoundaryEventType_BOUNDARY_EVENT_TYPE_UNSPECIFIED BoundaryEventType = 0
-	BoundaryEventType_BOUNDARY_EVENT_TYPE_TIMER       BoundaryEventType = 1 // the only type in scope per research R-005
+	BoundaryEventType_BOUNDARY_EVENT_TYPE_TIMER       BoundaryEventType = 1 // the only type in scope
 )
 
 // Enum value maps for BoundaryEventType.
@@ -374,7 +374,7 @@ type WorkflowStep struct {
 	Transformations map[string]*structpb.Value `protobuf:"bytes,30,rep,name=transformations,proto3" json:"transformations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Service task
 	JobType       string `protobuf:"bytes,40,opt,name=job_type,json=jobType,proto3" json:"job_type,omitempty"`
-	DelegateClass string `protobuf:"bytes,41,opt,name=delegate_class,json=delegateClass,proto3" json:"delegate_class,omitempty"` // advisory only per R-010
+	DelegateClass string `protobuf:"bytes,41,opt,name=delegate_class,json=delegateClass,proto3" json:"delegate_class,omitempty"` // advisory only
 	RetryCount    int32  `protobuf:"varint,42,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`
 	// Boundary events (optional; most commonly attached to SERVICE_TASK / USER_TASK / WAIT)
 	BoundaryEvents []*BoundaryEvent `protobuf:"bytes,50,rep,name=boundary_events,json=boundaryEvents,proto3" json:"boundary_events,omitempty"`

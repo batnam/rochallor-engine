@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Post-run report builder for the perf load test (Phase 4, T021).
+// Post-run report builder for the perf load test.
 // Reads k6-output.json + host-stats.json, produces the phaseMetrics array
 // and failures object that are merged into summary.json.
 //
@@ -152,7 +152,7 @@ if (summaryExp && summaryExp.metrics) {
 // --- Host stats summary ---
 const hostStatsSummary = hostStats ? hostStats.summary : null;
 
-// --- Regression comparison (Phase 5 / T029-T031, placeholder here) ---
+// --- Regression comparison (placeholder here) ---
 let comparison = null;
 if (baseline && baseline.phaseMetrics) {
   const BAND = { p95Pct: 15, throughputPct: 10 };

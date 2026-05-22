@@ -53,14 +53,14 @@ func New(cfg Config) *Runtime {
 	return &Runtime{cfg: cfg, logger: logger}
 }
 
-// Start performs the R-008 validation sequence and launches the leader-
-// election + relay goroutines. Returns an error if any dependency is missing
-// or unreachable — no silent fallback.
+// Start performs the validation sequence and launches the leader-election +
+// relay goroutines. Returns an error if any dependency is missing or
+// unreachable — no silent fallback.
 //
 // Validation steps (in order):
 //  1. Config completeness (pool, seed brokers present).
 //  2. Migration 0009 applied (table dispatch_outbox exists).
-//  3. Open Kafka client + Metadata request against every topic (R-002).
+//  3. Open Kafka client + Metadata request against every topic.
 //     Fail fast if any topic is missing or if the broker is unreachable.
 //  4. Start the leader-election loop.
 //
@@ -146,7 +146,7 @@ func (r *Runtime) validateTopics(ctx context.Context, client *kgo.Client) error 
 	for _, t := range topics {
 		m, ok := metadata[t]
 		if !ok {
-			return fmt.Errorf("kafka_outbox: topic %q is missing (auto-creation is disabled per R-002)", t)
+			return fmt.Errorf("kafka_outbox: topic %q is missing (auto-creation is disabled)", t)
 		}
 		if m.Err != nil {
 			return fmt.Errorf("kafka_outbox: topic %q metadata error: %w", t, m.Err)

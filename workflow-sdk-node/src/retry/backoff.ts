@@ -1,5 +1,5 @@
 /**
- * R-009 backoff policy: base 100 ms, factor 2.0, jitter ±20%, max 30 s.
+ * Backoff policy: base 100 ms, factor 2.0, jitter ±20%, max 30 s.
  */
 export const BASE_DELAY_MS = 100
 export const FACTOR = 2.0

@@ -1,9 +1,9 @@
-// Strict pass/fail thresholds for the rochallor-engine perf load test (FR-005).
+// Strict pass/fail thresholds for the rochallor-engine perf load test.
 //
 // These are the default thresholds (thresholdsLineage = "default").
-// Overrides can be supplied via --threshold-overrides (Phase 6 / T033).
+// Overrides can be supplied via --threshold-overrides.
 //
-// Threshold decisions: specs/003-performance-load-testing/research.md §R4
+// Threshold decisions: specs/003-performance-load-testing/research.md
 // Contract:           specs/003-performance-load-testing/data-model.md §ThresholdSet
 
 // If PERF_THRESHOLD_OVERRIDES_JSON is set, the engineer supplied an override JSON
@@ -25,7 +25,7 @@ const _defaults = {
   'http_req_duration{operation:workflow.list}':    ['p(95)<500'],
   'http_req_duration{operation:workflow.history}': ['p(95)<500'],
 
-  // Zero workflows still non-terminal 10 s after steady-state ends (FR-005)
+  // Zero workflows still non-terminal 10 s after steady-state ends
   'workflows_unfinished_after_steady_state': ['count==0'],
 
   // Error rate < 0.1% for new operations

@@ -1,7 +1,7 @@
 //go:build load
 
-// wal_delta_test.go is the SC-002 WAL-delta harness for feature
-// 005-engine-performance-optimization.
+// wal_delta_test.go is the WAL-delta harness for engine performance
+// optimization.
 //
 // Gated behind the `load` build tag so it never runs under `go test ./...`.
 // Run it via:
@@ -13,7 +13,7 @@
 // Seeds one workflow_instance with a `variables` JSONB ≥ SC002_PAYLOAD_KB
 // (default 256), performs a full-row rewrite and a jsonb_set partial update
 // of the same single key on independent rows, and compares the
-// pg_current_wal_lsn() delta. Asserts ≥ 40% reduction (SC-002).
+// pg_current_wal_lsn() delta. Asserts ≥ 40% reduction.
 package postgres_test
 
 import (
@@ -34,7 +34,7 @@ import (
 func TestJSONBSetWALDelta(t *testing.T) {
 	dsn := os.Getenv("WE_POSTGRES_DSN")
 	if dsn == "" {
-		t.Skip("SC-002 harness requires WE_POSTGRES_DSN to point at a load-test database")
+		t.Skip("harness requires WE_POSTGRES_DSN to point at a load-test database")
 	}
 
 	payloadKB := envInt("SC002_PAYLOAD_KB", 256)
@@ -111,9 +111,9 @@ func TestJSONBSetWALDelta(t *testing.T) {
 		t.Fatalf("WAL delta non-positive: full=%d set=%d — check background activity on the instance", fullDelta, setDelta)
 	}
 	if reduction < 0.40 {
-		t.Fatalf("SC-002 FAIL: WAL reduction %.2f%% < 40%% target", reduction*100)
+		t.Fatalf("FAIL: WAL reduction %.2f%% < 40%% target", reduction*100)
 	}
-	t.Logf("SC-002 PASS: WAL reduction %.2f%% >= 40%% target", reduction*100)
+	t.Logf("PASS: WAL reduction %.2f%% >= 40%% target", reduction*100)
 }
 
 // measureWAL returns the byte difference of pg_current_wal_lsn() around fn,

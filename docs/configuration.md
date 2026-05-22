@@ -19,6 +19,7 @@ All engine configuration is read from environment variables. An optional YAML fi
 | `WE_METRICS_PORT` | `9091` | Prometheus `/metrics` endpoint port |
 | `WE_LOG_LEVEL` | `info` | Minimum log level: `debug`, `info`, `warn`, `error` |
 | `WE_AUDIT_LOG_ENABLED` | `true` | Record engine actions to `audit_log` table |
+| `WE_EXPRESSION_COERCION_ENABLED` | `true` | Whether DECISION / TRANSFORMATION / DECISION_TABLE expressions silently coerce string operands to the type their operator expects (e.g. `"100.5" > 50` evaluates as `100.5 > 50`). Set to `0`, `false`, or `no` to disable cluster-wide and fall back to native `expr-lang/expr` semantics. See `docs/workflow-format.md` → Expression coercion. |
 | `DB_MAX_CONNS` | `runtime.NumCPU() * 4` (floor 4) | Maximum pgxpool connections. Tune per deployment to bound Postgres `max_connections` usage across replicas. |
 | `DB_MIN_CONNS` | `0` | Minimum idle pgxpool connections held open. `0` preserves pgxpool's on-demand behaviour. Must be `≤ DB_MAX_CONNS`. |
 

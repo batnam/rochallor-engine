@@ -1,4 +1,4 @@
-// Package retry implements the R-009 backoff policy.
+// Package retry implements the backoff policy.
 //
 // Policy: base 100 ms, factor 2.0, jitter ±20%, max delay 30 s.
 // The attempt budget comes from the job's retryCount field.

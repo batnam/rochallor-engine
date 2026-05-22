@@ -34,7 +34,7 @@ type Config struct {
 	SeedBrokers string
 
 	// JobTypes is the list of every job_type present in the system.
-	// Used to validate Kafka topics at startup (R-008).
+	// Used to validate Kafka topics at startup.
 	JobTypes []string
 
 	// Transport selects the wire security posture: "plaintext" or

@@ -4,7 +4,7 @@
 //
 // It is invoked by the workflow-modeller drift-guard harness to verify
 // that every fixture accepted by the TypeScript validator is also accepted by
-// the Go engine — the mechanical guarantee for SC-002.
+// the Go engine.
 //
 // The command lives inside the workflow-engine module because the engine's
 // `internal/definition` package can only be imported from within that module.

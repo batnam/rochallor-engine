@@ -26,7 +26,7 @@ export class NonRetryableError extends Error {
 }
 
 /**
- * Registry maps jobType strings to Handler functions (R-010).
+ * Registry maps jobType strings to Handler functions.
  */
 export class HandlerRegistry {
   private readonly handlers = new Map<string, Handler>()

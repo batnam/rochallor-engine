@@ -4,8 +4,10 @@ import (
 	"container/list"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/ast"
@@ -65,7 +67,28 @@ func (c *lruCache) set(key string, p *vm.Program) {
 	c.items[key] = el
 }
 
+func (c *lruCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.items = make(map[string]*list.Element, c.cap)
+	c.order = list.New()
+}
+
 var programCache = newLRUCache(defaultCacheSize)
+
+// coercionEnabled gates the AST patcher that wraps numeric/boolean operator
+// operands with the __coerce* builtins. Default ON.
+var coercionEnabled atomic.Bool
+
+func init() { coercionEnabled.Store(true) }
+
+// SetCoercionEnabled toggles automatic type coercion in expression operands.
+// Flushes the compiled-program cache so subsequent evaluations are recompiled
+// under the new setting. Intended for engine startup configuration and tests.
+func SetCoercionEnabled(b bool) {
+	coercionEnabled.Store(b)
+	programCache.clear()
+}
 
 // builtins are functions available in all expressions.
 var builtins = map[string]any{
@@ -105,6 +128,77 @@ var builtins = map[string]any{
 		}
 		return 0
 	},
+	// __coerceNumber strictly coerces a value to float64 for use as an
+	// operand of arithmetic or ordering operators. Numeric values pass
+	// through; numeric-shaped strings are parsed via strconv.ParseFloat;
+	// everything else errors. Used by the coercion patcher.
+	"__coerceNumber": coerceNumberStrict,
+	// __coerceNumberSoft best-effort numeric coercion for == and !=. It
+	// returns a parsed float64 if the input is a numeric-shaped string;
+	// otherwise it returns the input unchanged so that string equality
+	// (e.g. name == "Alice") still works.
+	"__coerceNumberSoft": coerceNumberSoft,
+	// __coerceBool strictly coerces a value to bool for use as an operand
+	// of &&, ||, or !. Booleans pass through; case-insensitive "true" /
+	// "false" strings are coerced; everything else errors.
+	"__coerceBool": coerceBoolStrict,
+}
+
+const coerceValuePreviewMax = 64
+
+func valuePreview(v any) string {
+	s := fmt.Sprintf("%v", v)
+	if len(s) > coerceValuePreviewMax {
+		return s[:coerceValuePreviewMax] + "…"
+	}
+	return s
+}
+
+func coerceNumberStrict(v any) (float64, error) {
+	switch x := v.(type) {
+	case float64:
+		return x, nil
+	case float32:
+		return float64(x), nil
+	case int:
+		return float64(x), nil
+	case int64:
+		return float64(x), nil
+	case int32:
+		return float64(x), nil
+	case string:
+		f, err := strconv.ParseFloat(x, 64)
+		if err != nil {
+			return 0, fmt.Errorf("cannot coerce value %q to number", valuePreview(x))
+		}
+		return f, nil
+	}
+	return 0, fmt.Errorf("cannot coerce value %s (type %T) to number", valuePreview(v), v)
+}
+
+func coerceNumberSoft(v any) any {
+	if s, ok := v.(string); ok {
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return f
+		}
+	}
+	return v
+}
+
+func coerceBoolStrict(v any) (bool, error) {
+	switch x := v.(type) {
+	case bool:
+		return x, nil
+	case string:
+		switch strings.ToLower(x) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+		return false, fmt.Errorf("cannot coerce value %q to bool", valuePreview(x))
+	}
+	return false, fmt.Errorf("cannot coerce value %s (type %T) to bool", valuePreview(v), v)
 }
 
 var (
@@ -159,15 +253,83 @@ func checkUndefinedIdents(preprocessed string, env map[string]any) error {
 	return nil
 }
 
-func compileExpr(preprocessed string) (*vm.Program, error) {
-	if p, ok := programCache.get(preprocessed); ok {
+// coercionPatcher rewrites the AST of comparison, arithmetic, and boolean
+// operators so that string-typed variables silently behave like the type the
+// operator expects.
+//
+// Operator → wrapper:
+//   <, <=, >, >=, +, -, *, /    →  __coerceNumber (strict)
+//   ==, !=                      →  __coerceNumberSoft (best-effort)
+//   &&, ||                      →  __coerceBool (strict)
+//   unary !                     →  __coerceBool (strict)
+//
+// Operands that are already typed literals (NumberNode, BoolNode, NilNode) or
+// already wrapped in a coerce call are not re-wrapped.
+type coercionPatcher struct{}
+
+var coerceBuiltinNames = map[string]struct{}{
+	"__coerceNumber":     {},
+	"__coerceNumberSoft": {},
+	"__coerceBool":       {},
+}
+
+func (coercionPatcher) Visit(node *ast.Node) {
+	switch n := (*node).(type) {
+	case *ast.BinaryNode:
+		switch n.Operator {
+		case "<", "<=", ">", ">=", "+", "-", "*", "/":
+			n.Left = wrapCoerce(n.Left, "__coerceNumber")
+			n.Right = wrapCoerce(n.Right, "__coerceNumber")
+		case "==", "!=":
+			n.Left = wrapCoerce(n.Left, "__coerceNumberSoft")
+			n.Right = wrapCoerce(n.Right, "__coerceNumberSoft")
+		case "&&", "||":
+			n.Left = wrapCoerce(n.Left, "__coerceBool")
+			n.Right = wrapCoerce(n.Right, "__coerceBool")
+		}
+	case *ast.UnaryNode:
+		if n.Operator == "!" {
+			n.Node = wrapCoerce(n.Node, "__coerceBool")
+		}
+	}
+}
+
+func wrapCoerce(child ast.Node, builtin string) ast.Node {
+	switch c := child.(type) {
+	case *ast.BoolNode, *ast.NilNode, *ast.FloatNode, *ast.IntegerNode, *ast.StringNode:
+		return child
+	case *ast.CallNode:
+		if id, ok := c.Callee.(*ast.IdentifierNode); ok {
+			if _, isCoerce := coerceBuiltinNames[id.Value]; isCoerce {
+				return child
+			}
+		}
+	}
+	return &ast.CallNode{
+		Callee:    &ast.IdentifierNode{Value: builtin},
+		Arguments: []ast.Node{child},
+	}
+}
+
+func compileExpr(preprocessed string, coerce bool) (*vm.Program, error) {
+	cacheKey := preprocessed
+	if coerce {
+		cacheKey = "coerce:" + preprocessed
+	}
+	if p, ok := programCache.get(cacheKey); ok {
 		return p, nil
 	}
-	p, err := expr.Compile(preprocessed)
+	var p *vm.Program
+	var err error
+	if coerce {
+		p, err = expr.Compile(preprocessed, expr.Patch(coercionPatcher{}))
+	} else {
+		p, err = expr.Compile(preprocessed)
+	}
 	if err != nil {
 		return nil, err
 	}
-	programCache.set(preprocessed, p)
+	programCache.set(cacheKey, p)
 	return p, nil
 }
 
@@ -188,7 +350,7 @@ func Evaluate(expression string, vars map[string]any) (any, error) {
 		return nil, fmt.Errorf("expression %q: %w", expression, err)
 	}
 
-	program, err := compileExpr(preprocessed)
+	program, err := compileExpr(preprocessed, coercionEnabled.Load())
 	if err != nil {
 		return nil, fmt.Errorf("expression %q: %w", expression, err)
 	}

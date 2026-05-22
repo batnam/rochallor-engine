@@ -1,5 +1,5 @@
 /**
- * Bundle-size budget guard (T093).
+ * Bundle-size budget guard.
  *
  * Builds the SPA, sums the gzipped size of every emitted JS asset, and fails
  * if the total exceeds the budget defined in plan.md (500 KB gzipped).

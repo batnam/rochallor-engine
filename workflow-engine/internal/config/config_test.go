@@ -277,7 +277,7 @@ func TestDBPoolInvalid(t *testing.T) {
 	}
 }
 
-// TestDispatchModeDefault: unset WE_DISPATCH_MODE defaults to "polling" (FR-001).
+// TestDispatchModeDefault: unset WE_DISPATCH_MODE defaults to "polling".
 func TestDispatchModeDefault(t *testing.T) {
 	clearEngineEnv(t)
 	setEnv(t, "WE_POSTGRES_DSN", "postgres://user:pass@localhost/wf")
@@ -350,7 +350,7 @@ func TestDispatchModeKafkaOutboxMissingTransport(t *testing.T) {
 	}
 }
 
-// TestDispatchModeSASLMissingPassword: sasl_scram_tls requires a password (FR-012).
+// TestDispatchModeSASLMissingPassword: sasl_scram_tls requires a password.
 func TestDispatchModeSASLMissingPassword(t *testing.T) {
 	clearEngineEnv(t)
 	setEnv(t,
@@ -407,7 +407,7 @@ func TestDispatchModeSASLHappyPath(t *testing.T) {
 }
 
 // TestYAMLCannotSupplyKafkaSecrets: even if a YAML file carries SASL secrets,
-// the loader must ignore them (secrets are env-only, FR-012).
+// the loader must ignore them (secrets are env-only).
 func TestYAMLCannotSupplyKafkaSecrets(t *testing.T) {
 	clearEngineEnv(t)
 	yaml := writeYAML(t, `

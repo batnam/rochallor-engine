@@ -29,6 +29,7 @@ A workflow definition is a single JSON object that describes the directed graph 
 | `autoStartNextWorkflow` | boolean | no | When `true`, the engine automatically starts a new instance of `nextWorkflowId` as soon as this workflow reaches an `END` step. |
 | `nextWorkflowId` | string | conditional | Required (and must be non-empty) when `autoStartNextWorkflow` is `true`. Must match the `id` of another uploaded definition. |
 | `metadata` | object | no | Arbitrary JSON key-value pairs (strings, numbers, arrays, nested objects). The engine stores the raw JSON and never inspects it. Use for categorisation, authoring info, etc. |
+| `input_schema` | object | no | Optional declaration of the starting variables this workflow expects. When set, `StartInstance` rejects payloads that violate the schema. See [Variable schemas](#variable-schemas). |
 
 > **ID format rule**: `LOS::loan-registration-workflow` and `greet-workflow` are valid. `my workflow` (space) or `order@v2` (`@`) are not — the engine rejects them with HTTP 400.
 
@@ -62,6 +63,7 @@ The engine creates a job record for this step, which the SDK worker polls, execu
 | `jobType` | string | yes      | Label passed to the SDK worker so it knows which handler to run. Required in practice if you want workers to process the job. |
 | `delegateClass` | string | no       | Advisory string preserved for compatibility. The engine stores it but never loads or reflects on it. |
 | `retryCount` | integer | no       | How many times the engine retries a failed job before marking the step `FAILED`. Default `0` (no retries). |
+| `outputs_schema` | object | no | Optional declaration of the variables the worker is expected to write when completing this job. Violations terminate the instance and bypass `retryCount`. See [Variable schemas](#variable-schemas). |
 
 ```json
 {
@@ -1138,3 +1140,87 @@ curl -X POST "http://localhost:8080/v1/instances/$DISBURSEMENT_ID/user-tasks/sen
 | Manual review → underwriter approves | `end-approved` | `end-disbursed` |
 | Manual review → underwriter rejects | `end-rejected` | _(not started)_ |
 | Manual review timer fires (48 h) | `end-escalated` | _(not started)_ |
+
+---
+
+## Variable schemas
+
+The engine supports two optional, declarative type schemas on a workflow definition. Both use a **strict subset of JSON Schema** (primitive types + `required`), are entirely opt-in, and run with **strict** semantics — coercion (see [Expression coercion](#expression-coercion)) does NOT apply at schema boundaries.
+
+### Shape
+
+```json
+{
+  "properties": {
+    "<name>": { "type": "string" | "number" | "integer" | "boolean" }
+  },
+  "required": ["<name>", ...]
+}
+```
+
+- Variables not listed under `properties` are unrestricted; they pass through.
+- Names listed in `required` must also exist in `properties`, otherwise the definition is rejected at upload time.
+- `integer` accepts whole-valued numbers (e.g. `3`, `3.0`); `3.5` fails.
+- `null` fails unless the field is absent from `required`.
+- Any unsupported `type` value (anything other than the four above) is rejected at upload.
+
+### `input_schema` (top-level, workflow input)
+
+Validated by `StartInstance` against the caller-supplied variables, **before** the instance row is persisted. Violations return `INVALID_ARGUMENT` with every violating field enumerated. Nothing is written to the database when validation fails.
+
+```json
+{
+  "id": "charge-payment",
+  "name": "Charge Payment",
+  "input_schema": {
+    "properties": {
+      "amount":      { "type": "number" },
+      "customer_id": { "type": "string" }
+    },
+    "required": ["amount", "customer_id"]
+  },
+  "steps": [ ... ]
+}
+```
+
+### `outputs_schema` (SERVICE_TASK only, worker output)
+
+Validated by `CompleteJob` against the variables the worker returns, **before** they are merged into the instance. v1 honours `outputs_schema` only on `SERVICE_TASK` steps; setting it on any other type causes the definition upload to be rejected.
+
+Violations are **non-retryable** — the job is moved to `CANCELLED`, the step execution's `failure_reason` records the violation, and the instance transitions to `FAILED`. The step's `retryCount` is intentionally bypassed because schema violations are deterministic: a retry would fail identically.
+
+```json
+{
+  "id": "charge",
+  "name": "Charge customer",
+  "type": "SERVICE_TASK",
+  "jobType": "charge.now",
+  "retryCount": 3,
+  "outputs_schema": {
+    "properties": {
+      "payment_id": { "type": "string" },
+      "charged_at": { "type": "string" }
+    },
+    "required": ["payment_id"]
+  },
+  "nextStep": "end"
+}
+```
+
+---
+
+## Expression coercion
+
+Expressions in `DECISION` step conditions, `TRANSFORMATION` `${...}` placeholders, and `DECISION_TABLE` cell expressions are evaluated against the instance's variables. By default, the engine applies **tolerant type coercion** at the operands of numeric/boolean operators:
+
+| Operator | Coercion rule |
+|----------|---------------|
+| `<`, `<=`, `>`, `>=`, `+`, `-`, `*`, `/` | Each operand is coerced to a number. Numeric-shaped strings (`"100.5"`) become floats; non-numeric strings produce a runtime error naming the offending value. |
+| `==`, `!=` | Each operand is best-effort coerced to a number. If a string is numeric-shaped it becomes a float (so `amount == 5` works when `amount` is `"5"`); otherwise the original value is preserved (so `name == "Alice"` still works with a string identifier). |
+| `&&`, `\|\|`, `!` | Each operand is coerced to a bool. Case-insensitive `"true"` / `"false"` strings are accepted; anything else errors. |
+
+Coercion is **locale-neutral** — only JSON-style numeric literals (decimal point `.`, no group separators) are accepted. `"100,5"` fails.
+
+Coercion is `ON` by default and can be disabled at the engine level (see `docs/configuration.md` → `expression.coercion_enabled`). When disabled, expressions behave exactly as `expr-lang/expr` does natively — string-vs-number comparisons error or fall back to lexicographic semantics.
+
+> Coercion **only** applies inside expression evaluation. Variables flowing through `input_schema` and `outputs_schema` checks are validated strictly, with no coercion.

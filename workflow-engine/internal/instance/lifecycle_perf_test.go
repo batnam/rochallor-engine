@@ -51,7 +51,7 @@ const sc001ChainLength = 50000
 func TestSignalThroughputBaseline(t *testing.T) {
 	dsn := os.Getenv("WE_POSTGRES_DSN")
 	if dsn == "" {
-		t.Skip("SC-001 harness requires WE_POSTGRES_DSN to point at a load-test database")
+		t.Skip("harness requires WE_POSTGRES_DSN to point at a load-test database")
 	}
 
 	concurrency := envInt("SC001_CONCURRENCY", 64)
@@ -145,7 +145,7 @@ func buildWaitChainDefinition(n int) *definition.WorkflowDefinition {
 	})
 	return &definition.WorkflowDefinition{
 		ID:    "sc001::wait-chain",
-		Name:  "SC-001 wait chain",
+		Name:  "wait chain",
 		Steps: steps,
 	}
 }

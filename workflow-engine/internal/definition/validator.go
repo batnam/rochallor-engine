@@ -43,6 +43,11 @@ func Validate(def *WorkflowDefinition) error {
 		errs = append(errs, "nextWorkflowId is required when autoStartNextWorkflow is true")
 	}
 
+	// Workflow-level input schema.
+	if def.InputSchema != nil {
+		validateSchemaShape("input_schema", def.InputSchema, &errs)
+	}
+
 	if len(errs) > 0 && len(def.Steps) == 0 {
 		return errs // stop early if no steps
 	}
@@ -155,6 +160,15 @@ func Validate(def *WorkflowDefinition) error {
 			errs = append(errs, fmt.Sprintf("step %q (%s): decisionTable is not valid on this step type", s.ID, s.Type))
 		}
 
+		// outputs_schema is only valid on SERVICE_TASK in v1.
+		if s.OutputsSchema != nil {
+			if s.Type != StepTypeServiceTask {
+				errs = append(errs, fmt.Sprintf("step %q (%s): outputs_schema is only supported on SERVICE_TASK steps in this version", s.ID, s.Type))
+			} else {
+				validateSchemaShape(fmt.Sprintf("step %q outputs_schema", s.ID), s.OutputsSchema, &errs)
+			}
+		}
+
 		// Boundary events
 		for j, be := range s.BoundaryEvents {
 			if be.Type != BoundaryEventTypeTimer {
@@ -205,6 +219,28 @@ func Validate(def *WorkflowDefinition) error {
 func checkRef(stepID, field, target string, stepByID map[string]*WorkflowStep, errs *ValidationErrors) {
 	if _, ok := stepByID[target]; !ok {
 		*errs = append(*errs, fmt.Sprintf("step %q %s references unknown step %q", stepID, field, target))
+	}
+}
+
+// validateSchemaShape enforces the v1 subset: each property type must be one
+// of the supported primitives, every Required name must exist in Properties,
+// and Properties must not be empty.
+func validateSchemaShape(label string, s *Schema, errs *ValidationErrors) {
+	if s == nil {
+		return
+	}
+	if len(s.Properties) == 0 {
+		*errs = append(*errs, fmt.Sprintf("%s: properties must not be empty", label))
+	}
+	for name, desc := range s.Properties {
+		if !desc.Type.supported() {
+			*errs = append(*errs, fmt.Sprintf("%s: property %q has unsupported type %q (expected one of: string, number, integer, boolean)", label, name, desc.Type))
+		}
+	}
+	for _, req := range s.Required {
+		if _, ok := s.Properties[req]; !ok {
+			*errs = append(*errs, fmt.Sprintf("%s: required name %q does not appear in properties", label, req))
+		}
 	}
 }
 
