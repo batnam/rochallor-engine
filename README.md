@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="images/logo.png" alt="Rochallor Workflow Engine" width="50%">
-</p>
-
 # Rochallor Workflow Engine
 
 A lightweight, language-agnostic workflow engine built in Go, using PostgreSQL for persistence and — by default — `FOR UPDATE SKIP LOCKED` for job distribution across competing workers. An opt-in Kafka + Transaction Outbox dispatch mode is available for deployments that have outgrown the polling path; see [Dispatch modes](#dispatch-modes) below.
