@@ -2,8 +2,6 @@
 
 **Package**: `rochallor-sdk` ([PyPI](https://pypi.org/project/rochallor-sdk/))
 
-> The Python SDK supports **REST only**. A gRPC transport is not implemented.
-
 ## Key types
 
 | Module | Type | Purpose |
