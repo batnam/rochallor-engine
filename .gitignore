@@ -9,12 +9,15 @@ vendor/
 .env*
 
 #AI
+.agents
 .claude
 .specify
 docs/superpowers/
+docs/agents/
 .gemini
 CLAUDE.md
 GEMINI.md
+AGENTS.md
 .claudeignore
 
 
