@@ -1,0 +1,135 @@
+name: Publish Monitor Frontend
+
+on:
+  pull_request:
+    paths:
+      - "workflow-monitor/**"
+      - "workflow-monitor-bff/**"
+      - "workflow-engine/migrations/**"
+      - "deploy/docker-compose.monitor.quickstart.yml"
+      - "e2e/docker-compose-monitor.yml"
+      - ".github/workflows/publish-monitor-frontend.yml"
+  push:
+    branches:
+      - main
+    tags:
+      - 'monitor-frontend-v[0-9]+.[0-9]+.[0-9]+'
+    paths:
+      - "workflow-monitor/**"
+      - "workflow-monitor-bff/**"
+      - "workflow-engine/migrations/**"
+      - "deploy/docker-compose.monitor.quickstart.yml"
+      - "e2e/docker-compose-monitor.yml"
+      - ".github/workflows/publish-monitor-frontend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.15.0"
+          cache: pnpm
+          cache-dependency-path: workflow-monitor/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: workflow-monitor
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        working-directory: workflow-monitor
+        run: pnpm lint
+
+      - name: Typecheck
+        working-directory: workflow-monitor
+        run: pnpm typecheck
+
+      - name: Test
+        working-directory: workflow-monitor
+        run: pnpm test
+
+      - name: Build
+        working-directory: workflow-monitor
+        run: pnpm build
+
+      - name: Build image
+        run: docker build workflow-monitor
+
+      - name: Install Chromium
+        working-directory: workflow-monitor
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Production-shaped browser tests
+        working-directory: workflow-monitor
+        run: pnpm test:e2e
+
+  publish-monitor-frontend:
+    name: Publish Monitor Frontend image → GHCR
+    if: startsWith(github.ref, 'refs/tags/monitor-frontend-v')
+    needs: [verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: ver
+        run: echo "tag=${GITHUB_REF_NAME#monitor-frontend-}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./workflow-monitor
+          platforms: linux/amd64,linux/arm64
+          push: true
+          cache-from: type=gha,scope=monitor-frontend
+          cache-to: type=gha,mode=max,scope=monitor-frontend
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/rochallor-monitor-frontend:${{ steps.ver.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/rochallor-monitor-frontend:latest
+
+  github-release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/monitor-frontend-v')
+    needs: [publish-monitor-frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: ver
+        run: echo "tag=${GITHUB_REF_NAME#monitor-frontend-}" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Monitor Frontend ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          make_latest: false

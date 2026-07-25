@@ -1,0 +1,44 @@
+{
+  "name": "workflow-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only web application for Rochallor Monitor.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": "24.15.0"
+  },
+  "packageManager": "pnpm@9.12.3",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "dev": "vite",
+    "lint": "biome check src test e2e playwright.config.ts",
+    "test": "vitest run --exclude test/app.integration.test.tsx --exclude 'e2e/**'",
+    "test:e2e": "playwright test",
+    "test:integration": "pnpm --dir ../workflow-monitor-bff build && vitest run test/app.integration.test.tsx",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.20",
+    "elkjs": "0.12.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@playwright/test": "1.47.2",
+    "@testcontainers/postgresql": "^12.0.4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/pg": "^8.20.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "jsdom": "^25.0.1",
+    "msw": "^2.12.10",
+    "pg": "^8.22.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.4"
+  }
+}

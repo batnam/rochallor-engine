@@ -15,11 +15,12 @@ vendor/
 docs/superpowers/
 docs/agents/
 .gemini
+.scratch
 CLAUDE.md
 GEMINI.md
 AGENTS.md
+CONTEXT.md
 .claudeignore
-
 
 # Build artifacts
 workflow-engine/bin
@@ -70,4 +71,6 @@ testresults/
 e2e/logs/*\n!e2e/logs/.gitkeep
 
 workflow-modeller/playwright-report/
+workflow-monitor/playwright-report/
+workflow-monitor/test-results/
 site/
