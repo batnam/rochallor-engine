@@ -56,6 +56,7 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Architecture: architecture.md
+  - Monitor: monitor.md
   - Workflow Format: workflow-format.md
   - Configuration: configuration.md
   - Deployment:

@@ -20,6 +20,39 @@ Each scenario type runs against every combination of **SDK** (go, python, node, 
 ./e2e/run.sh --sdk=go
 ```
 
+## Monitor browser tests
+
+The Monitor Playwright suite combines the GHCR-based quick-start definition
+with a local-build override. This keeps the deployment file suitable for quick
+deployment while ensuring E2E tests exercise the source in the current
+checkout:
+
+```sh
+pnpm --dir workflow-monitor test:e2e
+```
+
+The test setup creates and seeds a temporary PostgreSQL database, supplies its
+DSN through the environment, then runs the equivalent of:
+
+```sh
+docker compose \
+  --project-name rochallor-monitor-e2e \
+  -f deploy/docker-compose.monitor.quickstart.yml \
+  -f e2e/docker-compose-monitor.yml \
+  up --build --detach
+```
+
+For manual use, set `MONITOR_POSTGRES_DSN` to an already migrated engine
+database before running that Compose command. Stop the stack with:
+
+```sh
+docker compose \
+  --project-name rochallor-monitor-e2e \
+  -f deploy/docker-compose.monitor.quickstart.yml \
+  -f e2e/docker-compose-monitor.yml \
+  down --volumes --remove-orphans
+```
+
 ## Transport
 
 The `--transport` flag (or `TRANSPORT` env var) controls the transport used by **both** the test runner and the SDK workers:
@@ -119,6 +152,7 @@ e2e/
 ├── run.sh                          # entry point
 ├── docker-compose-polling.yml      # stack for polling dispatch mode
 ├── docker-compose-kafka-outbox.yml # stack for kafka_outbox dispatch mode
+├── docker-compose-monitor.yml      # local-build override for Monitor E2E
 ├── scenarios/                      # workflow definition JSON files (per SDK)
 │   ├── go/
 │   ├── python/

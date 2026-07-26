@@ -46,6 +46,23 @@ proto/workflow/v1/engine.proto   (canonical wire contract)
 
 **Proto** — `proto/workflow/v1/engine.proto` is the canonical contract. The REST OpenAPI spec (`workflow-engine/api/openapi/rest-openapi.yaml`) mirrors it. Generated Go code lives in `workflow-engine/api/gen/workflow/v1/` and must be regenerated via `make proto-gen` (not committed to the repository).
 
+## Rochallor Monitor
+
+Rochallor Monitor is an independently deployed, read-only observability
+application. Its browser frontend calls a same-origin `/api` route, which Nginx
+proxies to the monitor BFF. The BFF reads the workflow engine's PostgreSQL
+schema directly through a dedicated read-only database role.
+
+```text
+Browser ── /api ──> Nginx ──> Monitor BFF ── SELECT ──> PostgreSQL
+                              (no engine API dependency)
+```
+
+The monitor does not embed the engine, run schema migrations, or write
+workflow state. Authentication and network access control remain the
+deployment operator's responsibility. See [Monitor](monitor.md) for the
+deployment contract, schema compatibility, and operational limitations.
+
 ---
 
 ## Dispatch Modes

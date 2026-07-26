@@ -1,0 +1,10 @@
+services:
+  bff:
+    image: rochallor-monitor-bff-e2e
+    build:
+      context: ../workflow-monitor-bff
+
+  frontend:
+    image: rochallor-monitor-frontend-e2e
+    build:
+      context: ../workflow-monitor

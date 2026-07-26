@@ -31,7 +31,10 @@ rochallor-engine/
 ├── workflow-sdk-go/                    # Go SDK (REST + gRPC)
 ├── workflow-sdk-java/                  # Java SDK (REST + gRPC)
 ├── workflow-sdk-node/                  # Node/TypeScript SDK (REST + gRPC)
-└── workflow-sdk-python/                # Python SDK (REST + gRPC)
+├── workflow-sdk-python/                # Python SDK (REST + gRPC)
+├── workflow-monitor/                   # React read-only monitor frontend
+├── workflow-monitor-bff/               # NestJS read-only monitor BFF
+└── deploy/docker-compose.monitor.quickstart.yml # Monitor quick deployment
 ```
 
 ---
@@ -50,6 +53,53 @@ rochallor-engine/
 | Node.js | 20+ | Node/TypeScript SDK development |
 | Java | 21+ | Java SDK development |
 | Gradle | 8+ (wrapper included) | Java SDK — no install needed, use `./gradlew` |
+
+---
+
+## Monitor development
+
+The monitor requires Node.js 24.15.0 and pnpm 9.12.3. Point the BFF at an
+already migrated engine database using a read-only role; neither monitor
+component runs migrations.
+
+```bash
+# Terminal 1
+cd workflow-monitor-bff
+pnpm install --frozen-lockfile
+MONITOR_POSTGRES_DSN="postgres://monitor:secret@localhost:5432/workflow" pnpm start
+
+# Terminal 2
+cd workflow-monitor
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Run the component checks from their respective directories:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+The production-shaped browser suite builds and starts the two monitor images,
+creates a temporary PostgreSQL database, and verifies the relative `/api`
+route and failure behavior:
+
+```bash
+cd workflow-monitor
+pnpm test:e2e
+```
+
+For a manual independent deployment, provide `MONITOR_POSTGRES_DSN` and run:
+
+```bash
+docker compose -f deploy/docker-compose.monitor.quickstart.yml up -d
+```
+
+See [Monitor](monitor.md) for the required database grants and operational
+contract.
 
 ---
 

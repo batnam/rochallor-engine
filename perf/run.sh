@@ -182,7 +182,7 @@ cleanup() {
     docker compose ${COMPOSE_ARGS:--f "$COMPOSE_FILE"} down -v --remove-orphans > /dev/null 2>&1 || true
   exit "${PERF_K6_EXIT:-$EXIT_CODE}"
 }
-trap cleanup EXIT
+#trap cleanup EXIT
 
 # --- Boot the compose stack ---
 # T036: if --engine-image was provided, use the override file that replaces the build.

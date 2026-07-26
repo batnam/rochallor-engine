@@ -1,0 +1,121 @@
+name: Publish Monitor BFF
+
+on:
+  pull_request:
+    paths:
+      - "workflow-monitor-bff/**"
+      - "workflow-engine/migrations/**"
+      - ".github/workflows/publish-monitor-bff.yml"
+  push:
+    branches:
+      - main
+    tags:
+      - 'monitor-bff-v[0-9]+.[0-9]+.[0-9]+'
+    paths:
+      - "workflow-monitor-bff/**"
+      - "workflow-engine/migrations/**"
+      - ".github/workflows/publish-monitor-bff.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.15.0"
+          cache: pnpm
+          cache-dependency-path: workflow-monitor-bff/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: workflow-monitor-bff
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        working-directory: workflow-monitor-bff
+        run: pnpm lint
+
+      - name: Typecheck
+        working-directory: workflow-monitor-bff
+        run: pnpm typecheck
+
+      - name: Test
+        working-directory: workflow-monitor-bff
+        run: pnpm test
+
+      - name: Build
+        working-directory: workflow-monitor-bff
+        run: pnpm build
+
+      - name: Build image
+        run: docker build workflow-monitor-bff
+
+  publish-monitor-bff:
+    name: Publish Monitor BFF image → GHCR
+    if: startsWith(github.ref, 'refs/tags/monitor-bff-v')
+    needs: [verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: ver
+        run: echo "tag=${GITHUB_REF_NAME#monitor-bff-}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./workflow-monitor-bff
+          platforms: linux/amd64,linux/arm64
+          push: true
+          cache-from: type=gha,scope=monitor-bff
+          cache-to: type=gha,mode=max,scope=monitor-bff
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/rochallor-monitor-bff:${{ steps.ver.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/rochallor-monitor-bff:latest
+
+  github-release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/monitor-bff-v')
+    needs: [publish-monitor-bff]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: ver
+        run: echo "tag=${GITHUB_REF_NAME#monitor-bff-}" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Monitor BFF ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          make_latest: false

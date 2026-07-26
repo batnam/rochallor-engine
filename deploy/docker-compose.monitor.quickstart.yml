@@ -1,0 +1,46 @@
+# Rochallor Monitor Quick Start
+#
+# Starts the Monitor frontend and BFF using pre-built images. The BFF connects
+# to an externally managed, already migrated Rochallor Engine database.
+#
+# Usage:
+#   MONITOR_POSTGRES_DSN=postgres://monitor:secret@host.docker.internal:5434/workflow?sslmode=disable \
+#     docker compose -f docker-compose.monitor.quickstart.yml up -d
+#
+# Monitor: http://localhost:13001
+
+services:
+  bff:
+    image: ghcr.io/batnam/rochallor-monitor-bff:latest
+    restart: unless-stopped
+    environment:
+      MONITOR_POSTGRES_DSN: ${MONITOR_POSTGRES_DSN:-postgres://workflow:workflow@host.docker.internal:5434/workflow?sslmode=disable}
+      MONITOR_MAX_JSON_DOCUMENT_BYTES: ${MONITOR_MAX_JSON_DOCUMENT_BYTES:-5242880}
+      PORT: "3000"
+    expose:
+      - "3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  frontend:
+    image: ghcr.io/batnam/rochallor-monitor-frontend:latest
+    restart: unless-stopped
+    ports:
+      - "${MONITOR_PORT:-13001}:8080"
+    environment:
+      MONITOR_BFF_ROOT_ENDPOINT: ${MONITOR_BFF_ROOT_ENDPOINT:-http://bff:3000}
+      NGINX_ENVSUBST_FILTER: ^MONITOR_BFF_ROOT_ENDPOINT$
+    depends_on:
+      bff:
+        condition: service_healthy

@@ -23,6 +23,27 @@ All engine configuration is read from environment variables. An optional YAML fi
 | `DB_MAX_CONNS` | `runtime.NumCPU() * 4` (floor 4) | Maximum pgxpool connections. Tune per deployment to bound Postgres `max_connections` usage across replicas. |
 | `DB_MIN_CONNS` | `0` | Minimum idle pgxpool connections held open. `0` preserves pgxpool's on-demand behaviour. Must be `≤ DB_MAX_CONNS`. |
 
+## Rochallor Monitor
+
+The monitor is configured independently from the workflow engine.
+
+| Variable | Component | Default | Description |
+|----------|-----------|---------|-------------|
+| `MONITOR_POSTGRES_DSN` | BFF | *(required)* | PostgreSQL connection string for a dedicated read-only role. |
+| `PORT` | BFF | `3000` | BFF HTTP listener port. |
+| `MONITOR_MAX_JSON_DOCUMENT_BYTES` | BFF | `5242880` | Maximum definition or snapshot JSON document size returned by the BFF. |
+| `MONITOR_PORT` | Compose/frontend | `13001` | Host port mapped to the frontend's port 8080. |
+| `MONITOR_BFF_ROOT_ENDPOINT` | Compose/frontend | `http://bff:3000` | Root endpoint (without a trailing slash) used by Nginx to proxy `/api` requests to the BFF. |
+
+The browser always uses a relative `/api` path. In production, the supplied
+Nginx configuration proxies that path to the BFF service; no public BFF URL is
+compiled into the frontend.
+
+The first monitor release uses the PostgreSQL driver's pool and timeout
+defaults. There are no monitor-specific pool or query-timeout variables yet;
+enforce deployment timeouts at PostgreSQL or the reverse proxy and qualify
+changes under representative load before release.
+
 ## Kafka Partition Assignment Strategy
 
 The Workflow Engine and all SDKs (Go, Java, Node.js, Python) utilize the `CooperativeStickyAssignor` (or `cooperative-sticky` in `librdkafka`-based clients) by default. 
