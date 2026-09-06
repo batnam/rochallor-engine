@@ -1,6 +1,6 @@
 module github.com/batnam/e2e/worker-go
 
-go 1.26.2
+go 1.27.1
 
 require github.com/batnam/rochallor-engine/workflow-sdk-go v1.0.0
 

@@ -1,6 +1,6 @@
 module github.com/batnam/e2e/runner
 
-go 1.26.2
+go 1.27.1
 
 require (
 	github.com/batnam/rochallor-engine/workflow-engine v0.0.0

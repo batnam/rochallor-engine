@@ -43,7 +43,7 @@ rochallor-engine/
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Go | 1.22+ | [go.dev/dl](https://go.dev/dl) |
+| Go | 1.27.1 | [go.dev/dl](https://go.dev/dl) |
 | Docker + Compose | 24+ | [docs.docker.com](https://docs.docker.com/get-docker/) |
 | protoc | 3.21+ | `brew install protobuf` / `apt install protobuf-compiler` |
 | protoc-gen-go | latest | `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest` |
