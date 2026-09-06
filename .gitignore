@@ -24,6 +24,7 @@ CONTEXT.md
 
 # Build artifacts
 workflow-engine/bin
+e2e/workers/go/worker-go
 workflow-sdk-node/src/generated/
 workflow-sdk-java/build/
 
