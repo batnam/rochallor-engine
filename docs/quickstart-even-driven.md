@@ -9,7 +9,7 @@ This is the operator-facing walkthrough for turning on `kafka_outbox` mode on a 
 ## Prerequisites
 
 - Docker running (used for Postgres + Kafka).
-- Go 1.26.2 and `make` installed.
+- Go 1.27.1 and `make` installed.
 - You have run the feature's migration. With the existing migration runner this is automatic on engine boot; to run explicitly: `cd workflow-engine && make migrate-up`.
 
 ---
