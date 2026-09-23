@@ -299,3 +299,45 @@ func (c *Client) doRequest(req *http.Request, out any) error {
 
 	return nil
 }
+
+func (c *Client) PollJobs(ctx context.Context, workerID, jobType string) ([]scenarios.Job, error) {
+	body, err := json.Marshal(map[string]any{"workerId": workerID, "jobTypes": []string{jobType}, "maxJobs": 1})
+	if err != nil {
+		return nil, err
+	}
+	req, err := c.newRequest(ctx, http.MethodPost, "v1/jobs/poll", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Jobs []scenarios.Job `json:"jobs"`
+	}
+	if err := c.doRequest(req, &response); err != nil {
+		return nil, err
+	}
+	return response.Jobs, nil
+}
+
+func (c *Client) CompleteJob(ctx context.Context, jobID, workerID string, vars map[string]any) error {
+	body, err := json.Marshal(map[string]any{"workerId": workerID, "variables": vars})
+	if err != nil {
+		return err
+	}
+	req, err := c.newRequest(ctx, http.MethodPost, "v1/jobs/"+jobID+"/complete", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	return c.doRequest(req, nil)
+}
+
+func (c *Client) FailJob(ctx context.Context, jobID, workerID, reason string, retryable bool) error {
+	body, err := json.Marshal(map[string]any{"workerId": workerID, "errorMessage": reason, "retryable": retryable})
+	if err != nil {
+		return err
+	}
+	req, err := c.newRequest(ctx, http.MethodPost, "v1/jobs/"+jobID+"/fail", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	return c.doRequest(req, nil)
+}

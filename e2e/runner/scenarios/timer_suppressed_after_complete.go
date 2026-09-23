@@ -14,7 +14,7 @@ import (
 // → WAIT (parked until signal) → END.
 //
 // Expected: the SERVICE_TASK completes immediately, the boundary timer's
-// fire_at elapses while the instance is parked in WAIT, but DispatchBoundaryStep
+// fire_at elapses while the instance is parked in WAIT, but FireBoundaryEvent
 // observes that the parent step_execution has left RUNNING and suppresses the
 // fire. After the signal, the workflow completes without ever creating a
 // step_execution for should-not-fire.

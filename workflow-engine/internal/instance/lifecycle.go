@@ -19,7 +19,6 @@ import (
 
 // Service manages workflow instance lifecycle.
 type Service struct {
-	rootCtx    context.Context
 	db         db.DB
 	store      Store
 	defRepo    defrepo.DefinitionRepository
@@ -31,22 +30,19 @@ func (s *Service) Dispatcher() dispatch.Dispatcher { return s.dispatcher }
 
 // NewService creates a Service backed by the supplied dependencies.
 //
-// rootCtx is the engine's root context; it is used as the parent for any
-// goroutines spawned by Service (e.g. autoStartNextWorkflow) so they are
-// cancelled when the engine shuts down.
+// Background workers receive the engine root context explicitly at startup.
 //
 // The dispatcher is invoked on every SERVICE_TASK job insert inside the same
 // transaction. In polling mode it is a no-op; in kafka_outbox mode it writes
 // a dispatch_outbox row.
 func NewService(
-	rootCtx context.Context,
+	_ context.Context,
 	dbConn db.DB,
 	store Store,
 	defRepo defrepo.DefinitionRepository,
 	dispatcher dispatch.Dispatcher,
 ) *Service {
 	return &Service{
-		rootCtx:    rootCtx,
 		db:         dbConn,
 		store:      store,
 		defRepo:    defRepo,
@@ -57,6 +53,23 @@ func NewService(
 // Start creates a new workflow instance for the given definition, seeds
 // variables, and dispatches the first step.
 func (s *Service) Start(ctx context.Context, definitionID string, definitionVersion int, variables map[string]any, businessKey string) (*WorkflowInstance, error) {
+	def, varJSON, err := s.prepareStart(ctx, definitionID, definitionVersion, variables)
+	if err != nil {
+		return nil, err
+	}
+	var inst *WorkflowInstance
+	err = s.db.RunInTx(ctx, "instance.start", func(tx db.Tx) error {
+		var err error
+		inst, err = s.startInTx(ctx, tx, def, varJSON, businessKey)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("start: %w", err)
+	}
+	return inst, nil
+}
+
+func (s *Service) prepareStart(ctx context.Context, definitionID string, definitionVersion int, variables map[string]any) (*definition.WorkflowDefinition, []byte, error) {
 	var def *definition.WorkflowDefinition
 	var err error
 	if definitionVersion <= 0 {
@@ -65,10 +78,10 @@ func (s *Service) Start(ctx context.Context, definitionID string, definitionVers
 		def, err = s.defRepo.GetVersion(ctx, definitionID, definitionVersion)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("start: load definition %q: %w", definitionID, err)
+		return nil, nil, fmt.Errorf("start: load definition %q: %w", definitionID, err)
 	}
 	if len(def.Steps) == 0 {
-		return nil, errors.New("start: definition has no steps")
+		return nil, nil, errors.New("start: definition has no steps")
 	}
 
 	// Normalize nil/empty variables to {} so the JSONB column never holds the
@@ -82,34 +95,30 @@ func (s *Service) Start(ctx context.Context, definitionID string, definitionVers
 	// persistence happens.
 	if def.InputSchema != nil {
 		if vs := def.InputSchema.Validate(variables); len(vs) > 0 {
-			return nil, &definition.SchemaViolationError{Violations: vs}
+			return nil, nil, &definition.SchemaViolationError{Violations: vs}
 		}
 	}
 	varJSON, err := json.Marshal(variables)
 	if err != nil {
-		return nil, fmt.Errorf("start: marshal variables: %w", err)
+		return nil, nil, fmt.Errorf("start: marshal variables: %w", err)
 	}
 
-	instanceID := id.NewInstance()
-	firstStep := def.Steps[0].ID
+	return def, varJSON, nil
+}
 
-	var inst *WorkflowInstance
-	err = s.db.RunInTx(ctx, "instance.start", func(tx db.Tx) error {
-		var bkPtr *string
-		if businessKey != "" {
-			bk := businessKey
-			bkPtr = &bk
-		}
-		var insErr error
-		inst, insErr = s.store.InsertInstance(ctx, tx, instanceID, def.ID, def.Version,
-			InstanceStatusActive, []string{firstStep}, varJSON, bkPtr)
-		if insErr != nil {
-			return insErr
-		}
-		return s.dispatchStep(ctx, tx, inst, def, firstStep)
-	})
+// startInTx also serves durable chaining so child creation and acknowledgement
+// share the transaction, including jobs, timers and Kafka outbox dispatches.
+func (s *Service) startInTx(ctx context.Context, tx db.Tx, def *definition.WorkflowDefinition, variables []byte, businessKey string) (*WorkflowInstance, error) {
+	var bk *string
+	if businessKey != "" {
+		bk = &businessKey
+	}
+	inst, err := s.store.InsertInstance(ctx, tx, id.NewInstance(), def.ID, def.Version, InstanceStatusActive, []string{def.Steps[0].ID}, variables, bk)
 	if err != nil {
-		return nil, fmt.Errorf("start: %w", err)
+		return nil, err
+	}
+	if err := s.dispatchStep(ctx, tx, inst, def, def.Steps[0].ID); err != nil {
+		return nil, err
 	}
 	return inst, nil
 }
@@ -148,15 +157,11 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 	var schemaErr *definition.SchemaViolationError
 
 	txErr := s.db.RunInTx(ctx, "instance.complete_job", func(tx db.Tx) error {
-		// Lock the job row and check idempotency / cancellation. FOR UPDATE
-		// serialises concurrent CompleteJobAndAdvance calls for the same job:
-		// the second caller blocks here until the first commits, then reads
-		// status=COMPLETED and short-circuits — preventing double-advance.
-		status, err := s.store.GetJobStatusForUpdate(ctx, tx, jobID)
+		state, err := s.store.LockJobExecution(ctx, tx, jobID)
 		if err != nil {
 			return err
 		}
-		if status == "COMPLETED" || status == "CANCELLED" {
+		if !state.AcceptsCallback(workerID) {
 			return nil
 		}
 
@@ -226,83 +231,59 @@ func (s *Service) CompleteJobAndAdvance(ctx context.Context, jobID, workerID str
 	return nil
 }
 
-// DispatchBoundaryStep routes an instance to targetStepID from a
-// non-interrupting TIMER boundary event (called by the boundary sweeper).
-func (s *Service) DispatchBoundaryStep(ctx context.Context, instanceID, stepExecutionID, targetStepID string) error {
-	return s.db.RunInTx(ctx, "instance.dispatch_boundary", func(tx db.Tx) error {
+// FireBoundaryEvent consumes a timer and applies its effects in one transaction.
+// Locking the instance first serializes timers with callbacks and cancellation.
+func (s *Service) FireBoundaryEvent(ctx context.Context, eventID, instanceID string) error {
+	// Definition identity is immutable. Load it before acquiring a transaction
+	// connection, so a saturated pool cannot deadlock on a nested pooled read.
+	defID, version, err := s.store.GetInstanceDefinitionInfo(ctx, instanceID)
+	if err != nil {
+		return err
+	}
+	def, err := s.defRepo.GetVersion(ctx, defID, version)
+	if err != nil {
+		return fmt.Errorf("boundary: load definition: %w", err)
+	}
+
+	return s.db.RunInTx(ctx, "instance.fire_boundary", func(tx db.Tx) error {
 		inst, err := s.store.GetInstanceForUpdate(ctx, tx, instanceID)
 		if err != nil {
-			return fmt.Errorf("dispatch boundary: %w", err)
+			return err
 		}
-		if inst.Status == InstanceStatusCompleted || inst.Status == InstanceStatusFailed || inst.Status == InstanceStatusCancelled {
-			return nil // already terminal — boundary event is a no-op
-		}
-		// Suppress firing when the parent step has already left RUNNING
-		// (COMPLETED/FAILED/SKIPPED). The instance FOR UPDATE serialises this
-		// read against CompleteJobAndAdvance / FailStep paths, so the status
-		// reflects the committed transition.
-		stepStatus, err := s.store.GetStepExecutionStatusByID(ctx, tx, stepExecutionID)
+		event, err := s.store.ClaimDueBoundaryEvent(ctx, tx, eventID, instanceID)
 		if err != nil {
-			return fmt.Errorf("dispatch boundary: %w", err)
+			return err
+		}
+		if event == nil {
+			return nil
+		}
+		if inst.Status != InstanceStatusActive && inst.Status != InstanceStatusWaiting {
+			return nil
+		}
+		stepStatus, err := s.store.GetStepExecutionStatusByID(ctx, tx, event.StepExecutionID)
+		if err != nil {
+			return err
 		}
 		if stepStatus != StepExecutionStatusRunning {
 			return nil
 		}
-		def, err := s.defRepo.GetVersion(ctx, inst.DefinitionID, inst.DefinitionVersion)
-		if err != nil {
-			return fmt.Errorf("dispatch boundary: load def: %w", err)
+		if event.Interrupting {
+			stepID, err := s.store.GetStepExecutionStepID(ctx, tx, event.StepExecutionID)
+			if err != nil {
+				return err
+			}
+			if err := s.store.FailStepExecutionByID(ctx, tx, event.StepExecutionID, "interrupted by boundary timer"); err != nil {
+				return err
+			}
+			if err := s.store.CancelJobByStepExecution(ctx, tx, event.StepExecutionID); err != nil {
+				return err
+			}
+			if err := s.store.CancelUserTaskByStepExecution(ctx, tx, event.StepExecutionID); err != nil {
+				return err
+			}
+			removeFromCurrentSteps(inst, stepID)
 		}
-		// Non-interrupting: spawn the target step alongside current work.
-		return s.dispatchStep(ctx, tx, inst, def, targetStepID)
-	})
-}
-
-// InterruptStepAndDispatchBoundary cancels the running step (and its job),
-// then dispatches targetStepID. Called by the boundary sweeper for
-// interrupting=true timers.
-func (s *Service) InterruptStepAndDispatchBoundary(ctx context.Context, instanceID, stepExecutionID, targetStepID string) error {
-	return s.db.RunInTx(ctx, "instance.interrupt_boundary", func(tx db.Tx) error {
-		inst, err := s.store.GetInstanceForUpdate(ctx, tx, instanceID)
-		if err != nil {
-			return fmt.Errorf("interrupt boundary: %w", err)
-		}
-		if inst.Status == InstanceStatusCompleted || inst.Status == InstanceStatusFailed || inst.Status == InstanceStatusCancelled {
-			return nil // already terminal — boundary event is a no-op
-		}
-
-		// Suppress when the parent step has already left RUNNING — otherwise
-		// the interrupting timer would FAIL a step_execution that has already
-		// transitioned to COMPLETED/FAILED/SKIPPED.
-		stepStatus, err := s.store.GetStepExecutionStatusByID(ctx, tx, stepExecutionID)
-		if err != nil {
-			return fmt.Errorf("interrupt boundary: %w", err)
-		}
-		if stepStatus != StepExecutionStatusRunning {
-			return nil
-		}
-
-		interruptedStepID, err := s.store.GetStepExecutionStepID(ctx, tx, stepExecutionID)
-		if err != nil {
-			return fmt.Errorf("interrupt boundary: %w", err)
-		}
-
-		if err := s.store.FailStepExecutionByID(ctx, tx, stepExecutionID, "interrupted by boundary timer"); err != nil {
-			return fmt.Errorf("interrupt boundary: cancel step_execution: %w", err)
-		}
-
-		// Cancel the pending/locked job for this step_execution so the
-		// worker's eventual completeJob call is a no-op.
-		if err := s.store.CancelJobByStepExecution(ctx, tx, stepExecutionID); err != nil {
-			return fmt.Errorf("interrupt boundary: cancel job: %w", err)
-		}
-
-		removeFromCurrentSteps(inst, interruptedStepID)
-
-		def, err := s.defRepo.GetVersion(ctx, inst.DefinitionID, inst.DefinitionVersion)
-		if err != nil {
-			return fmt.Errorf("interrupt boundary: load def: %w", err)
-		}
-		return s.dispatchStep(ctx, tx, inst, def, targetStepID)
+		return s.dispatchStep(ctx, tx, inst, def, event.TargetStepID)
 	})
 }
 

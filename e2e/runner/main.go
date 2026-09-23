@@ -151,6 +151,9 @@ func runSDKSuite(transport string, client scenarios.ClientIface, sdk, scenariosD
 		fn   scenarioFn
 	}
 	suite := []entry{
+		{"job-callbacks", scenarios.RunJobCallbacks},
+		{"timer-recovery", scenarios.RunTimerRecovery},
+		{"chain-recovery", scenarios.RunChainRecovery},
 		{"linear", scenarios.RunLinear},
 		{"decision", scenarios.RunDecision},
 		{"decision-table", scenarios.RunDecisionTable},
@@ -177,6 +180,10 @@ func runSDKSuite(transport string, client scenarios.ClientIface, sdk, scenariosD
 		{"parallel-user-task", scenarios.RunParallelUserTask},
 		{"timer-interrupting", scenarios.RunTimerInterrupting},
 		{"timer-suppressed-after-complete", scenarios.RunTimerSuppressedAfterComplete},
+	}
+
+	if os.Getenv("WE_DISPATCH_MODE") != "kafka_outbox" {
+		suite = append(suite, entry{"job-lease-recovery", scenarios.RunJobLeaseRecovery})
 	}
 
 	var results []Result

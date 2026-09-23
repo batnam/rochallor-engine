@@ -3,7 +3,6 @@ package job
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch"
@@ -18,14 +17,16 @@ import (
 // which also performs the next-step dispatch.
 func Complete(ctx context.Context, dbConn db.DB, store JobStore, _ InstanceAdvancer, jobID, workerID string, variablesToSet map[string]any) error {
 	return dbConn.RunInTx(ctx, "job.complete", func(tx db.Tx) error {
-		_, stepExecID, _, err := store.GetJobForComplete(ctx, tx, jobID)
+		state, err := store.LockJobExecution(ctx, tx, jobID)
 		if err != nil {
 			return err
 		}
-		// Idempotency: if already COMPLETED, skip.
-		status, _ := store.GetJobStatusForIdempotency(ctx, tx, jobID)
-		if status == "COMPLETED" {
+		if !state.AcceptsCallback(workerID) {
 			return nil
+		}
+		_, stepExecID, _, err := store.GetJobForComplete(ctx, tx, jobID)
+		if err != nil {
+			return err
 		}
 		if _, err := store.GetStepExecutionStepID(ctx, tx, stepExecID); err != nil {
 			return err
@@ -41,33 +42,32 @@ func Complete(ctx context.Context, dbConn db.DB, store JobStore, _ InstanceAdvan
 	})
 }
 
-// Fail records a job failure. If retryable and retries remain, re-enqueues
-// the job (UNLOCKED) using the provided dispatcher. Otherwise marks it
-// FAILED and transitions the instance to FAILED.
+// Fail retires this delivery attempt. If retryable and retries remain, it
+// creates a new job for the same step execution. Otherwise it also fails the
+// step and instance. Repeated or late callbacks cannot change terminal state.
 func Fail(ctx context.Context, dbConn db.DB, store JobStore, d dispatch.Dispatcher, jobID, workerID, errorMessage string, retryable bool) error {
 	return dbConn.RunInTx(ctx, "job.fail", func(tx db.Tx) error {
+		state, err := store.LockJobExecution(ctx, tx, jobID)
+		if err != nil {
+			return err
+		}
+		if !state.AcceptsCallback(workerID) {
+			return nil
+		}
 		j, err := store.GetJobForFail(ctx, tx, jobID)
 		if err != nil {
 			return err
 		}
 
-		if retryable && j.RetriesRemaining > 0 {
-			next := j.RetriesRemaining - 1
-			retryJob := j
-			retryJob.RetriesRemaining = next
-			if err := d.Enqueue(ctx, tx, retryJob); err != nil {
-				return fmt.Errorf("re-enqueue job for fail: %w", err)
-			}
-			if err := store.ReenqueueJob(ctx, tx, jobID, next); err != nil {
-				return err
-			}
-			return nil
-		}
-
-		// Non-retryable or retries exhausted — terminal failure.
 		if err := store.MarkJobFailed(ctx, tx, jobID, workerID); err != nil {
 			return err
 		}
+		if retryable && j.RetriesRemaining > 0 {
+			j.RetriesRemaining--
+			return enqueueReplacement(ctx, tx, store, d, j)
+		}
+
+		// Non-retryable or retries exhausted — terminal failure.
 		if err := store.MarkStepExecutionFailed(ctx, tx, j.StepExecutionID, errorMessage); err != nil {
 			return err
 		}

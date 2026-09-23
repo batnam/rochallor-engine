@@ -111,8 +111,64 @@ WE_DISPATCH_MODE=kafka_outbox TRANSPORT=all ./e2e/run.sh --sdk=java
 When running in `kafka_outbox` mode:
 1. A **Kafka** container is automatically started.
 2. A **kafka-setup** container pre-creates the necessary `workflow.jobs.<jobType>` topics.
-3. The **engine** disables the polling endpoint and starts the Transaction Outbox relay.
+3. The **engine** starts the Transaction Outbox relay; the polling endpoint is disabled.
 4. **Workers** switch from `Runner` to `KafkaRunner`.
+
+## Callback ordering regressions
+
+`job-callbacks` exercises completion/failure after completion, cancellation,
+automatic retry and manual retry. It checks that duplicate failure consumes
+one retry, the replacement gets a new job ID, stale callbacks cannot advance
+it, and repeated completion preserves the first output.
+
+`job-lease-recovery` waits for the real 30-second lease and 15-second sweeper,
+then has the same worker claim the replacement. Old complete/fail callbacks
+must not change the new attempt. Expect this scenario to take 30–45 seconds.
+
+Both scenarios drive callbacks through the selected REST/gRPC client using
+reserved job types, without database edits or extra API fields. In Kafka mode,
+`job-callbacks` consumes actual `JobDispatchEvent` records from the broker;
+`job-lease-recovery` runs only in polling mode, where leases apply. PostgreSQL
+integration tests additionally decode persisted Kafka outbox events and verify
+atomic rollback, duplicate dispatch suppression and callback races.
+
+Run the database regression suite independently from `workflow-engine/`:
+
+```sh
+go test -tags integration ./test/invariants/... -count=1
+go test -race -tags integration ./test/invariants -run '^TestJob(Callbacks|Retry)' -count=1
+```
+
+## Timer and chaining recovery regressions
+
+`timer-recovery` creates interrupting/non-interrupting timers and timers that
+should be suppressed after completion or cancellation. It kills the isolated
+Compose engine with `SIGKILL`, leaves it offline past the deadlines, then restarts
+it and verifies the SDK completes each eligible target exactly once. A second
+restart must preserve instance/history snapshots without dispatching again.
+
+`chain-recovery` completes a parent while its target definition is absent,
+restarts the engine, then publishes the target. It verifies exactly one child and
+one grandchild complete, preserving variables and business key. Another restart
+must not create extra instances. The existing `chaining` and `chain-business-key`
+scenarios now require actual child completion.
+
+These recovery cases run for every SDK/REST/gRPC/dispatch combination in the
+existing CI matrix. They require the local Compose stack started by `run.sh`,
+since they deliberately kill and restart its engine service. PostgreSQL and Kafka
+stay running; the scenarios do not edit database state or add production test APIs.
+
+The database suite additionally injects failures before commit, terminates a
+PostgreSQL connection immediately after timer claim or before commit, and checks
+concurrent timer/chain delivery,
+parent rollback/commit visibility, child rollback, outbox atomicity, schema and
+business-key recovery, and timer/completion races:
+
+```sh
+cd workflow-engine
+go test -tags integration ./test/invariants/... -count=1
+go test -race -tags integration ./test/invariants -run '^(TestTimer|TestWorkflowChain)' -count=1
+```
 
 ## Variable reference
 

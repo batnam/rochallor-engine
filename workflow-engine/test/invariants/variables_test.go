@@ -81,7 +81,7 @@ func TestDecision_NonObjectVariablesFailWithDiagnosticMessage(t *testing.T) {
 
 	// Worker completes the job. The engine will then dispatch the DECISION step
 	// and attempt to evaluate expressions against the now-corrupt variables.
-	if err := gInstSvc.CompleteJobAndAdvance(ctx, j.ID, "test-worker", nil); err != nil {
+	if err := gInstSvc.CompleteJobAndAdvance(ctx, j.ID, *j.WorkerID, nil); err != nil {
 		t.Fatalf("CompleteJobAndAdvance: %v", err)
 	}
 
@@ -154,7 +154,7 @@ func TestTransformation_NonObjectVariablesReturnError(t *testing.T) {
 	// With old code: variablesToMap returns {}, transformation silently applies
 	// to an empty map, instance proceeds to END (no error — wrong behaviour).
 	// With the fix: an error is returned and the transaction rolls back.
-	err = gInstSvc.CompleteJobAndAdvance(ctx, j.ID, "test-worker", nil)
+	err = gInstSvc.CompleteJobAndAdvance(ctx, j.ID, *j.WorkerID, nil)
 	if err == nil {
 		// If no error is returned, check whether the instance ended correctly
 		// (it should have failed, not completed, with corrupt vars).

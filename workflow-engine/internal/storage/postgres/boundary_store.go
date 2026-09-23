@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"errors"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/boundary"
@@ -20,12 +23,11 @@ func NewBoundaryStore(pool *pgxpool.Pool) boundary.BoundaryStore {
 	return &BoundaryStore{pool: pool}
 }
 
-func (s *BoundaryStore) FetchAndMarkFiredBoundaryEvents(ctx context.Context) ([]boundary.DueEvent, error) {
+func (s *BoundaryStore) ListDueBoundaryEvents(ctx context.Context) ([]boundary.DueEvent, error) {
 	rows, err := s.pool.Query(ctx, `
-		UPDATE boundary_event_schedule
-		SET    fired = true
-		WHERE  fired = false AND fire_at <= now()
-		RETURNING id, instance_id, step_execution_id, target_step_id, interrupting`)
+		SELECT id, instance_id, step_execution_id, target_step_id, interrupting
+        FROM boundary_event_schedule WHERE fired = false AND fire_at <= now()
+        ORDER BY fire_at, id`)
 	if err != nil {
 		return nil, fmt.Errorf("fetch due boundary events: %w", err)
 	}
@@ -60,3 +62,20 @@ func (s *BoundaryStore) DeleteObsoleteBoundaryEvents(ctx context.Context, retent
 
 // Compile-time interface assertion.
 var _ boundary.BoundaryStore = (*BoundaryStore)(nil)
+
+// The caller holds the instance lock before claiming the timer, matching all
+// callback and interruption paths. A rollback leaves the timer pending.
+func (s *InstanceStore) ClaimDueBoundaryEvent(ctx context.Context, tx db.Tx, eventID, instanceID string) (*boundary.DueEvent, error) {
+	var e boundary.DueEvent
+	err := Unwrap(tx).QueryRow(ctx, `UPDATE boundary_event_schedule SET fired=true
+ WHERE id=$1 AND instance_id=$2 AND fired=false AND fire_at<=now()
+ RETURNING id, instance_id, step_execution_id, target_step_id, interrupting`, eventID, instanceID).
+		Scan(&e.ID, &e.InstanceID, &e.StepExecutionID, &e.TargetStepID, &e.Interrupting)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("claim boundary timer: %w", err)
+	}
+	return &e, nil
+}

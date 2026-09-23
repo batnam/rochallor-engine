@@ -43,17 +43,6 @@ func (s *JobStore) GetJobForComplete(ctx context.Context, tx db.Tx, jobID string
 	return instanceID, stepExecID, retriesRemaining, nil
 }
 
-func (s *JobStore) GetJobStatusForIdempotency(ctx context.Context, tx db.Tx, jobID string) (string, error) {
-	var status string
-	if err := Unwrap(tx).QueryRow(ctx,
-		`SELECT status FROM job WHERE id = $1`,
-		jobID,
-	).Scan(&status); err != nil {
-		return "", fmt.Errorf("get job status: %w", err)
-	}
-	return status, nil
-}
-
 func (s *JobStore) GetStepExecutionStepID(ctx context.Context, tx db.Tx, stepExecID string) (string, error) {
 	var stepID string
 	if err := Unwrap(tx).QueryRow(ctx,
@@ -136,53 +125,40 @@ func (s *JobStore) MarkInstanceFailed(ctx context.Context, tx db.Tx, instanceID,
 	return nil
 }
 
-func (s *JobStore) ReenqueueJob(ctx context.Context, tx db.Tx, jobID string, newRetriesRemaining int) error {
+func (s *JobStore) InsertJob(ctx context.Context, tx db.Tx, j dispatch.DispatchJob) error {
 	_, err := Unwrap(tx).Exec(ctx,
-		`UPDATE job SET status = 'UNLOCKED', worker_id = NULL, locked_at = NULL, lock_expires_at = NULL,
-		                 retries_remaining = $1 WHERE id = $2`,
-		newRetriesRemaining, jobID,
-	)
+		`INSERT INTO job (id, instance_id, step_execution_id, job_type, retries_remaining, payload)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		j.ID, j.InstanceID, j.StepExecutionID, j.JobType, j.RetriesRemaining, j.Payload)
 	if err != nil {
-		return fmt.Errorf("re-enqueue job update: %w", err)
+		return fmt.Errorf("insert replacement job: %w", err)
 	}
 	return nil
 }
 
-func (s *JobStore) UnlockJob(ctx context.Context, tx db.Tx, jobID string) (int64, error) {
-	tag, err := Unwrap(tx).Exec(ctx,
-		`UPDATE job
-		    SET status = 'UNLOCKED',
-		        worker_id = NULL,
-		        locked_at = NULL,
-		        lock_expires_at = NULL
-		  WHERE id = $1 AND status = 'LOCKED'`,
-		jobID,
-	)
+func (s *JobStore) CancelLockedJob(ctx context.Context, tx db.Tx, jobID string) error {
+	_, err := Unwrap(tx).Exec(ctx, `UPDATE job SET status = 'CANCELLED' WHERE id = $1 AND status = 'LOCKED'`, jobID)
 	if err != nil {
-		return 0, fmt.Errorf("unlock job %q: %w", jobID, err)
+		return fmt.Errorf("retire job: %w", err)
 	}
-	return tag.RowsAffected(), nil
+	return nil
 }
 
-func (s *JobStore) GetExpiredLeases(ctx context.Context, tx db.Tx) ([]dispatch.DispatchJob, error) {
-	rows, err := Unwrap(tx).Query(ctx,
-		`SELECT id, instance_id, step_execution_id, job_type, retries_remaining, payload, created_at
-		   FROM   job
-		   WHERE  status = 'LOCKED' AND lock_expires_at < now()
-		   FOR UPDATE SKIP LOCKED`)
+func (s *JobStore) GetExpiredLeases(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM job WHERE status = 'LOCKED' AND lock_expires_at < now()`)
 	if err != nil {
 		return nil, fmt.Errorf("get expired leases: %w", err)
 	}
 	defer rows.Close()
-	var out []dispatch.DispatchJob
+	var ids []string
 	for rows.Next() {
-		var j dispatch.DispatchJob
-		if err := rows.Scan(&j.ID, &j.InstanceID, &j.StepExecutionID, &j.JobType, &j.RetriesRemaining, &j.Payload, &j.CreatedAt); err != nil {
+		var id string
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		out = append(out, j)
+		ids = append(ids, id)
 	}
-	return out, rows.Err()
+	return ids, rows.Err()
 }
 
 func (s *JobStore) PollJobs(ctx context.Context, workerID string, jobTypes []string, max int, lockDurationSeconds int) ([]instance.Job, error) {

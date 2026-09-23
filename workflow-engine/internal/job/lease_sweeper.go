@@ -2,7 +2,6 @@ package job
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -17,8 +16,8 @@ import (
 // multiple replicas does not lose the gate.
 const leaseSweeperLockKey int64 = 0x6C756F6E_676C7331 // "luonglse" low bits
 
-// StartLeaseSweeper runs a background goroutine that periodically unlocks
-// jobs whose lock_expires_at has passed (worker crash / slow worker). It
+// StartLeaseSweeper runs a background goroutine that periodically replaces
+// jobs whose lock_expires_at has passed with new delivery attempts. It
 // exits when ctx is cancelled.
 //
 // Across multiple engine replicas the sweep is gated by leaseSweeperLockKey
@@ -49,27 +48,19 @@ func sweepExpiredLeases(ctx context.Context, dbConn db.DB, store JobStore, d dis
 	}
 	defer release()
 
-	err = dbConn.RunInTx(ctx, "job.lease_sweeper", func(tx db.Tx) error {
-		expired, err := store.GetExpiredLeases(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if len(expired) == 0 {
-			return nil
-		}
-		for _, j := range expired {
-			if err := d.Enqueue(ctx, tx, j); err != nil {
-				return fmt.Errorf("re-enqueue job %q: %w", j.ID, err)
-			}
-			if _, err := store.UnlockJob(ctx, tx, j.ID); err != nil {
-				return err
-			}
-		}
-		obs.JobTimeoutTotal.Add(float64(len(expired)))
-		slog.Info("lease sweeper: reclaimed expired jobs", "count", len(expired))
-		return nil
-	})
+	expired, err := store.GetExpiredLeases(ctx)
 	if err != nil {
-		slog.Error("lease sweeper: sweep failed", "err", err)
+		slog.Error("lease sweeper: find expired jobs", "err", err)
+		return
+	}
+	for _, jobID := range expired {
+		replaced, err := retryJob(ctx, dbConn, store, d, jobID, true)
+		if err != nil {
+			slog.Error("lease sweeper: reclaim job", "job_id", jobID, "err", err)
+			continue
+		}
+		if replaced {
+			obs.JobTimeoutTotal.Inc()
+		}
 	}
 }

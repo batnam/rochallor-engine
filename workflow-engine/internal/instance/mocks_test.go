@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/boundary"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,7 @@ type mockStore struct {
 
 	// instances by id
 	instances map[string]*WorkflowInstance
+	chains    map[string]WorkflowChain
 
 	// step_execution rows
 	stepExecsByID   map[string]string // stepExecID → "instanceID:stepID"
@@ -300,8 +302,8 @@ func (m *mockStore) InsertJob(ctx context.Context, _ db.Tx,
 	return nil
 }
 
-func (m *mockStore) GetJobStatusForUpdate(ctx context.Context, _ db.Tx, jobID string) (string, error) {
-	return "UNLOCKED", nil
+func (m *mockStore) LockJobExecution(ctx context.Context, _ db.Tx, jobID string) (JobExecution, error) {
+	return JobExecution{InstanceStatus: InstanceStatusActive, StepStatus: StepExecutionStatusRunning, JobStatus: JobStatusUnlocked}, nil
 }
 
 func (m *mockStore) MarkJobCompleted(ctx context.Context, _ db.Tx, jobID, workerID string) error {
@@ -410,5 +412,40 @@ type noopDispatcher struct {
 
 func (n *noopDispatcher) Enqueue(ctx context.Context, _ db.Tx, j dispatch.DispatchJob) error {
 	n.enqueued = append(n.enqueued, j.ID)
+	return nil
+}
+
+func (m *mockStore) ClaimDueBoundaryEvent(context.Context, db.Tx, string, string) (*boundary.DueEvent, error) {
+	return nil, nil
+}
+
+func (m *mockStore) InsertWorkflowChain(_ context.Context, _ db.Tx, r WorkflowChain) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.chains == nil {
+		m.chains = make(map[string]WorkflowChain)
+	}
+	m.chains[r.SourceInstanceID] = r
+	return nil
+}
+func (m *mockStore) ListPendingWorkflowChains(context.Context) ([]WorkflowChain, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []WorkflowChain
+	for _, r := range m.chains {
+		result = append(result, r)
+	}
+	return result, nil
+}
+func (m *mockStore) ClaimWorkflowChain(_ context.Context, _ db.Tx, id string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.chains[id]
+	return ok, nil
+}
+func (m *mockStore) CompleteWorkflowChain(_ context.Context, _ db.Tx, sourceID, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.chains, sourceID)
 	return nil
 }

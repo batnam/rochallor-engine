@@ -185,7 +185,7 @@ type Handler func(ctx context.Context, job JobContext) (Result, error)
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `JobID` | `string` | Stable per job — use as an idempotency key for any side-effect. |
+| `JobID` | `string` | Identifies one delivery attempt; changes on retry or lease recovery. |
 | `InstanceID` | `string` | The workflow instance this job belongs to. |
 | `StepID` | `string` | The `step_executions` row driving this job. |
 | `JobType` | `string` | Matches the registration key. |
@@ -457,7 +457,7 @@ actually waiting.
 
 - Keep one file per `jobType` so the registry table and the filesystem stay in sync.
 - Validate every variable you read; fail with `NonRetryable` when the input is structurally wrong.
-- Use `job.JobID` as the idempotency key for any external side-effect — even in polling mode the engine can re-dispatch a job whose lock expired mid-execution.
+- Use a stable business operation key from `job.Variables` for external side effects. Retry and lease recovery create a new `job.JobID`; a late worker may still finish the external operation.
 - Match `retryCount` in the workflow JSON to the failure mode of the underlying call.
 
 **Don't**

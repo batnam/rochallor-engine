@@ -31,6 +31,23 @@ permissions:
   contents: read
 
 jobs:
+  engine-tests:
+    name: Engine unit and PostgreSQL invariant tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: workflow-engine/go.mod
+          cache-dependency-path: workflow-engine/go.sum
+      - name: Unit tests
+        working-directory: workflow-engine
+        run: go test ./...
+      - name: PostgreSQL integration and race tests
+        working-directory: workflow-engine
+        run: go test -race -tags integration ./test/invariants/... -count=1
+
   e2e:
     name: ${{ matrix.dispatch_mode }} / ${{ matrix.transport }} / ${{ matrix.sdk }}
     runs-on: ubuntu-latest

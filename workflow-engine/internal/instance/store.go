@@ -2,6 +2,7 @@ package instance
 
 import (
 	"context"
+	"github.com/batnam/rochallor-engine/workflow-engine/internal/boundary"
 	"time"
 
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
@@ -47,6 +48,16 @@ type Store interface {
 	// GetStepExecutionStepIDByID resolves the step_id for a step_execution_id
 	// (non-transactional, used in the pre-tx peek window).
 	GetStepExecutionStepIDByID(ctx context.Context, stepExecID string) (string, error)
+
+	// ListPendingWorkflowChains reads durable requests whose child is not yet created.
+	ListPendingWorkflowChains(ctx context.Context) ([]WorkflowChain, error)
+
+	// InsertWorkflowChain persists one request per completed source instance.
+	InsertWorkflowChain(ctx context.Context, tx db.Tx, chain WorkflowChain) error
+	// ClaimWorkflowChain locks a pending request, skipping one owned by another worker.
+	ClaimWorkflowChain(ctx context.Context, tx db.Tx, sourceInstanceID string) (bool, error)
+	// CompleteWorkflowChain records the child created in this same transaction.
+	CompleteWorkflowChain(ctx context.Context, tx db.Tx, sourceInstanceID, childInstanceID string) error
 
 	// ─── transactional writes ────────────────────────────────────────────────
 
@@ -128,9 +139,8 @@ type Store interface {
 		id, instanceID, stepExecID, jobType string, retriesRemaining int, payload []byte,
 	) error
 
-	// GetJobStatusForUpdate reads job status with FOR UPDATE (idempotency guard
-	// in CompleteJobAndAdvance).
-	GetJobStatusForUpdate(ctx context.Context, tx db.Tx, jobID string) (string, error)
+	// LockJobExecution locks instance then job and reads callback eligibility.
+	LockJobExecution(ctx context.Context, tx db.Tx, jobID string) (JobExecution, error)
 
 	// MarkJobCompleted sets status='COMPLETED' and worker_id by job id.
 	MarkJobCompleted(ctx context.Context, tx db.Tx, jobID, workerID string) error
@@ -152,6 +162,10 @@ type Store interface {
 	// CancelUserTaskByStepExecution marks the user_task CANCELLED (interrupting
 	// boundary path). No-op if no row matches.
 	CancelUserTaskByStepExecution(ctx context.Context, tx db.Tx, stepExecID string) error
+
+	// ClaimDueBoundaryEvent marks a due timer fired within the caller's transaction.
+	// Returns nil if it was already consumed, deleted, or is not due.
+	ClaimDueBoundaryEvent(ctx context.Context, tx db.Tx, eventID, instanceID string) (*boundary.DueEvent, error)
 
 	// InsertBoundaryEventSchedule creates a boundary_event_schedule row.
 	InsertBoundaryEventSchedule(ctx context.Context, tx db.Tx,

@@ -454,17 +454,6 @@ func (s *InstanceStore) InsertJob(ctx context.Context, tx db.Tx,
 	return nil
 }
 
-func (s *InstanceStore) GetJobStatusForUpdate(ctx context.Context, tx db.Tx, jobID string) (string, error) {
-	var status string
-	if err := Unwrap(tx).QueryRow(ctx,
-		`SELECT status FROM job WHERE id = $1 FOR UPDATE`,
-		jobID,
-	).Scan(&status); err != nil {
-		return "", fmt.Errorf("get job status: %w", err)
-	}
-	return status, nil
-}
-
 func (s *InstanceStore) MarkJobCompleted(ctx context.Context, tx db.Tx, jobID, workerID string) error {
 	_, err := Unwrap(tx).Exec(ctx,
 		`UPDATE job SET status = 'COMPLETED', worker_id = $1 WHERE id = $2`,

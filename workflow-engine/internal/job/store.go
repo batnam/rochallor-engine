@@ -15,9 +15,8 @@ type JobStore interface {
 	// GetJobForComplete loads the job row with FOR UPDATE for the Complete path.
 	GetJobForComplete(ctx context.Context, tx db.Tx, jobID string) (instanceID, stepExecID string, retriesRemaining int, err error)
 
-	// GetJobStatusForIdempotency reads status without locking
-	// (idempotency short-circuit for Complete).
-	GetJobStatusForIdempotency(ctx context.Context, tx db.Tx, jobID string) (string, error)
+	// LockJobExecution locks instance then job before inspecting callback state.
+	LockJobExecution(ctx context.Context, tx db.Tx, jobID string) (instance.JobExecution, error)
 
 	// GetStepExecutionStepID resolves the step_id for a step_execution_id
 	// inside the transaction (used by Complete to derive the next-step hint).
@@ -42,18 +41,15 @@ type JobStore interface {
 	// MarkInstanceFailed sets workflow_instance status='FAILED' (terminal job failure).
 	MarkInstanceFailed(ctx context.Context, tx db.Tx, instanceID, reason string) error
 
-	// ReenqueueJob resets job to UNLOCKED and decrements retries_remaining
-	// (used by Fail when a retry remains).
-	ReenqueueJob(ctx context.Context, tx db.Tx, jobID string, newRetriesRemaining int) error
+	// InsertJob persists a new delivery attempt with its own job ID.
+	InsertJob(ctx context.Context, tx db.Tx, j dispatch.DispatchJob) error
 
-	// UnlockJob resets a LOCKED job to UNLOCKED (used by Retry and the lease
-	// sweeper). Does NOT change retries_remaining. Returns rows-affected so
-	// callers can detect "job was not LOCKED".
-	UnlockJob(ctx context.Context, tx db.Tx, jobID string) (int64, error)
+	// CancelLockedJob retires a polling attempt before replacement.
+	CancelLockedJob(ctx context.Context, tx db.Tx, jobID string) error
 
-	// GetExpiredLeases returns LOCKED jobs whose lock_expires_at is in the
-	// past. Uses FOR UPDATE SKIP LOCKED so concurrent sweeps don't contend.
-	GetExpiredLeases(ctx context.Context, tx db.Tx) ([]dispatch.DispatchJob, error)
+	// GetExpiredLeases finds candidates without holding job locks. Each is
+	// rechecked under instance-then-job locks by the lease sweeper.
+	GetExpiredLeases(ctx context.Context) ([]string, error)
 
 	// PollJobs atomically claims up to max UNLOCKED jobs of the supplied
 	// jobTypes for workerID via UPDATE…FOR UPDATE SKIP LOCKED. Returns the

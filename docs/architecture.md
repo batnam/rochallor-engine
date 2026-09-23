@@ -177,10 +177,12 @@ RETURNING id, instance_id, step_execution_id, job_type, status,
 ### Job state machine
 
 ```
-UNLOCKED  ──poll──►  LOCKED  ──complete/fail──►  COMPLETED | FAILED
-              │                                         ▲
-              └── lock_expires_at reached ─► sweeper ──┘
-                  (returns to UNLOCKED)
+UNLOCKED ──poll──► LOCKED ──complete──► COMPLETED
+                     ├──fail────────► FAILED
+                     └──lease expiry► CANCELLED
+
+Retryable failure or lease recovery creates a separate UNLOCKED job.
+Kafka callbacks can complete/fail an UNLOCKED job without polling.
 ```
 
 | State | Meaning |
@@ -188,7 +190,8 @@ UNLOCKED  ──poll──►  LOCKED  ──complete/fail──►  COMPLETED |
 | `UNLOCKED` | Job is ready to be claimed by a worker. |
 | `LOCKED` | Claimed by a specific worker; `lock_expires_at` is set. |
 | `COMPLETED` | Worker called `complete_job` successfully. |
-| `FAILED` | Worker called `fail_job` (or retries exhausted). |
+| `FAILED` | This delivery attempt failed; a replacement may be queued if retries remain. |
+| `CANCELLED` | This delivery attempt was retired by lease recovery or interruption. |
 
 ### Partial index
 
@@ -212,7 +215,74 @@ CREATE INDEX idx_job_lock_expires
 
 ### Lease expiry
 
-Each lock carries a 30-second expiry (`lock_expires_at = now() + 30s`). A background sweeper periodically scans `idx_job_lock_expires` for rows where `lock_expires_at < now()` and returns them to `UNLOCKED`, so a crashed or hung worker cannot strand jobs indefinitely. Completion is idempotent — if a worker calls `complete_job` after its lease has expired and the sweeper has already reclaimed the row, the call is accepted without double-counting.
+Each lock carries a 30-second expiry (`lock_expires_at = now() + 30s`). For active/waiting instances, the sweeper retires an expired job as `CANCELLED` and creates a new `UNLOCKED` job for the same step execution, without spending a business retry. The replacement has a new `jobId`, even if the same worker claims it. Callbacks for an expired lease or a retired job are acknowledged without changing state. There is no lease-renewal API in this change: polling work that consistently exceeds 30 seconds will be redelivered instead of applying its late result.
+
+### Callback ordering and delivery identity
+
+`jobId` identifies one delivery attempt. A retryable failure marks that job `FAILED` and creates one replacement with a decremented retry budget. Repeated failures for the old ID cannot consume more retries or dispatch more work. A manual retry creates both a new step execution and a new job.
+
+Completion and failure lock the instance before the job. They change state only while the instance is `ACTIVE`/`WAITING`, the step execution is `RUNNING`, and the job is eligible. Polling callbacks must match the existing `workerId` and an unexpired lease. State checks happen before output validation, variable updates or history writes. Terminal, superseded and duplicate callbacks are successful no-ops.
+
+Kafka callbacks use the job ID already present in `JobDispatchEvent`; they do not acquire polling leases. An engine retry creates a new job and outbox event in one transaction. Broker redelivery of the same event is still the same attempt: the first accepted result wins, and later results are no-ops. The engine does not observe consumer ownership changes or prevent duplicate external side effects.
+
+REST/gRPC request fields, Kafka event fields and SDK method signatures are unchanged. No authentication, authorization or token mechanism is added; API security remains the responsibility of the surrounding system.
+
+**Upgrade impact:** workers that deduplicate external operations across retries must use a stable business operation key from variables (for example, an invoice/payment ID), not `jobId`. `stepExecutionId` remains stable across automatic retries and lease recovery, but changes on manual retry. Existing SDK clients need no wire changes. Coordinate the engine rollout: old replicas still reuse job IDs and do not enforce these ordering rules, so the guarantees apply only once all engine replicas run the new code. The delivery-identity change itself needs no schema migration.
+
+### Durable boundary timers
+
+The timer sweeper reads due candidates without changing them. For each candidate,
+`FireBoundaryEvent` locks the instance first, then conditionally marks the timer
+`fired=true` inside the transaction that dispatches its target. Interruption of
+the source step, cancellation of its job/user task, the target job and any Kafka
+outbox record all commit together. A dispatch failure, rollback or lost database
+connection leaves the timer pending for a later sweep. Due timers also survive
+engine downtime.
+
+The same instance lock serializes timers with completion, cancellation and other
+timers. A replay of a consumed timer does nothing. If the instance is terminal or
+the source step has left `RUNNING`, the timer is consumed without dispatching a
+target. Non-interrupting timers leave the source step running. Polling and Kafka
+use the same transaction rules; Kafka publication still has at-least-once delivery.
+
+### Durable workflow chaining
+
+Reaching `END` inserts one `workflow_chain` request per source instance in the
+same transaction as parent completion. It records the target definition ID and
+the parent's variables/business key at completion. A rollback cannot expose the
+request or create a child. The engine's chain worker checks pending requests
+every second and resumes them after restart.
+
+The worker resolves the latest target definition and validates its input, then
+locks the pending request with `FOR UPDATE SKIP LOCKED`. Creating the child, its
+initial work/outbox records and recording `child_instance_id` all commit together.
+Concurrent workers or replay after a successful commit cannot create another
+child, even if the first child has already completed. A child that reaches `END`
+can enqueue its own next-workflow request in that same transaction.
+
+A missing target definition, schema mismatch, business-key conflict or database/
+dispatch failure leaves the request pending. Other requests continue processing;
+startup failures are retried and logged with source instance and target definition
+IDs. Fixing/publishing the target definition or resolving the active business-key
+conflict allows a later attempt to proceed. Once a child has been created, its
+subsequent failures use the normal instance/job lifecycle, not another chain start.
+
+Pending requests can be inspected with:
+
+```sql
+SELECT source_instance_id, target_definition_id, created_at
+FROM workflow_chain
+WHERE child_instance_id IS NULL
+ORDER BY created_at, source_instance_id;
+```
+
+**Upgrade:** migration `0011_workflow_chain` adds the durable request table and its
+pending index; engine startup applies it through the existing migration runner.
+All replicas must run the new timer/chain code for these guarantees to hold.
+Already-lost requests or timers consumed by older code cannot be reconstructed
+automatically. Do not drop the chain table with pending requests during a downgrade.
+REST/gRPC, workflow JSON and Kafka event fields are unchanged; API security stays
+with the surrounding system.
 
 ### Observability
 
@@ -344,7 +414,7 @@ Every job carries a `retries_remaining` counter set from the step's `retryCount`
 handler throws plain Exception / Error
     → runner calls FailJob(retryable=true)
     → engine: retries_remaining > 0 ?
-          yes → job returns to UNLOCKED, next worker poll picks it up
+          yes → old job stays FAILED; a new UNLOCKED job is dispatched
           no  → job → FAILED, instance → FAILED
 
 handler throws NonRetryableException / NonRetryableError

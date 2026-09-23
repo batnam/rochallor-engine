@@ -378,11 +378,11 @@ Key metrics:
 
 | Package | Responsibility |
 |---------|---------------|
-| `internal/instance` | Core lifecycle: `Start`, `Advance`, `CompleteJobAndAdvance`, `DispatchBoundaryStep`. All state mutations happen in a single PostgreSQL transaction. |
+| `internal/instance` | Core lifecycle: `Start`, `Advance`, `CompleteJobAndAdvance`, `FireBoundaryEvent`. All state mutations happen in a single PostgreSQL transaction. |
 | `internal/definition` | Definition parsing (`parser.go`), type definitions (`types.go`), validator (`validator.go`), and repository (DB read/write). |
 | `internal/expression` | Lexer (`lexer.go`) + recursive descent parser/evaluator (`evaluator.go`). Evaluates boolean expressions against workflow variable maps. |
 | `internal/job` | `poll.go` — `FOR UPDATE SKIP LOCKED` job claim. `lease_sweeper.go` — returns expired locks to `UNLOCKED`. `retry.go` — decrements retry budget and re-queues or fails. |
-| `internal/boundary` | Timer sweeper: scans `boundary_event_schedule` for fired timers and calls `DispatchBoundaryStep`. |
+| `internal/boundary` | Timer sweeper: scans `boundary_event_schedule` for due timers and calls `FireBoundaryEvent`. |
 | `internal/api/rest` | Chi router, REST handlers, request/response structs, format guard middleware. |
 | `internal/api/grpc` | gRPC server implementation, bridges proto types to service layer. |
 | `internal/config` | Reads `WE_*` env vars; merges with optional YAML file. |

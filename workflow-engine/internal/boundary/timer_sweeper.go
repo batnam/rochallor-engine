@@ -18,15 +18,8 @@ const timerSweeperLockKey int64 = 0x6C756F6E_676C7473 // "luonglts" low bits
 // InstanceDispatcher is satisfied by *instance.Service (injected to avoid
 // import cycles between the boundary and instance packages).
 type InstanceDispatcher interface {
-	// DispatchBoundaryStep spawns targetStepID alongside running work
-	// (non-interrupting path). stepExecutionID identifies the parent step the
-	// boundary is attached to so the dispatcher can suppress firing when it
-	// has already left RUNNING.
-	DispatchBoundaryStep(ctx context.Context, instanceID, stepExecutionID, targetStepID string) error
-	// InterruptStepAndDispatchBoundary cancels the running step_execution
-	// identified by stepExecutionID, cancels its job, then dispatches
-	// targetStepID (interrupting path).
-	InterruptStepAndDispatchBoundary(ctx context.Context, instanceID, stepExecutionID, targetStepID string) error
+	// FireBoundaryEvent commits timer acknowledgement and its effects together.
+	FireBoundaryEvent(ctx context.Context, eventID, instanceID string) error
 }
 
 // StartTimerSweeper runs a background goroutine that fires due boundary
@@ -57,19 +50,14 @@ func sweepTimers(ctx context.Context, dbConn db.DB, store BoundaryStore, svc Ins
 	}
 	defer release()
 
-	due, err := store.FetchAndMarkFiredBoundaryEvents(ctx)
+	due, err := store.ListDueBoundaryEvents(ctx)
 	if err != nil {
 		slog.Error("timer sweeper: fetch failed", "err", err)
 		return
 	}
 
 	for _, e := range due {
-		var dispatchErr error
-		if e.Interrupting {
-			dispatchErr = svc.InterruptStepAndDispatchBoundary(ctx, e.InstanceID, e.StepExecutionID, e.TargetStepID)
-		} else {
-			dispatchErr = svc.DispatchBoundaryStep(ctx, e.InstanceID, e.StepExecutionID, e.TargetStepID)
-		}
+		dispatchErr := svc.FireBoundaryEvent(ctx, e.ID, e.InstanceID)
 		if dispatchErr != nil {
 			slog.Error("timer sweeper: dispatch failed",
 				"event_id", e.ID,
