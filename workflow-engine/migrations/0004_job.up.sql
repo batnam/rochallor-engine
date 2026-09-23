@@ -1,5 +1,5 @@
 -- 0004: job
--- One job per SERVICE_TASK step execution. Workers poll, lock, and complete/fail jobs.
+-- Each delivery attempt is a job; retries may share a SERVICE_TASK step execution.
 -- Poll query: SELECT … WHERE status = 'UNLOCKED' AND job_type = ANY($1) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT $2
 
 CREATE TABLE IF NOT EXISTS job (

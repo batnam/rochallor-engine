@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -185,25 +184,10 @@ func (s *Service) handleEnd(ctx context.Context, tx db.Tx, inst *WorkflowInstanc
 	inst.Status = InstanceStatusCompleted
 
 	if def.AutoStartNextWorkflow && def.NextWorkflowId != "" {
-		nextID := def.NextWorkflowId
-		vars, err := variablesToMap(inst.Variables)
-		if err != nil {
-			slog.Error("autoStartNextWorkflow: corrupt instance variables, skipping chain",
-				"instance_id", inst.ID, "next_workflow_id", nextID, "err", err)
-			return nil
-		}
-		var bk string
-		if inst.BusinessKey != nil {
-			bk = *inst.BusinessKey
-		}
-		go func() {
-			tCtx, cancel := context.WithTimeout(s.rootCtx, 30*time.Second)
-			defer cancel()
-			if _, err := s.Start(tCtx, nextID, 0, vars, bk); err != nil {
-				slog.Error("autoStartNextWorkflow: failed to start chained workflow",
-					"next_workflow_id", nextID, "business_key", bk, "err", err)
-			}
-		}()
+		return s.store.InsertWorkflowChain(ctx, tx, WorkflowChain{
+			SourceInstanceID: inst.ID, TargetDefinitionID: def.NextWorkflowId,
+			Variables: inst.Variables, BusinessKey: inst.BusinessKey,
+		})
 	}
 	return nil
 }

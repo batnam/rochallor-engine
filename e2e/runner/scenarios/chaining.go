@@ -2,6 +2,7 @@ package scenarios
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -38,7 +39,8 @@ func RunChaining(t TestReporter, client ClientIface, scenariosDir, prefix string
 	// 2. Start the primary instance
 	initialVars := map[string]any{"applicantId": "123", "amount": float64(100)}
 	workflowA := "e2e-" + prefix + "-chain-workflow-a"
-	instanceID, err := client.StartInstance(ctx, workflowA, initialVars)
+	businessKey := fmt.Sprintf("chain-%s-%d", prefix, time.Now().UnixNano())
+	instanceID, err := client.StartInstanceWithBusinessKey(ctx, workflowA, initialVars, businessKey)
 	if err != nil {
 		t.Errorf("[%s/chaining] start workflow-a instance: %v", prefix, err)
 		return
@@ -61,21 +63,12 @@ func RunChaining(t TestReporter, client ClientIface, scenariosDir, prefix string
 	assertVar(t, prefix, "chaining", instA.Variables, "applicantId", "123")
 	assertVar(t, prefix, "chaining", instA.Variables, "amount", float64(100))
 
-	// 4. Verification: Poll for the automatically started second instance.
-    // The second workflow ID is "e2e-{prefix}-chain-workflow-b"
-	workflowB := "e2e-" + prefix + "-chain-workflow-b"
-    t.Logf("[%s/chaining] workflow-a COMPLETED, waiting for %s...", prefix, workflowB)
-	
-    // We don't have a direct 'ListLatestInstance' but we can expect it to happen.
-    // In this E2E suite, workers are processing. If workflow-b started, its worker
-    // will pick up the 'chain-finalize' job and complete it.
-    
-    // We will wait for a small duration and then check for COMPLETED status.
-    // Since we don't have the ID, this is tricky. 
-    // TODO: Ideally engine API supports finding instances by definitionId.
-    
-    // For now, let's assume if it works, it works. 
-    // In a real E2E, we would query: GET /v1/instances?definitionId=...&status=COMPLETED
-    
-    t.Logf("[%s/chaining] Scenario completed successfully (verification of automatic creation pending engine API enhancement)", prefix)
+	// Verify that the SDK processed the automatically created child.
+	child, err := waitForChainedChild(ctx, client, "e2e-"+prefix+"-chain-workflow-b", businessKey)
+	if err != nil {
+		t.Errorf("[%s/chaining] child: %v", prefix, err)
+		return
+	}
+	assertVar(t, prefix, "chaining-child", child.Variables, "applicantId", "123")
+	assertVar(t, prefix, "chaining-child", child.Variables, "amount", float64(100))
 }

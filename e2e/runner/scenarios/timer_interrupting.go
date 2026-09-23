@@ -12,7 +12,7 @@ import (
 // fires after PT2S, cancels the main step, and routes to the timeout handler.
 //
 // NOTE: This scenario requires the engine's timer_sweeper to support the
-// interrupting=true path (InterruptStepAndDispatchBoundary). Gate with
+// interrupting=true path (FireBoundaryEvent). Gate with
 // E2E_TIMER_INTERRUPTING=1 until the engine fix is merged.
 func RunTimerInterrupting(t TestReporter, client ClientIface, scenariosDir, prefix string) {
 	if os.Getenv("E2E_TIMER_INTERRUPTING") != "1" {

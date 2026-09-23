@@ -173,9 +173,7 @@ func (h *captureHandler) hasError() bool {
 // fails (because the target definition does not exist), the error is logged at
 // ERROR level rather than silently discarded.
 //
-// With the original code the goroutine uses _, _ = s.Start(...) so no log
-// entry is produced and this test times out. After the fix, slog.Error is
-// called and the test finds the record within the polling window.
+// The durable worker reports the error and leaves the request pending.
 func TestAutoStartNextWorkflow_ErrorIsLogged(t *testing.T) {
 	capture := &captureHandler{}
 	orig := slog.Default()
@@ -220,8 +218,14 @@ func TestAutoStartNextWorkflow_ErrorIsLogged(t *testing.T) {
 		t.Fatalf("complete job: %v", err)
 	}
 
-	// The goroutine starts the next workflow asynchronously. Poll until an
-	// ERROR log record appears (the definition does not exist, so Start fails).
+	// A missing definition must be reported without losing the pending request.
+	t.Cleanup(func() {
+		_, _ = gPool.Exec(context.Background(), `DELETE FROM workflow_chain WHERE source_instance_id=$1`, inst.ID)
+	})
+	if err := gInstSvc.ProcessPendingChains(ctx); err == nil {
+		t.Fatal("expected missing target definition error")
+	}
+	// Poll until the ERROR log record appears.
 	deadline = time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if capture.hasError() {

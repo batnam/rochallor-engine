@@ -17,6 +17,7 @@ type TestReporter interface {
 	AuditLog(instanceID string, eventType string, message string)
 	Failed() bool
 }
+
 // Instance mirrors the engine's instance response shape.
 type Instance struct {
 	ID             string         `json:"id"`
@@ -42,8 +43,18 @@ type DefinitionSummary struct {
 	Name    string `json:"name"`
 }
 
+// Job mirrors the existing poll response; no additional contract fields.
+type Job struct {
+	ID               string `json:"id"`
+	StepExecutionID  string `json:"stepExecutionId"`
+	RetriesRemaining int    `json:"retriesRemaining"`
+}
+
 // ClientIface is the minimal engine API surface used by scenario functions.
 type ClientIface interface {
+	PollJobs(ctx context.Context, workerID, jobType string) ([]Job, error)
+	CompleteJob(ctx context.Context, jobID, workerID string, vars map[string]any) error
+	FailJob(ctx context.Context, jobID, workerID, reason string, retryable bool) error
 	UploadDefinition(ctx context.Context, defJSON []byte) error
 	StartInstance(ctx context.Context, defID string, vars map[string]any) (string, error)
 	StartInstanceWithBusinessKey(ctx context.Context, defID string, vars map[string]any, businessKey string) (string, error)

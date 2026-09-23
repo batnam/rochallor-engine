@@ -231,24 +231,19 @@ runner.run()
 - The relay was down longer than `dedup_window_seconds` before republishing.
 - This runner restarted between the original message and a relay-republished duplicate.
 
-**Handlers must be idempotent.** Use `job.job_id` as the idempotency key for every external side-effect:
+**Handlers must be idempotent.** Use a stable business operation key from variables (for example, an invoice ID) for external side effects. `jobId` identifies one delivery attempt and changes on automatic retry or lease recovery; it only deduplicates redelivery of that same attempt.
 
 ```python
-@registry.handler("send-invoice")
 def send_invoice(job):
-    # Guard: skip if this job_id was already processed.
-    if db.invoice_already_sent(job.job_id):
+    invoice_id = job["variables"]["invoiceId"]
+    if db.invoice_already_sent(invoice_id):
         return {}
-    return send_invoice_to_customer(job.variables, idempotency_key=job.job_id)
+    return send_invoice_to_customer(job["variables"], idempotency_key=invoice_id)
+
+registry.register("send-invoice", send_invoice)
 ```
 
-Common patterns:
-
-| Side-effect | Idempotency approach |
-|-------------|----------------------|
-| DB write | Upsert on a `job_id` unique column or check-before-insert |
-| HTTP call | Pass `job.job_id` as `Idempotency-Key` header (Stripe, Adyen, etc.) |
-| Email / push | Insert into `notifications_sent(job_id)` with UNIQUE; skip if row exists |
+Enforce the operation key with a database unique constraint or pass it to the external service as its idempotency key. A check-before-send alone does not prevent concurrent duplicates.
 
 The engine's `complete_job` / `fail_job` calls are already idempotent — a second call with the same `job_id` is a no-op. Only your external side-effects need to be guarded.
 

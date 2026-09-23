@@ -276,3 +276,7 @@ Plaintext brokers should be restricted to local dev (`docker compose`) — never
 | `pollIntervalMs` | long | `500` | Milliseconds to sleep between poll rounds when the queue is empty. |
 | `engine` | `EngineClient` | *(required)* | REST or gRPC client. |
 | `registry` | `HandlerRegistry` | *(required)* | Maps job types to handlers. |
+
+### Delivery identity and retries
+
+`jobId()` identifies one delivery attempt and changes on automatic retry or lease recovery. Callback requests and SDK method signatures are unchanged. For external side effects, use a stable business operation key from `variables()` (for example, a payment ID) with the destination's idempotency mechanism; do not deduplicate across retries using `jobId()`.

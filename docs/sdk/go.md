@@ -200,26 +200,19 @@ func main() {
 - The relay was down longer than `DedupWindow` before republishing.
 - This runner restarted between the original message and a relay-republished duplicate.
 
-**Handlers must be idempotent.** Use `job.JobID` as the idempotency key for every external side-effect:
+**Handlers must be idempotent.** Use a stable business operation key from variables (for example, an invoice ID) for external side effects. `jobId` identifies one delivery attempt and changes on automatic retry or lease recovery; it only deduplicates redelivery of that same attempt.
 
 ```go
 registry.Register("send-invoice", func(ctx context.Context, job handler.JobContext) (handler.Result, error) {
-    // Guard: skip if this JobID was already processed.
-    if sent, _ := db.InvoiceAlreadySent(ctx, job.JobID); sent {
+    invoiceID := job.Variables["invoiceId"].(string) // validated business input
+    if sent, _ := db.InvoiceAlreadySent(ctx, invoiceID); sent {
         return handler.Result{}, nil
     }
-    return handler.Result{}, sendInvoice(ctx, job.Variables, job.JobID)
+    return handler.Result{}, sendInvoice(ctx, job.Variables, invoiceID)
 })
 ```
 
-Common patterns:
-
-| Side-effect | Idempotency approach |
-|-------------|----------------------|
-| DB write | Upsert on a `job_id` unique column or check-before-insert |
-| HTTP call | Pass `job.JobID` as `Idempotency-Key` header (Stripe, Adyen, etc.) |
-| Email / push | Insert into `notifications_sent(job_id)` with UNIQUE; skip if row exists |
-| File write | Write to `<job_id>.tmp`, rename; check existence before starting |
+Enforce the operation key with a database unique constraint or pass it to the external service as its idempotency key. A check-before-send alone does not prevent concurrent duplicates.
 
 The engine's `CompleteJob` / `FailJob` calls are already idempotent — a second call with the same `JobID` is a no-op. Only your external side-effects need to be guarded.
 

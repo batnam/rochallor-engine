@@ -136,6 +136,7 @@ func run() error {
 	instSvc := instance.NewService(ctx, dbConn, instStore, defRepo, dispatchRT.Dispatcher())
 
 	// ── Background workers ────────────────────────────────────────────────────
+	instSvc.StartChainWorker(ctx, time.Second)
 	job.StartLeaseSweeper(ctx, dbConn, jobStore, dispatchRT.Dispatcher(), 15*time.Second)
 	boundary.StartTimerSweeper(ctx, dbConn, bndStore, instSvc, 5*time.Second)
 	boundary.StartBoundaryHousekeeper(ctx, dbConn, bndStore, 1*time.Hour, 24*time.Hour)

@@ -60,7 +60,7 @@ func RunChainBusinessKey(t TestReporter, client ClientIface, scenariosDir, prefi
 		return
 	}
 
-	// The chain start runs in a goroutine after END, so poll the list endpoint
+	// The durable chain worker starts the child after END commits, so poll the list endpoint
 	// for the child instance keyed by (workflowB, bk).
 	deadline := time.Now().Add(15 * time.Second)
 	var children []Instance
@@ -93,7 +93,7 @@ func RunChainBusinessKey(t TestReporter, client ClientIface, scenariosDir, prefi
 
 	// Let the child reach a terminal state so the (bk, defID) pair frees up
 	// for any subsequent runs of the suite.
-	if _, err := PollUntilTerminal(ctx, client, child.ID, 20*time.Second); err != nil {
-		t.Logf("[%s/chain-business-key] child %s did not terminate cleanly: %v (non-fatal)", prefix, child.ID, err)
+	if got, err := PollUntilTerminal(ctx, client, child.ID, 20*time.Second); err != nil || got.Status != "COMPLETED" {
+		t.Errorf("[%s/chain-business-key] child did not complete: %+v %v", prefix, got, err)
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/definition"
 )
@@ -71,23 +70,18 @@ func TestHandleEnd_PropagatesBusinessKeyToChainedWorkflow(t *testing.T) {
 		t.Fatalf("Start parent: %v", err)
 	}
 
-	// Chain is fired in a goroutine; poll the store until the child appears.
-	deadline := time.Now().Add(2 * time.Second)
+	// Drive the durable worker explicitly; no scheduling-dependent goroutine.
+	if err := svc.ProcessPendingChains(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	var childInst *WorkflowInstance
-	for time.Now().Before(deadline) {
-		store.mu.Lock()
-		for _, inst := range store.instances {
-			if inst.DefinitionID == child.ID {
-				childInst = inst
-				break
-			}
-		}
-		store.mu.Unlock()
-		if childInst != nil {
+	for _, inst := range store.instances {
+		if inst.DefinitionID == child.ID {
+			childInst = inst
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
+
 	if childInst == nil {
 		t.Fatalf("chained child instance was never started")
 	}

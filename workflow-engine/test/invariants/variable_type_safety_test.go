@@ -299,7 +299,7 @@ func TestOutputSchema_BadPayloadFailsInstanceAndBypassesRetry(t *testing.T) {
 	j := pollJob(ctx, t, "us3-bad-job")
 
 	// Worker returns payment_id as a number — violates the SERVICE_TASK's outputs_schema.
-	completeErr := gInstSvc.CompleteJobAndAdvance(ctx, j.ID, "test-worker", map[string]any{"payment_id": 12345})
+	completeErr := gInstSvc.CompleteJobAndAdvance(ctx, j.ID, *j.WorkerID, map[string]any{"payment_id": 12345})
 	sv, ok := definition.IsSchemaViolation(completeErr)
 	if !ok {
 		t.Fatalf("expected *SchemaViolationError, got %T: %v", completeErr, completeErr)
@@ -357,7 +357,7 @@ func TestOutputSchema_ValidPayloadProceeds(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	j := pollJob(ctx, t, "us3-ok-job")
-	if err := gInstSvc.CompleteJobAndAdvance(ctx, j.ID, "test-worker", map[string]any{"payment_id": "pay_abc"}); err != nil {
+	if err := gInstSvc.CompleteJobAndAdvance(ctx, j.ID, *j.WorkerID, map[string]any{"payment_id": "pay_abc"}); err != nil {
 		t.Fatalf("CompleteJobAndAdvance: %v", err)
 	}
 	terminal, err := awaitTerminal(ctx, inst.ID, 5*time.Second)
@@ -388,7 +388,7 @@ func TestOutputSchema_NoSchemaIsRegressionFree(t *testing.T) {
 	}
 	j := pollJob(ctx, t, "us3-noschema-job")
 	// Anything goes — same payload that would violate the schema above must succeed here.
-	if err := gInstSvc.CompleteJobAndAdvance(ctx, j.ID, "test-worker", map[string]any{"payment_id": 12345}); err != nil {
+	if err := gInstSvc.CompleteJobAndAdvance(ctx, j.ID, *j.WorkerID, map[string]any{"payment_id": 12345}); err != nil {
 		t.Errorf("expected success without schema, got: %v", err)
 	}
 	terminal, err := awaitTerminal(ctx, inst.ID, 5*time.Second)

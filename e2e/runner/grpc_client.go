@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	workflowv1 "github.com/batnam/rochallor-engine/workflow-engine/api/gen/workflow/v1"
 	"github.com/batnam/e2e/runner/scenarios"
+	workflowv1 "github.com/batnam/rochallor-engine/workflow-engine/api/gen/workflow/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -371,4 +371,30 @@ func parseJSONDefinition(defJSON []byte) (*workflowv1.WorkflowDefinition, error)
 		pd.Steps = append(pd.Steps, ps)
 	}
 	return pd, nil
+}
+
+func (c *GrpcClient) PollJobs(ctx context.Context, workerID, jobType string) ([]scenarios.Job, error) {
+	response, err := c.stub.PollJobs(ctx, &workflowv1.PollJobsRequest{WorkerId: workerID, JobTypes: []string{jobType}, MaxJobs: 1})
+	if err != nil {
+		return nil, err
+	}
+	jobs := make([]scenarios.Job, 0, len(response.Jobs))
+	for _, j := range response.Jobs {
+		jobs = append(jobs, scenarios.Job{ID: j.Id, StepExecutionID: j.StepExecutionId, RetriesRemaining: int(j.RetriesRemaining)})
+	}
+	return jobs, nil
+}
+
+func (c *GrpcClient) CompleteJob(ctx context.Context, jobID, workerID string, vars map[string]any) error {
+	values, err := toStruct(vars)
+	if err != nil {
+		return err
+	}
+	_, err = c.stub.CompleteJob(ctx, &workflowv1.CompleteJobRequest{JobId: jobID, WorkerId: workerID, VariablesToSet: values})
+	return err
+}
+
+func (c *GrpcClient) FailJob(ctx context.Context, jobID, workerID, reason string, retryable bool) error {
+	_, err := c.stub.FailJob(ctx, &workflowv1.FailJobRequest{JobId: jobID, WorkerId: workerID, ErrorMessage: reason, Retryable: retryable})
+	return err
 }

@@ -453,6 +453,11 @@ No additional fields are required.
 
 A boundary event fires while its parent step is still active. Only `TIMER` events are supported. Attach them to `SERVICE_TASK`, `USER_TASK`, or `WAIT` steps.
 
+Timer consumption and target dispatch commit together. A failed dispatch is retried,
+and due timers survive an engine restart. Repeated processing does not dispatch the
+target twice. If the source step has already completed or the instance is terminal,
+the timer is consumed without dispatching its target.
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `type` | string | **yes** | Must be `"TIMER"`. |
@@ -660,6 +665,15 @@ Set `autoStartNextWorkflow: true` and `nextWorkflowId` to automatically trigger 
 ```
 
 The engine starts the next workflow instance with the same variables **and the same `businessKey`** the current instance had at the time it reached `END`. There is no limit to the chain length, but cycles will loop indefinitely — design accordingly.
+
+The request to start the child is stored in the parent completion transaction and
+processed after commit. Pending requests survive restart; creating the child and
+acknowledging the request are atomic, so retry/replay does not create duplicate
+children. The latest target definition is resolved when the child is started.
+Missing definitions, invalid target input or an active business-key conflict leave
+the request pending for retry, with the cause in engine logs. These startup failures
+do not change the completed parent's status. See [durable workflow chaining](architecture.md#durable-workflow-chaining)
+for operational details.
 
 ### Finding the chained instance id
 
