@@ -119,6 +119,13 @@ start time. Select **Apply Filters** to update the list.
 Use **Newest**, **Previous**, and **Next** to move through pages. Select a
 Process Instance ID to open its details.
 
+The list includes Business Key, start time, and elapsed time. For running
+instances, elapsed time is measured at the last successful list update, so it
+does not advance as if fresh while the database is unavailable. For finished
+instances it uses the recorded completion time. Start-time inputs use UTC,
+with an inclusive **From** and exclusive **To** bound. Invalid ranges are
+explained beside the editable filters.
+
 The status badges use these states:
 
 - `ACTIVE`: the workflow is running.
@@ -139,6 +146,10 @@ The diagram shows the path through the Workflow Definition.
 Select a step in the diagram to highlight its executions. The table shows each
 attempt, its status, start and end times, and snapshot availability.
 
+Use **View Incident** on a failed execution, or the Incident link for the
+selected failed step, to open its Error Details. Cancelled instances do not
+offer Incident links. Diagram code loads only when a detail page is opened.
+
 The **Variables** tab shows the current Process Variables. It also lists input
 and output Variable Snapshots recorded at Step Execution boundaries.
 
@@ -156,11 +167,31 @@ Details. Use the Process Instance link to open the related execution.
 
 ### Refresh and stale data
 
-Monitor refreshes list data in the background. Use **Refresh** when you need an
-immediate update.
+Monitor refreshes lists every five seconds while the browser tab is visible.
+Invalid filter requests do not poll until corrected.
 
-If PostgreSQL becomes unavailable after data was loaded, Monitor keeps the last
-successful result visible and shows a stale-data warning.
+On a Process Instance detail page, **Refresh** updates the status and diagram,
+then the current history page and Current Variables if the Variables tab is
+open. The same cycle runs every five seconds for `ACTIVE` or `WAITING`
+instances, pauses in hidden tabs, and refreshes on return or reconnection.
+Cycles do not overlap. After observing a terminal status, history is refreshed
+once more before polling stops. A failed part of the cycle keeps polling for
+recovery, including after a terminal transition. Refresh keeps the selected
+step and history page; use **Newest Step Execution page** to see new attempts
+while browsing older history.
+
+Each section shows its last successful update in UTC and the age of that
+result. If a refresh fails, the last successful result stays visible with a
+warning for that section. A section with no cached result shows a loading or
+error state instead. One section may succeed while another remains stale.
+
+The detail API reads status, definition, and overlay in one consistent database
+snapshot. History and variables are separate API reads; a refresh cycle does
+not promise a single snapshot across the whole page.
+
+Cached results live in the browser's in-memory TanStack Query cache. Reloading
+or closing the page clears them. A BFF restart does not erase data already
+displayed in an open browser. There is no BFF result cache or offline storage.
 
 ## Manage the quick-start stack
 
@@ -217,8 +248,9 @@ If data existed before, check the BFF logs for a database or schema error.
 
 ### Monitor shows stale data
 
-The BFF cannot refresh its cached result. Check PostgreSQL availability and the
-BFF logs. Monitor will refresh again when the database is available.
+The browser cannot refresh its cached result. Check PostgreSQL availability,
+the BFF logs, and database timeout settings. Monitor will refresh again when
+the database is available, or you can use **Refresh** immediately.
 
 ## Production deployment
 
@@ -250,21 +282,65 @@ tables.
 Do not grant create, insert, update, delete, truncate, trigger, or migration
 permissions.
 
-### Protect sensitive data
+### Access and transport boundary
 
 Process Variables, Variable Snapshots, and Error Details may contain sensitive
 business data.
 
-Put authentication and authorization in front of Monitor. Restrict network
-access to the BFF, use TLS, and store database credentials in a secret store.
+Authentication and TLS termination are exclusively external infrastructure
+responsibilities. To keep this project simple, do not implement authentication
+features, authentication middleware, or TLS/authentication deployment templates
+in this repository. Monitor contains no login, session, token, Basic auth, or
+SSO implementation. Deployment operators manage access and transport outside
+the project.
+
+### Bound database resources
+
+The BFF uses its own pool and identifies sessions as `rochallor-monitor`.
+These positive-integer environment settings also work in the quick-start Compose file:
+
+| Setting | Default | Meaning |
+| --- | ---: | --- |
+| `MONITOR_POSTGRES_POOL_MAX` | 5 | Maximum connections per BFF process |
+| `MONITOR_POSTGRES_CONNECTION_TIMEOUT_MS` | 2000 | Maximum wait for connection establishment or a free pool slot |
+| `MONITOR_POSTGRES_STATEMENT_TIMEOUT_MS` | 3000 | Server-side timeout for each SQL statement |
+
+Budget connections across **all** BFF replicas: three replicas at the default
+can open up to 15 connections. Increasing browser sessions adds requests to
+these pools; it does not create a pool per browser. Query timeouts cancel SQL
+on PostgreSQL, and failed detail transactions roll back before returning a
+connection. These are per-statement limits, not an end-to-end request deadline.
+DSN/session overrides must agree with your resource policy.
+
+The query-plan tests run the production list queries on 100,000-row fixtures,
+enforce latency/scan/buffer budgets, and write full plans to
+`workflow-monitor-bff/testresults/query-plans/`. CI archives these results.
+See the [instance baseline](performance/process-instance-list-query-plan.md)
+and [Incident baseline](performance/incident-list-query-plan.md) for measured
+results, thresholds, and index evaluation.
 
 ### Keep schemas compatible
 
 Monitor reads Engine tables directly and does not run migrations. Deploy Engine
 migrations before the matching Monitor release.
 
-Test Monitor against a staging database after a migration changes a table,
-column, or enum that Monitor reads.
+| Monitor revision | Engine schema | Verification |
+| --- | --- | --- |
+| Current source (frontend/BFF package manifests: `0.1.0`) | Engine migrations `0001` through `0011` in this repository, PostgreSQL 16 | Automated API and schema compatibility tests |
+| Separately released or older images | Only the explicitly tested Engine/Monitor pair | Do not infer compatibility from `latest` or matching package numbers |
+
+The BFF checks required columns, PostgreSQL types, and read permissions on
+`workflow_instance`, `workflow_definition`, `step_execution`, and `job` during
+startup and every readiness request. Checks use `LIMIT 0`; they do not scan
+workflow data. Extra columns are allowed. Startup fails with a table-specific
+diagnostic on an incompatible schema, before the HTTP listener opens.
+
+Route production traffic using `/health/ready`, which returns 503 after a
+schema or database availability failure; `/health/live` only reports process
+liveness. Compose's startup health dependency is not ongoing traffic routing.
+The schema check does not validate every stored definition JSON document or
+the meaning of status values. Test Monitor against staging whenever a migration
+changes columns, types, or Engine semantics, and record the tested release pair.
 
 ## Limitations
 
@@ -272,6 +348,7 @@ column, or enum that Monitor reads.
   deployment responsibilities.
 - Monitor can observe workflows but cannot change them.
 - Direct database reads require compatible Engine and Monitor releases.
-- Cached stale data is stored in the BFF process and is lost after a restart.
-- PostgreSQL pool sizing and query timeouts use driver defaults.
+- Cached stale data is held in browser memory and is lost after a page reload.
+- A coordinated refresh does not provide one database snapshot across APIs.
+- Database limits apply per BFF process and per SQL statement.
 - Large Incident history may require database performance tuning.

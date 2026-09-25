@@ -7,6 +7,10 @@ test.describe.configure({ mode: "serial" });
 test("loads a Process Instance through the production relative API route", async ({
   page,
 }) => {
+  const scripts: string[] = [];
+  page.on("request", (request) => {
+    if (request.resourceType() === "script") scripts.push(request.url());
+  });
   await page.goto("/");
 
   await expect(
@@ -15,6 +19,16 @@ test("loads a Process Instance through the production relative API route", async
   await expect(
     page.getByRole("row", { name: /release-instance-052.*WAITING/ }),
   ).toBeVisible();
+  expect(scripts.some((url) => /\/ProcessInstanceRoute-/.test(url))).toBe(
+    false,
+  );
+  await page
+    .getByRole("link", { name: "release-instance-052", exact: true })
+    .click();
+  await expect(
+    page.getByRole("group", { name: "Execution Diagram" }),
+  ).toBeVisible();
+  expect(scripts.some((url) => /\/ProcessInstanceRoute-/.test(url))).toBe(true);
 });
 
 test("filters Process Instances and follows the opaque cursor", async ({
@@ -125,6 +139,16 @@ test("loads Current Variables and snapshots only when expanded", async ({
     page.getByRole("heading", { name: "Recorded Output" }),
   ).toBeVisible();
   await expect(page.getByText('"after-release"')).toBeVisible();
+});
+
+test("navigates from a failed Step Execution to its Incident", async ({
+  page,
+}) => {
+  await page.goto("/process-instances/release-failed");
+  await page.getByRole("link", { name: "View Incident", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Incident release-failed-execution" }),
+  ).toBeVisible();
 });
 
 test("keeps cached data stale during a PostgreSQL outage without logging secrets", async ({

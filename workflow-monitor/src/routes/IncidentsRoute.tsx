@@ -1,8 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
+import { DataFreshness } from "../DataFreshness";
+
 import { listWorkflowDefinitions } from "../workflowDefinitions";
 import type { Navigation } from "./Navigation";
+import {
+  FilterError,
+  fetchList,
+  timeRangeError,
+  utcInputValue,
+} from "./listFilters";
 
 interface Incident {
   id: string;
@@ -45,11 +53,10 @@ interface IncidentFilters {
 }
 
 async function listIncidents(search: string): Promise<IncidentListResponse> {
-  const response = await fetch(`/api/v1/incidents${search}`);
-  if (!response.ok) {
-    throw new Error("Unable to load Incidents");
-  }
-  return response.json() as Promise<IncidentListResponse>;
+  return fetchList<IncidentListResponse>(
+    `/api/v1/incidents${search}`,
+    "Incidents",
+  );
 }
 
 async function getIncidentDetail(
@@ -114,7 +121,7 @@ function IncidentDetail({
       </main>
     );
   }
-  if (incidentDetail.isError) {
+  if (incidentDetail.isError && !incidentDetail.data) {
     return (
       <main className="rm-page">
         <section className="rm-card rm-state-card rm-state-card--error">
@@ -144,6 +151,15 @@ function IncidentDetail({
         </div>
         <span className="rm-status rm-status--failed">INCIDENT</span>
       </header>
+      <DataFreshness
+        label="Incident"
+        updatedAt={incidentDetail.dataUpdatedAt}
+      />
+      {incidentDetail.isError || incidentDetail.fetchStatus === "paused" ? (
+        <output className="rm-banner rm-banner--warning">
+          Stale Incident data
+        </output>
+      ) : null}
       <dl className="rm-summary-grid rm-summary-grid--wide">
         <div className="rm-card rm-summary-card">
           <dt>Process Instance Status</dt>
@@ -221,10 +237,12 @@ function IncidentList({
   search: string;
 }): ReactNode {
   const [filters, setFilters] = useState(() => filtersFromSearch(search));
+  const [filterError, setFilterError] = useState<string | null>(null);
   const incidents = useQuery({
     queryKey: ["incidents", search],
     queryFn: () => listIncidents(search),
-    refetchInterval: 5_000,
+    refetchInterval: (query) =>
+      query.state.error instanceof FilterError ? false : 5_000,
     refetchIntervalInBackground: false,
     retry: false,
   });
@@ -248,26 +266,11 @@ function IncidentList({
       </main>
     );
   }
-  if (incidents.isError && !incidents.data) {
-    return (
-      <main className="rm-page">
-        <section className="rm-card rm-state-card rm-state-card--error">
-          <h1>Unable to load Incidents</h1>
-          <p>Check the Monitor API connection and try again.</p>
-          <button
-            className="rm-button"
-            type="button"
-            onClick={() => void incidents.refetch()}
-          >
-            Retry
-          </button>
-        </section>
-      </main>
-    );
-  }
-
   const applyFilters = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
+    const error = timeRangeError(filters.from, filters.to);
+    setFilterError(error);
+    if (error) return;
     const parameters = new URLSearchParams();
     if (filters.definitionId) {
       parameters.set("definitionId", filters.definitionId);
@@ -347,11 +350,13 @@ function IncidentList({
           <label className="rm-field">
             <span>Occurred From (UTC)</span>
             <input
-              value={filters.from}
+              type="datetime-local"
+              step="1"
+              value={filters.from.replace(/Z$/, "")}
               onChange={(event) =>
                 setFilters((current) => ({
                   ...current,
-                  from: event.target.value,
+                  from: utcInputValue(event.target.value),
                 }))
               }
             />
@@ -359,15 +364,22 @@ function IncidentList({
           <label className="rm-field">
             <span>Occurred To (UTC)</span>
             <input
-              value={filters.to}
+              type="datetime-local"
+              step="1"
+              value={filters.to.replace(/Z$/, "")}
               onChange={(event) =>
                 setFilters((current) => ({
                   ...current,
-                  to: event.target.value,
+                  to: utcInputValue(event.target.value),
                 }))
               }
             />
           </label>
+          {filterError || incidents.error instanceof FilterError ? (
+            <p role="alert" className="rm-banner rm-banner--warning">
+              {filterError ?? incidents.error?.message}
+            </p>
+          ) : null}
           <button className="rm-button rm-button--primary" type="submit">
             Apply Incident Filters
           </button>
@@ -378,14 +390,33 @@ function IncidentList({
             <div>
               <span className="rm-eyebrow">Operational failures</span>
               <h3>Incident log</h3>
+              <DataFreshness
+                label="Incidents"
+                updatedAt={incidents.dataUpdatedAt}
+              />
             </div>
           </div>
-          {incidents.isError ? (
+          {incidents.isError &&
+          !incidents.data &&
+          !(incidents.error instanceof FilterError) ? (
+            <div role="alert" className="rm-banner rm-banner--warning">
+              <p>{incidents.error.message}</p>
+              <button
+                className="rm-button"
+                type="button"
+                onClick={() => void incidents.refetch()}
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
+          {(incidents.isError || incidents.fetchStatus === "paused") &&
+          incidents.data ? (
             <output className="rm-banner rm-banner--warning">
               Stale Incident data
             </output>
           ) : null}
-          {incidents.data.items.length === 0 ? (
+          {incidents.data?.items.length === 0 ? (
             <div className="rm-empty-state">
               <h4>No Incidents found</h4>
               <p>There are no failures matching the current filters.</p>
@@ -403,7 +434,7 @@ function IncidentList({
                   </tr>
                 </thead>
                 <tbody>
-                  {incidents.data.items.map((incident) => (
+                  {incidents.data?.items.map((incident) => (
                     <tr key={incident.id}>
                       <td>
                         <a
@@ -453,8 +484,8 @@ function IncidentList({
               <button
                 className="rm-button"
                 type="button"
-                disabled={!incidents.data.nextCursor}
-                onClick={() => moveToCursor(incidents.data.nextCursor)}
+                disabled={!incidents.data?.nextCursor}
+                onClick={() => moveToCursor(incidents.data?.nextCursor ?? null)}
               >
                 Next Incident page
               </button>

@@ -87,7 +87,13 @@ export function VariableSnapshotInspector({
         <p>Loading Variable Snapshots…</p>
       ) : null}
       {expanded && snapshots.isError ? (
-        <p>Unable to load Variable Snapshots.</p>
+        snapshots.data ? (
+          <output className="rm-banner rm-banner--warning">
+            Stale Variable Snapshot data
+          </output>
+        ) : (
+          <p>Unable to load Variable Snapshots.</p>
+        )
       ) : null}
       {expanded && snapshots.data ? (
         <>

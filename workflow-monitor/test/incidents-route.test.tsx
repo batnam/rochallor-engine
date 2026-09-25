@@ -173,10 +173,10 @@ it("applies Incident definition, job type, and occurrence filters", async () => 
     target: { value: "payments" },
   });
   fireEvent.change(screen.getByLabelText("Occurred From (UTC)"), {
-    target: { value: "2026-03-01T00:00:00Z" },
+    target: { value: "2026-03-01T00:00:00" },
   });
   fireEvent.change(screen.getByLabelText("Occurred To (UTC)"), {
-    target: { value: "2026-03-02T00:00:00Z" },
+    target: { value: "2026-03-02T00:00:00" },
   });
   fireEvent.click(
     screen.getByRole("button", { name: "Apply Incident Filters" }),
@@ -187,6 +187,37 @@ it("applies Incident definition, job type, and occurrence filters", async () => 
     "?definitionId=loan-approval&jobType=payments&from=2026-03-01T00%3A00%3A00Z&to=2026-03-02T00%3A00%3A00Z",
   );
   expect(window.location.search).toBe(filteredRequest?.search);
+});
+
+it("explains a reversed occurrence range while keeping Incident filters visible", async () => {
+  window.history.replaceState(null, "", "/incidents");
+  server.use(
+    http.get("/api/v1/incidents", () =>
+      HttpResponse.json({ items: [], nextCursor: null }),
+    ),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <IncidentsTestRoute />
+    </QueryClientProvider>,
+  );
+  await screen.findByRole("button", { name: "Apply Incident Filters" });
+  fireEvent.change(screen.getByLabelText("Occurred From (UTC)"), {
+    target: { value: "2026-02-01T00:00" },
+  });
+  fireEvent.change(screen.getByLabelText("Occurred To (UTC)"), {
+    target: { value: "2026-01-01T00:00" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Apply Incident Filters" }),
+  );
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "From must be earlier than To (UTC).",
+  );
+  expect(window.location.search).toBe("");
 });
 
 it("continues the Incident list with the returned opaque cursor", async () => {

@@ -1,9 +1,21 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import { IncidentsRoute } from "./routes/IncidentsRoute";
 import type { Navigation } from "./routes/Navigation";
-import { ProcessInstanceRoute } from "./routes/ProcessInstanceRoute";
 import { ProcessInstancesRoute } from "./routes/ProcessInstancesRoute";
+
+const ProcessInstanceRoute = lazy(() =>
+  import("./routes/ProcessInstanceRoute").then((module) => ({
+    default: module.ProcessInstanceRoute,
+  })),
+);
 
 interface Location {
   pathname: string;
@@ -158,7 +170,15 @@ export function App(): ReactNode {
               </>
             ) : null}
           </nav>
-          {content}
+          <Suspense
+            fallback={
+              <main className="rm-page" aria-busy="true">
+                Loading Process Instance…
+              </main>
+            }
+          >
+            {content}
+          </Suspense>
         </div>
       </div>
     </div>

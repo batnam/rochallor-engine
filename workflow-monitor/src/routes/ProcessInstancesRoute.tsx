@@ -1,16 +1,27 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
+import { DataFreshness } from "../DataFreshness";
+
 import {
   type WorkflowDefinitionOption,
   listWorkflowDefinitions,
 } from "../workflowDefinitions";
 import type { Navigation } from "./Navigation";
+import {
+  FilterError,
+  fetchList,
+  timeRangeError,
+  utcInputValue,
+} from "./listFilters";
 
 interface ProcessInstance {
   definitionId: string;
   id: string;
   status: string;
+  businessKey: string | null;
+  startedAt: string;
+  completedAt: string | null;
 }
 
 interface ProcessInstanceListResponse {
@@ -37,11 +48,10 @@ const PROCESS_INSTANCE_STATUSES = [
 async function listProcessInstances(
   search: string,
 ): Promise<ProcessInstanceListResponse> {
-  const response = await fetch(`/api/v1/process-instances${search}`);
-  if (!response.ok) {
-    throw new Error("Unable to load Process Instances");
-  }
-  return response.json() as Promise<ProcessInstanceListResponse>;
+  return fetchList<ProcessInstanceListResponse>(
+    `/api/v1/process-instances${search}`,
+    "Process Instances",
+  );
 }
 
 function filtersFromSearch(search: string): ProcessInstanceFilters {
@@ -63,10 +73,12 @@ export function ProcessInstancesRoute({
   search: string;
 }): ReactNode {
   const [filters, setFilters] = useState(() => filtersFromSearch(search));
+  const [filterError, setFilterError] = useState<string | null>(null);
   const processInstances = useQuery({
     queryKey: ["process-instances", search],
     queryFn: () => listProcessInstances(search),
-    refetchInterval: 5_000,
+    refetchInterval: (query) =>
+      query.state.error instanceof FilterError ? false : 5_000,
     refetchIntervalInBackground: false,
     retry: false,
   });
@@ -91,26 +103,11 @@ export function ProcessInstancesRoute({
     );
   }
 
-  if (processInstances.isError && !processInstances.data) {
-    return (
-      <main className="rm-page">
-        <section className="rm-card rm-state-card rm-state-card--error">
-          <h1>Unable to load Process Instances</h1>
-          <p>Check the Monitor API connection and try again.</p>
-          <button
-            className="rm-button"
-            type="button"
-            onClick={() => void processInstances.refetch()}
-          >
-            Retry
-          </button>
-        </section>
-      </main>
-    );
-  }
-
   const applyFilters = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
+    const error = timeRangeError(filters.from, filters.to);
+    setFilterError(error);
+    if (error) return;
     const parameters = new URLSearchParams();
     if (filters.definitionId) {
       parameters.set("definitionId", filters.definitionId);
@@ -219,11 +216,13 @@ export function ProcessInstancesRoute({
           <label className="rm-field">
             <span>Started From (UTC)</span>
             <input
-              value={filters.from}
+              type="datetime-local"
+              step="1"
+              value={filters.from.replace(/Z$/, "")}
               onChange={(event) =>
                 setFilters((current) => ({
                   ...current,
-                  from: event.target.value,
+                  from: utcInputValue(event.target.value),
                 }))
               }
             />
@@ -231,15 +230,22 @@ export function ProcessInstancesRoute({
           <label className="rm-field">
             <span>Started To (UTC)</span>
             <input
-              value={filters.to}
+              type="datetime-local"
+              step="1"
+              value={filters.to.replace(/Z$/, "")}
               onChange={(event) =>
                 setFilters((current) => ({
                   ...current,
-                  to: event.target.value,
+                  to: utcInputValue(event.target.value),
                 }))
               }
             />
           </label>
+          {filterError || processInstances.error instanceof FilterError ? (
+            <p role="alert" className="rm-banner rm-banner--warning">
+              {filterError ?? processInstances.error?.message}
+            </p>
+          ) : null}
           <button className="rm-button rm-button--primary" type="submit">
             Apply Filters
           </button>
@@ -250,6 +256,10 @@ export function ProcessInstancesRoute({
             <div>
               <span className="rm-eyebrow">Live data</span>
               <h3>Instances</h3>
+              <DataFreshness
+                label="Instances"
+                updatedAt={processInstances.dataUpdatedAt}
+              />
             </div>
             <button
               className="rm-button"
@@ -259,10 +269,26 @@ export function ProcessInstancesRoute({
               Refresh
             </button>
           </div>
-          {processInstances.isError ? (
+          {processInstances.isError &&
+          !processInstances.data &&
+          !(processInstances.error instanceof FilterError) ? (
+            <div role="alert" className="rm-banner rm-banner--warning">
+              <p>{processInstances.error.message}</p>
+              <button
+                className="rm-button"
+                type="button"
+                onClick={() => void processInstances.refetch()}
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
+          {(processInstances.isError ||
+            processInstances.fetchStatus === "paused") &&
+          processInstances.data ? (
             <output className="rm-banner rm-banner--warning">Stale data</output>
           ) : null}
-          {processInstances.data.items.length === 0 ? (
+          {processInstances.data?.items.length === 0 ? (
             <div className="rm-empty-state">
               <h4>No Process Instances found</h4>
               <p>Adjust the filters to broaden the results.</p>
@@ -275,10 +301,13 @@ export function ProcessInstancesRoute({
                     <th scope="col">Instance ID</th>
                     <th scope="col">Definition ID</th>
                     <th scope="col">Status</th>
+                    <th scope="col">Business Key</th>
+                    <th scope="col">Started (UTC)</th>
+                    <th scope="col">Elapsed</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {processInstances.data.items.map((processInstance) => (
+                  {processInstances.data?.items.map((processInstance) => (
                     <tr key={processInstance.id}>
                       <td>
                         <a
@@ -302,6 +331,15 @@ export function ProcessInstancesRoute({
                         >
                           {processInstance.status}
                         </span>
+                      </td>
+                      <td>{processInstance.businessKey ?? "None"}</td>
+                      <td>{processInstance.startedAt}</td>
+                      <td>
+                        {elapsedTime(
+                          processInstance.startedAt,
+                          processInstance.completedAt,
+                          processInstances.dataUpdatedAt,
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -330,8 +368,10 @@ export function ProcessInstancesRoute({
               <button
                 className="rm-button"
                 type="button"
-                disabled={!processInstances.data.nextCursor}
-                onClick={() => moveToCursor(processInstances.data.nextCursor)}
+                disabled={!processInstances.data?.nextCursor}
+                onClick={() =>
+                  moveToCursor(processInstances.data?.nextCursor ?? null)
+                }
               >
                 Next
               </button>
@@ -341,4 +381,18 @@ export function ProcessInstancesRoute({
       </div>
     </main>
   );
+}
+
+function elapsedTime(
+  start: string,
+  end: string | null,
+  observedAt: number,
+): string {
+  const milliseconds = (end ? Date.parse(end) : observedAt) - Date.parse(start);
+  if (!Number.isFinite(milliseconds)) return "Not recorded";
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  return `${days ? `${days}d ` : ""}${hours}h ${minutes}m ${seconds % 60}s`;
 }

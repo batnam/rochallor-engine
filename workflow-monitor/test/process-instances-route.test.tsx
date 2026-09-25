@@ -104,6 +104,70 @@ it("shows Process Instances returned by the BFF", async () => {
   expect(screen.getByRole("cell", { name: "FAILED" })).toBeVisible();
   expect(screen.getByRole("cell", { name: "instance-active" })).toBeVisible();
   expect(screen.getByRole("cell", { name: "ACTIVE" })).toBeVisible();
+  expect(screen.getByRole("cell", { name: "loan-002" })).toBeVisible();
+  expect(
+    screen.getByRole("cell", { name: "2026-01-02T00:00:00.000Z" }),
+  ).toBeVisible();
+  expect(screen.getByRole("cell", { name: "0h 5m 0s" })).toBeVisible();
+  expect(screen.getByText(/Instances updated/)).toBeVisible();
+});
+
+it("keeps the filters editable and explains an invalid time range before sending it", async () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <ProcessInstancesTestRoute />
+    </QueryClientProvider>,
+  );
+  await screen.findByRole("cell", { name: "instance-active" });
+  fireEvent.change(screen.getByLabelText("Started From (UTC)"), {
+    target: { value: "2026-02-01T00:00" },
+  });
+  fireEvent.change(screen.getByLabelText("Started To (UTC)"), {
+    target: { value: "2026-01-01T00:00" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Apply Filters" }));
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "From must be earlier than To (UTC).",
+  );
+  expect(window.location.search).toBe("");
+  expect(screen.getByRole("cell", { name: "instance-active" })).toBeVisible();
+});
+
+it("shows API filter validation beside the form and can recover without reloading", async () => {
+  window.history.replaceState(null, "", "/?from=bad-date");
+  server.use(
+    http.get("/api/v1/process-instances", ({ request }) =>
+      new URL(request.url).searchParams.get("from") === "bad-date"
+        ? HttpResponse.json(
+            { message: "Invalid UTC timestamp" },
+            { status: 400 },
+          )
+        : HttpResponse.json({ items: [], nextCursor: null }),
+    ),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <ProcessInstancesTestRoute />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Invalid UTC timestamp",
+  );
+  expect(
+    screen.queryByText(/Check the Monitor API connection/),
+  ).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Started From (UTC)"), {
+    target: { value: "2026-01-01T00:00" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Apply Filters" }));
+  await screen.findByText("No Process Instances found");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 it("loads Workflow Definition options and writes applied filters to the URL and request", async () => {
@@ -137,10 +201,10 @@ it("loads Workflow Definition options and writes applied filters to the URL and 
     target: { value: "loan-002" },
   });
   fireEvent.change(screen.getByLabelText("Started From (UTC)"), {
-    target: { value: "2026-01-01T00:00:00Z" },
+    target: { value: "2026-01-01T00:00:00" },
   });
   fireEvent.change(screen.getByLabelText("Started To (UTC)"), {
-    target: { value: "2026-02-01T00:00:00Z" },
+    target: { value: "2026-02-01T00:00:00" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Apply Filters" }));
 
@@ -190,10 +254,10 @@ it("restores filters from a shared URL", async () => {
   expect(screen.getByLabelText("WAITING")).toBeChecked();
   expect(screen.getByLabelText("Business Key")).toHaveValue("loan-009");
   expect(screen.getByLabelText("Started From (UTC)")).toHaveValue(
-    "2026-01-01T00:00:00Z",
+    "2026-01-01T00:00",
   );
   expect(screen.getByLabelText("Started To (UTC)")).toHaveValue(
-    "2026-02-01T00:00:00Z",
+    "2026-02-01T00:00",
   );
   expect(requestedUrl?.search).toBe(window.location.search);
 });

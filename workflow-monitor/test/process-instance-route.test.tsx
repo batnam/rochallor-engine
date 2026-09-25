@@ -517,9 +517,7 @@ it("keeps cached Step Executions visible during a temporary failure", async () =
   );
 
   await screen.findByRole("cell", { name: "cached-attempt" });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Refresh Step Executions" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(historyRequestCount).toBe(2));
 
   expect(screen.getByRole("cell", { name: "cached-attempt" })).toBeVisible();
