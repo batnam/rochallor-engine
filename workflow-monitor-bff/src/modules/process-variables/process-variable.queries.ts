@@ -29,10 +29,12 @@ export class ProcessVariableQueries {
     instanceId: string,
     executionId: string,
   ): Promise<{
+    outputInterpretation: "variableDelta" | "fullState" | "unknown";
     recordedInput: VariableDocument;
     recordedOutput: VariableDocument;
   } | null> {
     const result = await this.database.query<{
+      step_type: string;
       input_snapshot: unknown;
       output_snapshot: unknown;
       has_input_snapshot: boolean;
@@ -40,6 +42,7 @@ export class ProcessVariableQueries {
     }>(
       `
         SELECT
+          step_type,
           input_snapshot,
           output_snapshot,
           input_snapshot IS NOT NULL AS has_input_snapshot,
@@ -54,6 +57,12 @@ export class ProcessVariableQueries {
       return null;
     }
     return {
+      outputInterpretation:
+        row.step_type === "SERVICE_TASK"
+          ? "variableDelta"
+          : ["USER_TASK", "WAIT", "TRANSFORMATION"].includes(row.step_type)
+            ? "fullState"
+            : "unknown",
       recordedInput: row.has_input_snapshot
         ? this.variableDocument(row.input_snapshot)
         : { status: "notRecorded" },

@@ -11,6 +11,9 @@ export interface IncidentRow {
   job_id: string | null;
   job_type: string | null;
   job_status: string | null;
+  latest_execution_id: string;
+  latest_status: string;
+  latest_attempt_number: number;
 }
 
 export interface IncidentDetailRow extends IncidentRow {
@@ -20,6 +23,8 @@ export interface IncidentDetailRow extends IncidentRow {
 }
 
 export interface IncidentListItem {
+  latestAttempt: { executionId: string; status: string; attemptNumber: number };
+  historical: boolean;
   id: string;
   processInstanceId: string;
   definitionId: string;

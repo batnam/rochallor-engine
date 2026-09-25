@@ -116,6 +116,16 @@ Select **Process Instances** in the sidebar.
 Use the filters to search by Workflow Definition, status, Business Key, or
 start time. Select **Apply Filters** to update the list.
 
+For a known ID, paste it into **Instance ID** and select **Open by Instance ID**.
+Surrounding whitespace is removed; other characters are preserved. An unknown
+ID shows a not-found page. Browser Back and Forward restore the prior view.
+
+**Definition Version** narrows a selected definition. **Current Step ID** also
+requires a definition and matches only `ACTIVE`/`WAITING` instances currently at
+that step. **Step Started Before (UTC)** requires a current step and matches
+its latest `RUNNING` execution with a start time strictly before that cutoff.
+These fields are also populated by Overview drill-down links.
+
 Use **Newest**, **Previous**, and **Next** to move through pages. Select a
 Process Instance ID to open its details.
 
@@ -134,17 +144,89 @@ The status badges use these states:
 - `FAILED`: the workflow stopped because of a failure.
 - `CANCELLED`: the workflow was cancelled.
 
+### Save frequently used filters
+
+Process Instances and Incidents each have **Saved filters**. Apply the desired
+search first, enter a **Filter name**, then select **Save applied filters**.
+Choose a saved filter to apply, rename, or delete it. Applying starts at the
+first page. Time bounds remain absolute UTC values, including an Overview age
+cutoff; they do not become rolling windows.
+
+Preferences are kept in this browser's local storage, independently for each
+list. They survive reloads but are not shared between browsers. Only IDs,
+names, and supported filter fields are stored; cursors and result data are not.
+The limits per list are 20 filters, 80 characters per name, 4,096 characters per
+filter query, and a 64 KiB stored document. Names must be unique ignoring case.
+Invalid versions, unsupported fields, malformed data, and unavailable storage
+show an error without disabling ordinary searches. **Clear saved filters**
+resets preferences for that list.
+
+### Find work through Overview
+
+Select **Overview** in the sidebar. **Workflows by version** counts `ACTIVE`,
+`WAITING`, and `FAILED` instances across all retained records, including old
+instances. A version with only completed or cancelled instances has zero in
+these columns. A definition without any retained instance does not appear.
+This view does not calculate completion rates or historical trends.
+
+Use **Search workflows** to find a workflow by any part of its name or ID,
+ignoring case and surrounding whitespace. Press Enter or **Search** to apply
+the filter across all workflow pages. Each version is matched against its own
+name. **Clear search** restores all workflows. Searches are kept in the URL
+for reload and browser Back/Forward; changing the search resets pagination
+and the selected workflow's current-step panel.
+
+Select **Inspect** for a version to see its current steps. Each instance counts
+once per step; a parallel instance may appear at several steps, so adding the
+step counts does not give a distinct instance total. Terminal instances are
+excluded. The age threshold defaults to 1,800 seconds (30 minutes) and is
+editable. It measures the latest running execution's start time. Missing or
+non-running execution evidence appears in **Age unavailable**. Exceeding this
+threshold is an investigation aid, not proof that a workflow is stuck or an SLA
+has been breached.
+
+Select a count to open the matching Process Instances search. Age links carry
+the exact absolute cutoff observed by the summary. The destination performs a
+fresh read, so data may have changed since that observation. Both tables are
+paginated, refresh every 15 seconds while visible, and retain stale results
+with a warning after a refresh failure. A database error is never shown as a
+healthy zero count.
+
 ### Inspect a Process Instance
 
 The detail page shows the status, Workflow Definition, and Business Key.
 
 ![Rochallor Monitor showing a Process Instance execution diagram](assets/rochallor-monitor-detail.png)
 
-The **Overview** tab contains the Execution Diagram and Step Executions table.
+The **Overview** tab contains the Execution Diagram, current execution context,
+and Step Executions history.
 The diagram shows the path through the Workflow Definition.
 
 Select a step in the diagram to highlight its executions. The table shows each
 attempt, its status, start and end times, and snapshot availability.
+
+**Current execution context** explains each current step independently for
+`ACTIVE` and `WAITING` instances. Selecting a diagram step narrows this section.
+It shows a signal wait, open user-task assignment, an available service job, or
+the recorded worker and lock for a locked job. Task assignee/group values are
+recorded task data. Pending boundary timers show their deadline, target, and
+interrupting flag, with at most 100 timers per current execution.
+
+Ages and expired deadlines use the displayed database observation time. An
+expired lock does not prove that a worker is dead. Job deliveries and retries
+remaining are separate from step attempt numbers; there is no retry ETA or
+exact job-duration history. Missing/conflicting records and unsupported step
+types show an unavailable reason. A completed join execution can still be a
+current token position; Monitor does not infer its gateway wait condition.
+Terminal instances have no active execution context.
+
+Switch history from **Table** to **Timeline** for chronological step attempts
+and overlapping durations. Select **Inspect attempt** to highlight the step
+and load that attempt's snapshots. Running durations use the last successful
+history update; an unrecorded terminal end time has no inferred duration. When
+history is paginated, the timeline explicitly represents only the loaded page.
+Use the existing previous/next/newest history controls to inspect other pages.
+Gaps between records do not establish queue time or a wait reason.
 
 Use **View Incident** on a failed execution, or the Incident link for the
 selected failed step, to open its Error Details. Cancelled instances do not
@@ -154,6 +236,28 @@ The **Variables** tab shows the current Process Variables. It also lists input
 and output Variable Snapshots recorded at Step Execution boundaries.
 
 Variable Snapshots are not a complete history of every variable change.
+
+Snapshot meaning also depends on the step type. A Service Task output records
+the variables returned by the worker, which can be only a partial update.
+Current User Task, Wait, and Transformation completion paths record the merged
+variable state. Do not assume input and output are always complete before/after
+states, or that every difference was caused by the selected step when branches
+run concurrently.
+
+Expanding snapshots also opens a comparison of top-level keys. **Returned-variable
+changes** compares only keys returned by a Service Task. For input
+`{"a":1,"b":2}` and output `{"a":3}`, it shows `a: 1 → 3`; it does not mark `b`
+as removed. **Recorded document differences** compares supported full-state
+outputs, with a caveat about concurrent branches. Unknown semantics are labelled
+as raw document comparison. Missing keys, JSON null, false, zero, types, arrays,
+and nested objects remain distinct; raw snapshot views remain available.
+
+Comparison requires both snapshots to be recorded and within the BFF document
+limit. Processing is additionally bounded to 256 KiB combined, 10,000 values,
+64 nesting levels, and the first 100 changed top-level keys. Larger comparisons
+explain the limit instead of blocking the page. An expanded running attempt
+reloads when history reports a changed status or snapshot availability; a failed
+reload retains its last data and offers **Retry snapshots**.
 
 ### Investigate Incidents
 
@@ -165,12 +269,22 @@ an Incident ID to open its details.
 The detail page shows the failed step, attempt, time, job context, and Error
 Details. Use the Process Instance link to open the related execution.
 
+An Incident represents a failed Step Execution, not a separately tracked
+open/resolved issue. A failure can remain in this history after a later attempt
+succeeds. Incidents from cancelled instances are excluded. **Historical failure**
+means a later step attempt exists; **Latest failed attempt** means this remains
+the latest attempt. The latest attempt's status is shown with a link to the
+instance and step. A later successful attempt does not establish a stored
+resolution time or prove that the entire instance is healthy.
+
 ### Refresh and stale data
 
-Monitor refreshes lists every five seconds while the browser tab is visible.
+Monitor refreshes Process Instance and Incident lists, and Incident detail,
+every five seconds while the browser tab is visible. Overview uses 15 seconds.
 Invalid filter requests do not poll until corrected.
 
-On a Process Instance detail page, **Refresh** updates the status and diagram,
+On a Process Instance detail page, **Refresh** updates status, diagram, and
+execution context,
 then the current history page and Current Variables if the Variables tab is
 open. The same cycle runs every five seconds for `ACTIVE` or `WAITING`
 instances, pauses in hidden tabs, and refreshes on return or reconnection.
@@ -185,13 +299,14 @@ result. If a refresh fails, the last successful result stays visible with a
 warning for that section. A section with no cached result shows a loading or
 error state instead. One section may succeed while another remains stale.
 
-The detail API reads status, definition, and overlay in one consistent database
-snapshot. History and variables are separate API reads; a refresh cycle does
+The detail API reads status, definition, overlay, and current execution context
+in one consistent database snapshot. History and variables are separate API reads; a refresh cycle does
 not promise a single snapshot across the whole page.
 
 Cached results live in the browser's in-memory TanStack Query cache. Reloading
 or closing the page clears them. A BFF restart does not erase data already
-displayed in an open browser. There is no BFF result cache or offline storage.
+displayed in an open browser. There is no BFF result cache or offline result
+storage. Saved filter preferences persist separately in local storage.
 
 ## Manage the quick-start stack
 
@@ -317,7 +432,9 @@ enforce latency/scan/buffer budgets, and write full plans to
 `workflow-monitor-bff/testresults/query-plans/`. CI archives these results.
 See the [instance baseline](performance/process-instance-list-query-plan.md)
 and [Incident baseline](performance/incident-list-query-plan.md) for measured
-results, thresholds, and index evaluation.
+results, thresholds, and index evaluation. The
+[diagnostic query baseline](performance/monitor-diagnostics-query-plan.md)
+covers execution context, Overview aggregates, and step-age drill-down.
 
 ### Keep schemas compatible
 
@@ -330,8 +447,10 @@ migrations before the matching Monitor release.
 | Separately released or older images | Only the explicitly tested Engine/Monitor pair | Do not infer compatibility from `latest` or matching package numbers |
 
 The BFF checks required columns, PostgreSQL types, and read permissions on
-`workflow_instance`, `workflow_definition`, `step_execution`, and `job` during
-startup and every readiness request. Checks use `LIMIT 0`; they do not scan
+`workflow_instance`, `workflow_definition`, `step_execution`, `job`, `user_task`,
+and `boundary_event_schedule` during startup and every readiness request. The
+context checks include job worker/lock/retry fields, task assignment, and timer
+boolean/deadline fields. Checks use `LIMIT 0`; they do not scan
 workflow data. Extra columns are allowed. Startup fails with a table-specific
 diagnostic on an incompatible schema, before the HTTP listener opens.
 
@@ -352,3 +471,25 @@ changes columns, types, or Engine semantics, and record the tested release pair.
 - A coordinated refresh does not provide one database snapshot across APIs.
 - Database limits apply per BFF process and per SQL statement.
 - Large Incident history may require database performance tuning.
+- Overview aggregates scan retained data; pagination limits the response, not
+  all database work.
+- Timeline and boundary snapshots are not a complete event or variable audit log.
+- Arbitrary business-variable and historical-snapshot searches are unavailable.
+
+## Feature roadmap
+
+The four first deliveries are available:
+
+1. Current waits and execution context, including later attempts after
+   a failure.
+2. Overview by workflow and step, with counts and links to matching
+   instances.
+3. Execution timeline and comparison of recorded input/output snapshots.
+4. Direct Instance ID lookup and named saved filters.
+
+Selected business-variable searches remain deferred until concrete fields are
+identified and query cost is measured.
+
+See the [feature roadmap and implementation plan](monitor-roadmap.md) for
+scope, dependencies, implementation tasks, acceptance criteria, and the
+documentation updates required for each delivery.

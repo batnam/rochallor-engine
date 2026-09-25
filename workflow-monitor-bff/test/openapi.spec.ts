@@ -22,6 +22,8 @@ describe("OpenAPI HTTP seam", () => {
 
     expect(response.body.paths).toEqual(
       expect.objectContaining({
+        "/api/v1/overview": { get: expect.any(Object) },
+        "/api/v1/overview/steps": { get: expect.any(Object) },
         "/api/v1/incidents": { get: expect.any(Object) },
         "/api/v1/incidents/{id}": { get: expect.any(Object) },
         "/api/v1/process-instances": { get: expect.any(Object) },
@@ -36,6 +38,23 @@ describe("OpenAPI HTTP seam", () => {
       response.body.paths as Record<string, Record<string, unknown>>,
     ).flatMap((operations) => Object.keys(operations));
     expect(new Set(methods)).toEqual(new Set(["get"]));
+  });
+
+  it("documents execution evidence and historical failure context", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/openapi.json")
+      .expect(200);
+    expect(
+      response.body.components.schemas.ExecutionContext.properties.reason.enum,
+    ).toContain("unavailable");
+    expect(
+      response.body.components.schemas.ContextJob.properties.retriesRemaining,
+    ).toBeDefined();
+    const properties =
+      response.body.paths["/api/v1/incidents/{id}"].get.responses["200"]
+        .content["application/json"].schema.properties.incident.properties;
+    expect(properties.historical.type).toBe("boolean");
+    expect(properties.latestAttempt.required).toContain("executionId");
   });
 
   it("documents present, not-recorded, and oversized Variable Documents explicitly", async () => {
@@ -92,6 +111,11 @@ describe("OpenAPI HTTP seam", () => {
       { $ref: "#/components/schemas/ContentTooLargeVariableDocument" },
     ];
     expect(currentSchema.oneOf).toEqual(expectedVariants);
+    expect(snapshotsSchema.outputInterpretation.enum).toEqual([
+      "variableDelta",
+      "fullState",
+      "unknown",
+    ]);
     expect(snapshotsSchema.recordedInput.oneOf).toEqual(expectedVariants);
     expect(snapshotsSchema.recordedOutput.oneOf).toEqual(expectedVariants);
   });

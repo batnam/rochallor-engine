@@ -43,6 +43,33 @@ function start(initialStatus = "ACTIVE") {
       state.detailRequests += 1;
       if (state.failDetail) return new HttpResponse(null, { status: 503 });
       return HttpResponse.json({
+        observedAt: "2026-01-01T00:00:10Z",
+        executionContext: ["ACTIVE", "WAITING"].includes(state.status)
+          ? [
+              {
+                stepId: "work",
+                executionId: "attempt-1",
+                stepType: "SERVICE_TASK",
+                status: "RUNNING",
+                startedAt: "2026-01-01T00:00:00Z",
+                reason: "jobAvailable",
+                unavailableReason: null,
+                job: {
+                  id: "job-live",
+                  type: "work",
+                  status: "UNLOCKED",
+                  workerId: null,
+                  lockedAt: null,
+                  lockExpiresAt: null,
+                  createdAt: "2026-01-01T00:00:00Z",
+                  retriesRemaining: 2,
+                },
+                task: null,
+                timers: [],
+                timersTruncated: false,
+              },
+            ]
+          : [],
         instance: {
           id: "live",
           status: state.status,
@@ -115,6 +142,7 @@ it("refreshes status, diagram and history from the same manual action", async ()
   state.status = "COMPLETED";
   fireEvent.click(screen.getByRole("button", { name: /Refresh/ }));
   await screen.findByRole("cell", { name: "COMPLETED" });
+  expect(screen.queryByText("job-live (work)")).not.toBeInTheDocument();
   await vi.waitFor(() => expect(state.detailRequests).toBe(2));
   expect(
     screen.queryByLabelText("Work, Current Token Position"),
@@ -160,6 +188,8 @@ it("retains detail after a failed refetch and recovers on the next refresh", asy
   ).toBeVisible();
   expect(screen.getByLabelText("Work, Current Token Position")).toBeVisible();
   expect(screen.getByText("Stale Process Instance data")).toBeVisible();
+  expect(screen.getByText("job-live (work)")).toBeVisible();
+  expect(screen.getByText(/10 seconds elapsed/)).toBeVisible();
   state.failDetail = false;
   fireEvent.click(screen.getByRole("button", { name: /Refresh/ }));
   await vi.waitFor(() =>

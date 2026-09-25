@@ -10,7 +10,7 @@ import {
   types,
 } from "pg";
 
-const { TEXT, INT4, JSONB, TIMESTAMPTZ } = types.builtins;
+const { TEXT, INT4, JSONB, TIMESTAMPTZ, BOOL } = types.builtins;
 // Only the Engine columns read by Monitor form this contract. Extra columns are allowed.
 const REQUIRED_SCHEMA: Record<string, Record<string, number>> = {
   workflow_instance: {
@@ -41,10 +41,33 @@ const REQUIRED_SCHEMA: Record<string, Record<string, number>> = {
   },
   job: {
     id: TEXT,
+    instance_id: TEXT,
+    worker_id: TEXT,
+    locked_at: TIMESTAMPTZ,
+    lock_expires_at: TIMESTAMPTZ,
+    retries_remaining: INT4,
     step_execution_id: TEXT,
     job_type: TEXT,
     status: TEXT,
     created_at: TIMESTAMPTZ,
+  },
+  user_task: {
+    id: TEXT,
+    instance_id: TEXT,
+    step_execution_id: TEXT,
+    status: TEXT,
+    assignee: TEXT,
+    assignee_group: TEXT,
+    created_at: TIMESTAMPTZ,
+  },
+  boundary_event_schedule: {
+    id: TEXT,
+    instance_id: TEXT,
+    step_execution_id: TEXT,
+    target_step_id: TEXT,
+    fire_at: TIMESTAMPTZ,
+    interrupting: BOOL,
+    fired: BOOL,
   },
 };
 

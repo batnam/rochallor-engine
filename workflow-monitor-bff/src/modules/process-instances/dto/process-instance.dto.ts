@@ -1,3 +1,5 @@
+import type { ExecutionContext } from "../execution-context";
+
 export interface ProcessInstanceRow {
   id: string;
   definition_id: string;
@@ -51,6 +53,8 @@ export interface StepExecutionListItem {
 }
 
 export interface ProcessInstanceDetail {
+  observedAt: Date;
+  executionContext: ExecutionContext[];
   instance: ProcessInstanceListItem;
   definition: WorkflowDefinitionDocument;
   executionOverlay: {
@@ -61,6 +65,9 @@ export interface ProcessInstanceDetail {
 }
 
 export interface ProcessInstanceFilters {
+  definitionVersion?: string;
+  currentStepId?: string;
+  stepStartedBefore?: string;
   definitionId?: string;
   status?: string | string[];
   businessKey?: string;

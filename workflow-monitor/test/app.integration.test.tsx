@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { createMonitorApp } from "../../workflow-monitor-bff/dist/app.js";
@@ -53,7 +59,13 @@ beforeAll(async () => {
       ARRAY['human-review'],
       '{"privateValue":"never-log-this"}',
       '2026-01-03T00:00:00Z'
-    )
+    );
+    INSERT INTO step_execution (id,instance_id,step_id,step_type,status,started_at)
+      VALUES ('review-attempt','browser-visible-instance','human-review','USER_TASK','RUNNING','2026-01-03T00:00:01Z');
+    INSERT INTO user_task (id,instance_id,step_execution_id,step_id,assignee_group)
+      VALUES ('review-task','browser-visible-instance','review-attempt','human-review','reviewers');
+    INSERT INTO step_execution (id,instance_id,step_id,step_type,status,started_at,ended_at,input_snapshot,output_snapshot)
+      VALUES ('prepare-attempt','browser-visible-instance','prepare','TRANSFORMATION','COMPLETED','2026-01-03T00:00:00Z','2026-01-03T00:00:01Z','{"a":1,"b":2}','{"a":3,"b":2}');
   `);
 
   app = await createMonitorApp({
@@ -93,8 +105,14 @@ it("opens an execution diagram through the real BFF without an engine process", 
   ).toBeVisible();
   expect(screen.getByRole("cell", { name: "WAITING" })).toBeVisible();
 
+  fireEvent.click(screen.getByRole("link", { name: "Overview" }));
   fireEvent.click(
-    screen.getByRole("link", { name: "browser-visible-instance" }),
+    await screen.findByRole("button", { name: "Inspect loan-approval v1" }),
+  );
+  const step = await screen.findByRole("row", { name: "human-review 1 1 0" });
+  fireEvent.click(within(step).getAllByRole("link")[1]);
+  fireEvent.click(
+    await screen.findByRole("link", { name: "browser-visible-instance" }),
   );
 
   expect(
@@ -103,6 +121,23 @@ it("opens an execution diagram through the real BFF without an engine process", 
     }),
   ).toBeVisible();
   expect(
-    await screen.findByLabelText("Human Review, Current Token Position"),
+    await screen.findByLabelText(
+      "Human Review, Current Token Position, RUNNING, attempt 1",
+    ),
   ).toBeVisible();
+  expect(await screen.findByText(/Waiting for task completion/)).toBeVisible();
+  expect(screen.getByText("reviewers")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Inspect attempt prepare-attempt",
+    }),
+  );
+  const comparison = await screen.findByRole("region", {
+    name: "Snapshot comparison",
+  });
+  expect(
+    await within(comparison).findByRole("row", { name: "a changed 1 3" }),
+  ).toBeVisible();
+  queryClient.clear();
 });

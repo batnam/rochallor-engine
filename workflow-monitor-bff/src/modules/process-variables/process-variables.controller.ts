@@ -59,8 +59,14 @@ export class ProcessVariablesController {
   @ApiOkResponse({
     schema: {
       type: "object",
-      required: ["recordedInput", "recordedOutput"],
+      required: ["recordedInput", "recordedOutput", "outputInterpretation"],
       properties: {
+        outputInterpretation: {
+          type: "string",
+          enum: ["variableDelta", "fullState", "unknown"],
+          description:
+            "Meaning of recorded output on the supported Engine write path; not a complete variable audit log",
+        },
         recordedInput: variableDocumentSchema,
         recordedOutput: variableDocumentSchema,
       },
@@ -70,6 +76,7 @@ export class ProcessVariablesController {
     @Param("id") id: string,
     @Param("executionId") executionId: string,
   ): Promise<{
+    outputInterpretation: "variableDelta" | "fullState" | "unknown";
     recordedInput: VariableDocument;
     recordedOutput: VariableDocument;
   }> {

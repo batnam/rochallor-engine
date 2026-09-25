@@ -50,8 +50,13 @@ hardware before using these values for capacity planning.
 
 | Query | Median ms | Shared blocks | Scanned rows | Maximum ms / blocks / rows |
 | --- | ---: | ---: | ---: | --- |
-| First page | 195.629 | 362,450 | 240,020 | 1,000 / 500,000 / 400,000 |
-| Filtered cursor | 31.443 | 22,456 | 60,001 | 500 / 50,000 / 100,000 |
+| First page with latest-attempt context | 126.094 | 363,658 | 290,091 | 1,000 / 500,000 / 400,000 |
+| Filtered cursor with latest-attempt context | 41.282 | 47,206 | 64,951 | 500 / 50,000 / 100,000 |
+
+These refreshed measurements include the lateral latest-step-attempt lookup
+used to label historical failures. Temporary blocks were 7,362 and 1,005,
+respectively. The original budgets remain unchanged; the filtered query is
+close to its buffer budget and should be watched as the data shape changes.
 
 The small result limit does not imply cheap work: the first page still joins
 and sorts substantial history. Resource limits bound this work, but larger
@@ -65,7 +70,9 @@ start time, but not by failed status or `ended_at`. It also has no index on
 once before joining it to canonical failed Step Executions, avoiding a
 correlated Job-table scan for every Incident.
 
-An isolated test database was used to measure these candidate indexes together:
+Before latest-attempt metadata was added, an isolated test database was used to
+measure these candidate indexes together (historical experiment, not the
+current-query baseline above):
 
 ```sql
 CREATE INDEX monitor_experiment_failed_order

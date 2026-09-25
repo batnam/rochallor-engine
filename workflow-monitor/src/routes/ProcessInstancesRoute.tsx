@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
+import { SavedFilters } from "../SavedFilters";
+
 import { DataFreshness } from "../DataFreshness";
 
 import {
@@ -30,6 +32,9 @@ interface ProcessInstanceListResponse {
 }
 
 interface ProcessInstanceFilters {
+  definitionVersion: string;
+  currentStepId: string;
+  stepStartedBefore: string;
   businessKey: string;
   definitionId: string;
   from: string;
@@ -58,6 +63,9 @@ function filtersFromSearch(search: string): ProcessInstanceFilters {
   const parameters = new URLSearchParams(search);
   return {
     businessKey: parameters.get("businessKey") ?? "",
+    definitionVersion: parameters.get("definitionVersion") ?? "",
+    currentStepId: parameters.get("currentStepId") ?? "",
+    stepStartedBefore: parameters.get("stepStartedBefore") ?? "",
     definitionId: parameters.get("definitionId") ?? "",
     from: parameters.get("from") ?? "",
     statuses: parameters.getAll("status"),
@@ -72,6 +80,8 @@ export function ProcessInstancesRoute({
   navigation: Navigation;
   search: string;
 }): ReactNode {
+  const [lookupId, setLookupId] = useState("");
+  const [lookupError, setLookupError] = useState<string | null>(null);
   const [filters, setFilters] = useState(() => filtersFromSearch(search));
   const [filterError, setFilterError] = useState<string | null>(null);
   const processInstances = useQuery({
@@ -112,6 +122,13 @@ export function ProcessInstancesRoute({
     if (filters.definitionId) {
       parameters.set("definitionId", filters.definitionId);
     }
+    for (const name of [
+      "definitionVersion",
+      "currentStepId",
+      "stepStartedBefore",
+    ] as const) {
+      if (filters[name]) parameters.set(name, filters[name]);
+    }
     for (const status of filters.statuses) {
       parameters.append("status", status);
     }
@@ -148,6 +165,32 @@ export function ProcessInstancesRoute({
           <p>Inspect current and completed workflow executions.</p>
         </div>
       </header>
+      <form
+        className="rm-card rm-context-card rm-instance-lookup"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const id = lookupId.trim();
+          if (!id) {
+            setLookupError("Enter an Instance ID.");
+            return;
+          }
+          setLookupError(null);
+          navigation.push(`/process-instances/${encodeURIComponent(id)}`);
+        }}
+      >
+        <label className="rm-field">
+          Instance ID
+          <input
+            value={lookupId}
+            onChange={(event) => setLookupId(event.target.value)}
+          />
+        </label>
+        <button type="submit" className="rm-button">
+          Open by Instance ID
+        </button>
+        {lookupError ? <p role="alert">{lookupError}</p> : null}
+      </form>
+      <SavedFilters kind="instances" search={search} navigation={navigation} />
       <div className="rm-list-layout">
         <form className="rm-card rm-filter-card" onSubmit={applyFilters}>
           <div className="rm-card-header">
@@ -176,6 +219,47 @@ export function ProcessInstancesRoute({
                 ),
               )}
             </select>
+          </label>
+          <label className="rm-field">
+            <span>Definition Version</span>
+            <input
+              type="number"
+              min="1"
+              max="2147483647"
+              value={filters.definitionVersion}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  definitionVersion: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label className="rm-field">
+            <span>Current Step ID</span>
+            <input
+              value={filters.currentStepId}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  currentStepId: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label className="rm-field">
+            <span>Step Started Before (UTC)</span>
+            <input
+              type="datetime-local"
+              step="0.001"
+              value={filters.stepStartedBefore.replace(/Z$/, "")}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  stepStartedBefore: utcInputValue(event.target.value),
+                }))
+              }
+            />
           </label>
           <fieldset className="rm-fieldset">
             <legend>Status</legend>

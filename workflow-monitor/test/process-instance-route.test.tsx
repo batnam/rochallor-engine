@@ -87,6 +87,31 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
+it("distinguishes an unknown Instance ID from a connectivity failure", async () => {
+  window.history.replaceState(null, "", "/process-instances/missing-id");
+  server.use(
+    http.get(
+      "/api/v1/process-instances/missing-id",
+      () => new HttpResponse(null, { status: 404 }),
+    ),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <ProcessInstanceTestRoute />
+    </QueryClientProvider>,
+  );
+  expect(
+    await screen.findByRole("heading", { name: "Process Instance not found" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("link", { name: /Process Instances/ }),
+  ).toHaveAttribute("href", "/");
+  client.clear();
+});
+
 it("renders a Current Token Position on a read-only execution diagram", async () => {
   window.history.replaceState(null, "", "/process-instances/graph-active");
   server.use(
@@ -649,20 +674,20 @@ it("fetches and renders typed Current Variables only while the Variables view is
   ).toBeVisible();
   expect(currentVariableRequestCount).toBe(1);
   expect(
-    await screen.findByRole("row", { name: 'applicant string "Ada"' }),
+    await screen.findByRole("row", { name: 'applicant "Ada" string' }),
   ).toBeVisible();
   expect(
-    screen.getByRole("row", { name: "approved boolean false" }),
+    screen.getByRole("row", { name: "approved false boolean" }),
   ).toBeVisible();
-  expect(screen.getByRole("row", { name: "score number 720" })).toBeVisible();
+  expect(screen.getByRole("row", { name: "score 720 number" })).toBeVisible();
   expect(screen.getByRole("row", { name: "notes null null" })).toBeVisible();
   expect(
     screen.getByRole("row", {
-      name: 'profile object {"country":"VN"}',
+      name: 'profile {"country":"VN"} object',
     }),
   ).toBeVisible();
   expect(
-    screen.getByRole("row", { name: 'tags array ["priority",3]' }),
+    screen.getByRole("row", { name: 'tags ["priority",3] array' }),
   ).toBeVisible();
 });
 
@@ -685,7 +710,9 @@ it("loads completed Variable Snapshots only when expanded and caches them", asyn
           id: "loan-approval",
           version: 1,
           name: "Loan Approval",
-          steps: [],
+          steps: [
+            { id: "check-risk", name: "Check Risk", type: "SERVICE_TASK" },
+          ],
         },
         executionOverlay: {
           currentTokenStepIds: [],
@@ -760,19 +787,20 @@ it("loads completed Variable Snapshots only when expanded and caches them", asyn
   await vi.waitFor(() =>
     expect(
       screen.getByRole("button", {
-        name: "Expand snapshots for risk-attempt-1",
+        name: "Expand snapshots for Check Risk (attempt 1)",
       }),
     ).toBeVisible(),
   );
   const expand = screen.getByRole("button", {
-    name: "Expand snapshots for risk-attempt-1",
+    name: "Expand snapshots for Check Risk (attempt 1)",
   });
+  expect(screen.getByRole("heading", { name: "Check Risk" })).toBeVisible();
   expect(snapshotRequestCount).toBe(0);
 
   fireEvent.click(expand);
   await vi.waitFor(() =>
     expect(
-      screen.getByRole("row", { name: 'applicant string "Ada"' }),
+      screen.getByRole("row", { name: 'applicant "Ada" string' }),
     ).toBeVisible(),
   );
   expect(screen.getByRole("row", { name: "notes null null" })).toBeVisible();
@@ -781,16 +809,16 @@ it("loads completed Variable Snapshots only when expanded and caches them", asyn
 
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Collapse snapshots for risk-attempt-1",
+      name: "Collapse snapshots for Check Risk (attempt 1)",
     }),
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Expand snapshots for risk-attempt-1",
+      name: "Expand snapshots for Check Risk (attempt 1)",
     }),
   );
   expect(
-    screen.getByRole("row", { name: 'applicant string "Ada"' }),
+    screen.getByRole("row", { name: 'applicant "Ada" string' }),
   ).toBeVisible();
   await act(() => vi.advanceTimersByTimeAsync(10_000));
   expect(snapshotRequestCount).toBe(1);
@@ -958,7 +986,7 @@ it("shows absent and oversized documents without variable mutation affordances",
 
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Expand snapshots for bounded-execution",
+      name: "Expand snapshots for archive (attempt 1)",
     }),
   );
   expect(await screen.findByText("Recorded Input: Not recorded")).toBeVisible();

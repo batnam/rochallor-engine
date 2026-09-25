@@ -39,6 +39,7 @@ export async function verifyQueryBudget(
   database: MonitorDatabase,
   run: () => Promise<unknown>,
   budget: { medianMs: number; sharedBlocks: number; scannedRows: number },
+  requireLimit = true,
 ): Promise<void> {
   // Run the real query builder, then explain that exact SQL and its parameters.
   const spy = jest.spyOn(database, "query");
@@ -92,7 +93,7 @@ export async function verifyQueryBudget(
     `${JSON.stringify({ queryPlan: name, ...metrics, budget })}\n`,
   );
   for (const sample of samples) {
-    expect(sample.Plan["Node Type"]).toBe("Limit");
+    if (requireLimit) expect(sample.Plan["Node Type"]).toBe("Limit");
     expect(sample.Plan["Actual Rows"]).toBeGreaterThan(0);
     expect(sample.Plan["Actual Rows"]).toBeLessThanOrEqual(51);
   }

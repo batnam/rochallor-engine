@@ -81,6 +81,28 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
+it("trims and encodes opaque IDs for direct lookup and rejects an empty ID", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <ProcessInstancesTestRoute />
+    </QueryClientProvider>,
+  );
+  await screen.findByRole("cell", { name: "instance-active" });
+  fireEvent.click(screen.getByRole("button", { name: "Open by Instance ID" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("Enter an Instance ID");
+  fireEvent.change(screen.getByLabelText("Instance ID", { exact: true }), {
+    target: { value: "  id/with ?#  " },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Open by Instance ID" }));
+  expect(window.location.pathname).toBe(
+    "/process-instances/id%2Fwith%20%3F%23",
+  );
+  client.clear();
+});
+
 it("shows Process Instances returned by the BFF", async () => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },

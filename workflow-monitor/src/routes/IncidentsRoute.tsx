@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
+import { SavedFilters } from "../SavedFilters";
+
 import { DataFreshness } from "../DataFreshness";
 
 import { listWorkflowDefinitions } from "../workflowDefinitions";
@@ -13,6 +15,12 @@ import {
 } from "./listFilters";
 
 interface Incident {
+  historical?: boolean;
+  latestAttempt?: {
+    executionId: string;
+    status: string;
+    attemptNumber: number;
+  };
   id: string;
   processInstanceId: string;
   definitionId: string;
@@ -106,6 +114,8 @@ function IncidentDetail({
 }): ReactNode {
   const incidentDetail = useQuery({
     queryKey: ["incident", incidentId],
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
     queryFn: () => getIncidentDetail(incidentId),
     retry: false,
   });
@@ -159,6 +169,17 @@ function IncidentDetail({
         <output className="rm-banner rm-banner--warning">
           Stale Incident data
         </output>
+      ) : null}
+      <p>
+        {incident.historical ? "Historical failure" : "Latest failed attempt"}
+      </p>
+      {incident.latestAttempt ? (
+        <p>
+          <a href={processInstancePath}>
+            Latest attempt {incident.latestAttempt.attemptNumber}:{" "}
+            {incident.latestAttempt.status}
+          </a>
+        </p>
       ) : null}
       <dl className="rm-summary-grid rm-summary-grid--wide">
         <div className="rm-card rm-summary-card">
@@ -308,6 +329,7 @@ function IncidentList({
           <p>Investigate failed Step Executions and their context.</p>
         </div>
       </header>
+      <SavedFilters kind="incidents" search={search} navigation={navigation} />
       <div className="rm-list-layout">
         <form className="rm-card rm-filter-card" onSubmit={applyFilters}>
           <div className="rm-card-header">
@@ -431,6 +453,7 @@ function IncidentList({
                     <th scope="col">Step</th>
                     <th scope="col">Job Type</th>
                     <th scope="col">Occurred At</th>
+                    <th scope="col">Attempt context</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -457,6 +480,17 @@ function IncidentList({
                       <td className="rm-mono">{incident.stepId}</td>
                       <td>{incident.job?.type ?? "Not applicable"}</td>
                       <td className="rm-mono">{incident.occurredAt}</td>
+                      <td>
+                        {incident.historical
+                          ? "Historical failure"
+                          : "Latest failed attempt"}
+                        {incident.latestAttempt ? (
+                          <span>
+                            {" "}
+                            · Latest: {incident.latestAttempt.status}
+                          </span>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

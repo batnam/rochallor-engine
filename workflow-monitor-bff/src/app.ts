@@ -15,6 +15,7 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { MonitorDatabase } from "./common/database/monitor-database";
 import { registerMonitorDatabase } from "./common/database/monitor-database.module";
 import { IncidentsModule } from "./modules/incidents/incidents.module";
+import { OverviewModule } from "./modules/overview/overview.module";
 import { ProcessInstancesModule } from "./modules/process-instances/process-instances.module";
 import { registerProcessVariables } from "./modules/process-variables/process-variables.module";
 import { WorkflowDefinitionsModule } from "./modules/workflow-definitions/workflow-definitions.module";
@@ -76,6 +77,7 @@ class AppModule {
       imports: [
         registerMonitorDatabase(options.postgresDsn),
         IncidentsModule,
+        OverviewModule,
         ProcessInstancesModule,
         registerProcessVariables(maxJsonDocumentBytes()),
         WorkflowDefinitionsModule,
