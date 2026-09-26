@@ -21,6 +21,7 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
+      "@platform": ["src/platform/web.ts"],
       "@/*": ["src/*"]
     }
   },

@@ -1,0 +1,18 @@
+[package]
+name = "workflow-modeller"
+version = "1.0.0"
+description = "Visual workflow modeller for the Rochallor Workflow Engine"
+edition = "2021"
+
+[lib]
+name = "workflow_modeller"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.6", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-http = "~2.6"

@@ -1,0 +1,93 @@
+name: Modeller Web and Desktop
+
+on:
+  pull_request:
+    paths:
+      - 'workflow-modeller/**'
+      - 'workflow-engine/cmd/validate-fixture/**'
+      - 'workflow-engine/internal/model/**'
+      - '.github/workflows/modeller-desktop.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'workflow-modeller/**'
+      - '.github/workflows/modeller-desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: workflow-modeller
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: workflow-engine/go.mod
+          cache-dependency-path: workflow-engine/go.sum
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:parser
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm exec playwright install --with-deps
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: modeller-web-test-results
+          path: workflow-modeller/test-results/
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            bundles: deb,appimage
+          - os: windows-latest
+            bundles: nsis,msi
+          - os: macos-latest
+            bundles: app,dmg
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: workflow-modeller
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: workflow-modeller/src-tauri -> target
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm desktop:build --bundles ${{ matrix.bundles }} --ci -- --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modeller-desktop-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            workflow-modeller/src-tauri/target/release/bundle/**/*.dmg
+            workflow-modeller/src-tauri/target/release/bundle/**/*.deb
+            workflow-modeller/src-tauri/target/release/bundle/**/*.AppImage
+            workflow-modeller/src-tauri/target/release/bundle/**/*.msi
+            workflow-modeller/src-tauri/target/release/bundle/**/*.exe

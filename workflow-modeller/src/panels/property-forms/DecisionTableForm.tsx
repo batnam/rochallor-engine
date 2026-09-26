@@ -1,4 +1,5 @@
 import type { DecisionTableStep, HitPolicy } from '@/domain/types';
+import { useDialogs } from '@/panels/useDialogs';
 import { useWorkflowStore } from '@/store/workflowStore';
 import type { ReactNode } from 'react';
 import { CommonFields } from './CommonFields';
@@ -43,6 +44,7 @@ const HIT_POLICY_OPTIONS: ReadonlyArray<{ value: HitPolicy; label: string; hint:
 ];
 
 export function DecisionTableForm({ step }: DecisionTableFormProps): ReactNode {
+  const { prompt, dialog } = useDialogs();
   const updateStepProperty = useWorkflowStore((s) => s.updateStepProperty);
   const rules = step.decisionTable.rules;
 
@@ -118,23 +120,24 @@ export function DecisionTableForm({ step }: DecisionTableFormProps): ReactNode {
     commitRules([...rules, { when, outputs }]);
   }
 
-  function addInputColumn(): void {
-    const name = window.prompt('Input column name (a variable name):');
+  async function addInputColumn(): Promise<void> {
+    const name = await prompt('Input column name (a variable name):', {
+      validate: (value) =>
+        inputColumns.includes(value) ? `Column "${value}" already exists.` : undefined,
+    });
     if (!name) return;
-    if (inputColumns.includes(name)) {
-      window.alert(`Column "${name}" already exists.`);
-      return;
-    }
     commitRules(rules.map((r) => ({ ...r, when: { ...r.when, [name]: '' } })));
   }
 
-  function renameInputColumn(oldName: string): void {
-    const newName = window.prompt(`Rename input column "${oldName}" to:`, oldName);
+  async function renameInputColumn(oldName: string): Promise<void> {
+    const newName = await prompt(`Rename input column "${oldName}" to:`, {
+      initialValue: oldName,
+      validate: (value) =>
+        value !== oldName && inputColumns.includes(value)
+          ? `Column "${value}" already exists.`
+          : undefined,
+    });
     if (!newName || newName === oldName) return;
-    if (inputColumns.includes(newName)) {
-      window.alert(`Column "${newName}" already exists.`);
-      return;
-    }
     commitRules(
       rules.map((r) => {
         if (!(oldName in r.when)) return r;
@@ -157,24 +160,25 @@ export function DecisionTableForm({ step }: DecisionTableFormProps): ReactNode {
     );
   }
 
-  function addOutputColumn(): void {
-    const name = window.prompt('Output variable name:');
+  async function addOutputColumn(): Promise<void> {
+    const name = await prompt('Output variable name:', {
+      validate: (value) =>
+        outputColumns.includes(value) ? `Output "${value}" already exists.` : undefined,
+    });
     if (!name) return;
-    if (outputColumns.includes(name)) {
-      window.alert(`Output "${name}" already exists.`);
-      return;
-    }
     if (rules.length === 0) return;
     commitRules(rules.map((r) => ({ ...r, outputs: { ...r.outputs, [name]: '' } })));
   }
 
-  function renameOutputColumn(oldName: string): void {
-    const newName = window.prompt(`Rename output "${oldName}" to:`, oldName);
+  async function renameOutputColumn(oldName: string): Promise<void> {
+    const newName = await prompt(`Rename output "${oldName}" to:`, {
+      initialValue: oldName,
+      validate: (value) =>
+        value !== oldName && outputColumns.includes(value)
+          ? `Output "${value}" already exists.`
+          : undefined,
+    });
     if (!newName || newName === oldName) return;
-    if (outputColumns.includes(newName)) {
-      window.alert(`Output "${newName}" already exists.`);
-      return;
-    }
     commitRules(
       rules.map((r) => {
         if (!(oldName in r.outputs)) return r;
@@ -201,6 +205,7 @@ export function DecisionTableForm({ step }: DecisionTableFormProps): ReactNode {
 
   return (
     <>
+      {dialog}
       <CommonFields step={step} />
 
       <Field label="Hit policy" hint={policyOption?.hint}>

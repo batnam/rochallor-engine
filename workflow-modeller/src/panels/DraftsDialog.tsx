@@ -2,6 +2,7 @@ import { DRAFTS_LIMIT, type DraftSummary } from '@/io/drafts';
 import { useDirty } from '@/store/selectors';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { useDialogs } from './useDialogs';
 
 interface DraftsDialogProps {
   open: boolean;
@@ -10,6 +11,7 @@ interface DraftsDialogProps {
 }
 
 export function DraftsDialog({ open, onClose, onMessage }: DraftsDialogProps): ReactNode {
+  const { confirm, dialog } = useDialogs();
   const saveDraft = useWorkflowStore((s) => s.saveDraft);
   const loadDraft = useWorkflowStore((s) => s.loadDraft);
   const deleteDraft = useWorkflowStore((s) => s.deleteDraft);
@@ -50,8 +52,11 @@ export function DraftsDialog({ open, onClose, onMessage }: DraftsDialogProps): R
     onMessage?.({ tone: 'info', text: `Draft "${result.draft.name}" saved.` });
   }
 
-  function handleRestore(id: string, draftName: string): void {
-    if (dirty && !confirm('You have unsaved changes. Discard them and restore this draft?')) {
+  async function handleRestore(id: string, draftName: string): Promise<void> {
+    if (
+      dirty &&
+      !(await confirm('You have unsaved changes. Discard them and restore this draft?'))
+    ) {
       return;
     }
     if (loadDraft(id)) {
@@ -63,8 +68,8 @@ export function DraftsDialog({ open, onClose, onMessage }: DraftsDialogProps): R
     }
   }
 
-  function handleDelete(id: string, draftName: string): void {
-    if (!confirm(`Delete draft "${draftName}"? This cannot be undone.`)) return;
+  async function handleDelete(id: string, draftName: string): Promise<void> {
+    if (!(await confirm(`Delete draft "${draftName}"? This cannot be undone.`))) return;
     deleteDraft(id);
     setDrafts(listDrafts());
     setError(null);
@@ -72,12 +77,13 @@ export function DraftsDialog({ open, onClose, onMessage }: DraftsDialogProps): R
 
   return (
     <div className="wm-dialog-backdrop">
+      {dialog}
       <dialog open className="wm-dialog" aria-labelledby="wm-drafts-heading">
         <h2 id="wm-drafts-heading">
           Drafts ({drafts.length} / {DRAFTS_LIMIT})
         </h2>
         <p className="wm-dialog-hint">
-          Drafts are stored in your browser only. Use them as named snapshots of the current canvas;
+          Drafts are stored locally in this app. Use them as named snapshots of the current canvas;
           engine settings are not included.
         </p>
 
@@ -169,6 +175,6 @@ function reasonMessage(reason: 'CAP_REACHED' | 'NAME_REQUIRED' | 'STORAGE_FAILED
     case 'CAP_REACHED':
       return `You already have ${DRAFTS_LIMIT} drafts. Delete one before saving a new one.`;
     case 'STORAGE_FAILED':
-      return 'Could not save to browser storage. It may be full or blocked.';
+      return 'Could not save to local storage. It may be full or blocked.';
   }
 }

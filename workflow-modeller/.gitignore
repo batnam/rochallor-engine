@@ -1,0 +1,4 @@
+dist-desktop/
+src-tauri/target/
+src-tauri/gen/
+test-results/

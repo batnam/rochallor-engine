@@ -22,6 +22,7 @@ test('decision-table: drag tile → set hitPolicy + nextStep → exactly one out
   // Canvas: 2 nodes, 0 edges (DT.nextStep is still empty).
   await expect(page.locator('.wm-node')).toHaveCount(2);
   await expect(page.locator('.react-flow__edge')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Fit to screen', exact: true }).click();
 
   // Select the Decision Table node.
   await page.locator('.wm-node--decision_table').first().click();
