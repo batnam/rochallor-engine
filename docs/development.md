@@ -32,6 +32,9 @@ rochallor-engine/
 ├── workflow-sdk-java/                  # Java SDK (REST + gRPC)
 ├── workflow-sdk-node/                  # Node/TypeScript SDK (REST + gRPC)
 ├── workflow-sdk-python/                # Python SDK (REST + gRPC)
+├── workflow-modeller/                  # Shared React editor: web + Tauri desktop
+│   ├── src/platform/                   # Browser and desktop file, clipboard, HTTP adapters
+│   └── src-tauri/                      # Native desktop shell and packaging
 ├── workflow-monitor/                   # React read-only monitor frontend
 ├── workflow-monitor-bff/               # NestJS read-only monitor BFF
 └── deploy/docker-compose.monitor.quickstart.yml # Monitor quick deployment
@@ -53,6 +56,78 @@ rochallor-engine/
 | Node.js | 20+ | Node/TypeScript SDK development |
 | Java | 21+ | Java SDK development |
 | Gradle | 8+ (wrapper included) | Java SDK — no install needed, use `./gradlew` |
+
+---
+
+## Modeller development (web and desktop)
+
+The web and desktop versions share the React editor in `workflow-modeller/`.
+Workflow editing, validation, layout, and JSON handling use the same code.
+Tauri 2 adds the desktop window and access to system file dialogs and the clipboard.
+For user instructions, see [Workflow Modeller](modeller.md).
+
+### Set up and run
+
+Both targets need **Node.js 24+** and **pnpm 9.12.3**. Desktop development also
+needs **Rust stable** and the tools for your OS: Xcode Command Line Tools on
+macOS, MSVC C++ build tools and WebView2 on Windows, or WebKitGTK 4.1 development
+libraries on Linux. Follow the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+for the complete OS setup.
+
+From the repository root, install dependencies once:
+
+```bash
+cd workflow-modeller
+pnpm install --frozen-lockfile
+```
+
+Then choose a target:
+
+| Command | What opens |
+|---------|------------|
+| `pnpm dev` | Web editor at the URL printed by Vite, normally `http://localhost:5173` |
+| `pnpm desktop:dev` | Desktop window; starts its Vite server automatically |
+
+Desktop development needs port `5173`. To run both dev targets at once, use
+`pnpm dev --port 5174` for web and `pnpm desktop:dev` in a second terminal.
+
+The engine is a separate process. Local editing works without it; use
+[Engine Settings](modeller.md#connect-to-a-workflow-engine) when you need to load
+or upload definitions.
+
+### Build the modeller
+
+Run these commands from `workflow-modeller/`:
+
+| Command | Output |
+|---------|--------|
+| `pnpm build` | Web assets in `dist/` |
+| `pnpm desktop:build` | Desktop app and installers in `src-tauri/target/release/bundle/` |
+
+Build desktop packages on the target OS. A normal build on macOS produces macOS
+packages; use Windows or Linux to build their packages. See
+[Desktop Modeller builds](release.md#desktop-modeller-builds) for CI outputs.
+
+`pnpm build:desktop` builds only the desktop frontend into `dist-desktop/`.
+Tauri calls it during `pnpm desktop:build`. Similarly, `pnpm dev:desktop` is the
+frontend server hook; use `pnpm desktop:dev` to launch the actual desktop app.
+
+### Keep features shared
+
+Put editor behavior in the shared React and domain code. Access files,
+clipboard, and HTTP through `@platform`, whose contract lives in
+`src/platform/contracts.ts`. Vite selects `web.ts` for the web target and
+`desktop.ts` for desktop mode. Keep Tauri imports inside the desktop adapter.
+
+To check a change, run `pnpm build:parser`, `pnpm lint`, `pnpm typecheck`,
+`pnpm test`, and both build commands above. The drift tests in `pnpm test` also
+require Go, as they compare validation with the engine.
+
+For browser checks, install the Playwright browsers with
+`pnpm exec playwright install --with-deps`, then run `pnpm test:e2e`.
+This covers Chromium, Firefox, and WebKit. Check native file dialogs, clipboard,
+engine access, and draft restore in the packaged desktop app on each target OS
+as well; browser tests do not exercise those native features.
 
 ---
 

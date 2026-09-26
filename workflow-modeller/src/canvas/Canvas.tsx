@@ -17,6 +17,7 @@ import '@xyflow/react/dist/style.css';
 
 import type { GraphEdge, GraphNode, Step, StepId, StepType } from '@/domain/types';
 import { DRAG_MIME } from '@/panels/Palette';
+import { useDialogs } from '@/panels/useDialogs';
 import { useEdges, useNodes } from '@/store/selectors';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { BoundaryEdge } from './edges/BoundaryEdge';
@@ -119,6 +120,7 @@ const STEP_TYPE_SET = new Set<StepType>([
 ]);
 
 function CanvasInner(): ReactNode {
+  const { prompt, dialog } = useDialogs();
   const nodes = useNodes();
   const edges = useEdges();
   const storedLayout = useWorkflowStore((s) => s.layout);
@@ -149,43 +151,48 @@ function CanvasInner(): ReactNode {
     [addStep, setLayout, screenToFlowPosition],
   );
 
-  const onConnect = useCallback((connection: { source: string | null; target: string | null }) => {
-    const { source, target } = connection;
-    if (!source || !target || source === target) return;
-    const state = useWorkflowStore.getState();
-    const src = state.definition.steps.find((s) => s.id === source);
-    if (!src) return;
-    switch (src.type) {
-      case 'SERVICE_TASK':
-      case 'USER_TASK':
-      case 'WAIT':
-      case 'TRANSFORMATION':
-      case 'JOIN_GATEWAY':
-        state.updateStepProperty(source, 'nextStep', target);
-        break;
-      case 'DECISION': {
-        const expr = window.prompt('Branch expression (boolean):', 'value == "X"');
-        if (!expr) return;
-        state.updateStepProperty(source, 'conditionalNextSteps', {
-          ...src.conditionalNextSteps,
-          [expr]: target,
-        });
-        break;
+  const onConnect = useCallback(
+    async (connection: { source: string | null; target: string | null }) => {
+      const { source, target } = connection;
+      if (!source || !target || source === target) return;
+      const state = useWorkflowStore.getState();
+      const src = state.definition.steps.find((s) => s.id === source);
+      if (!src) return;
+      switch (src.type) {
+        case 'SERVICE_TASK':
+        case 'USER_TASK':
+        case 'WAIT':
+        case 'TRANSFORMATION':
+        case 'JOIN_GATEWAY':
+          state.updateStepProperty(source, 'nextStep', target);
+          break;
+        case 'DECISION': {
+          const expr = await prompt('Branch expression (boolean):', {
+            initialValue: 'value == "X"',
+          });
+          if (!expr) return;
+          state.updateStepProperty(source, 'conditionalNextSteps', {
+            ...src.conditionalNextSteps,
+            [expr]: target,
+          });
+          break;
+        }
+        case 'DECISION_TABLE':
+          // 007: routing is at step-level nextStep, not per-rule. Rules carry
+          // input cells + outputs only; they're edited via DecisionTableForm.
+          state.updateStepProperty(source, 'nextStep', target);
+          break;
+        case 'PARALLEL_GATEWAY': {
+          if (src.parallelNextSteps.includes(target)) return;
+          state.updateStepProperty(source, 'parallelNextSteps', [...src.parallelNextSteps, target]);
+          break;
+        }
+        case 'END':
+          return;
       }
-      case 'DECISION_TABLE':
-        // 007: routing is at step-level nextStep, not per-rule. Rules carry
-        // input cells + outputs only; they're edited via DecisionTableForm.
-        state.updateStepProperty(source, 'nextStep', target);
-        break;
-      case 'PARALLEL_GATEWAY': {
-        if (src.parallelNextSteps.includes(target)) return;
-        state.updateStepProperty(source, 'parallelNextSteps', [...src.parallelNextSteps, target]);
-        break;
-      }
-      case 'END':
-        return;
-    }
-  }, []);
+    },
+    [prompt],
+  );
 
   const [elkLayout, setElkLayout] = useState<Record<string, { x: number; y: number }>>({});
 
@@ -260,6 +267,7 @@ function CanvasInner(): ReactNode {
 
   return (
     <div className="wm-canvas-inner" onDragOver={onDragOver} onDrop={onDrop}>
+      {dialog}
       {nodes.length === 0 && (
         <div className="wm-canvas-empty">
           <h2>Empty canvas</h2>

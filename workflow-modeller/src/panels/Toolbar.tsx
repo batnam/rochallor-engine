@@ -2,7 +2,8 @@ import { EngineError } from '@/engine/types';
 import { useDirty, useEngineConnection, useValidationSummary } from '@/store/selectors';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { useReactFlow } from '@xyflow/react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
+import { useDialogs } from './useDialogs';
 
 interface ToolbarProps {
   onImport: () => void;
@@ -21,6 +22,7 @@ export function Toolbar({
   onOpenDrafts,
   onUploadResult,
 }: ToolbarProps): ReactNode {
+  const { confirm, dialog } = useDialogs();
   const dirty = useDirty();
   const { errors, diagnostics } = useValidationSummary();
   const engine = useEngineConnection();
@@ -31,7 +33,27 @@ export function Toolbar({
   const { fitView } = useReactFlow();
   const [uploading, setUploading] = useState(false);
 
-  function handleNewWorkflow(): void {
+  useEffect(() => {
+    function handleHistory(event: KeyboardEvent): void {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== 'z')
+        return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest('input, textarea, select, [contenteditable="true"]')
+      )
+        return;
+      if (document.querySelector('dialog[open]')) return;
+      event.preventDefault();
+      const history = useWorkflowStore.temporal.getState();
+      if (event.shiftKey) history.redo();
+      else history.undo();
+    }
+    window.addEventListener('keydown', handleHistory);
+    return () => window.removeEventListener('keydown', handleHistory);
+  }, []);
+
+  async function handleNewWorkflow(): Promise<void> {
     if (stepCount === 0 && !dirty) {
       newWorkflow();
       return;
@@ -39,7 +61,7 @@ export function Toolbar({
     const msg = dirty
       ? 'You have unsaved changes. Discard them and start a new workflow?'
       : 'Clear the current workflow and start fresh?';
-    if (!confirm(msg)) return;
+    if (!(await confirm(msg))) return;
     newWorkflow();
   }
 
@@ -53,7 +75,7 @@ export function Toolbar({
 
   async function handleUpload(): Promise<void> {
     if (uploading) return;
-    if (!confirm(`Upload current definition to ${engine.baseUrl}?`)) return;
+    if (!(await confirm(`Upload current definition to ${engine.baseUrl}?`))) return;
     setUploading(true);
     try {
       const { version } = await uploadToEngine();
@@ -73,6 +95,7 @@ export function Toolbar({
 
   return (
     <div className="wm-toolbar-actions">
+      {dialog}
       <button type="button" onClick={handleNewWorkflow}>
         New Workflow
       </button>

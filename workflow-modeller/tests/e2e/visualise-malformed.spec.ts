@@ -5,7 +5,10 @@ test('visualise-malformed: garbage JSON surfaces an error banner and leaves the 
 }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Import' }).click();
-  await page.getByRole('textbox').fill('{ "id":');
+  await page
+    .getByRole('dialog', { name: 'Import workflow JSON' })
+    .getByRole('textbox')
+    .fill('{ "id":');
   await page.getByRole('button', { name: 'Import', exact: true }).last().click();
 
   // Error banner becomes visible inside the dialog.

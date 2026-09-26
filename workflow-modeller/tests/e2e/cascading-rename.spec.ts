@@ -13,21 +13,24 @@ const FIXTURE = readFileSync(
 test('cascading-rename: every reference site updates in one action', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Import' }).click();
-  await page.getByRole('textbox').fill(FIXTURE);
+  await page
+    .getByRole('dialog', { name: 'Import workflow JSON' })
+    .getByRole('textbox')
+    .fill(FIXTURE);
   await page.getByRole('button', { name: 'Import', exact: true }).last().click();
 
   // Select the "merge-risk-results" JOIN_GATEWAY — referenced by the parallel
   // gateway's joinStep and by both branches' nextStep.
-  await page.locator('.wm-node', { hasText: 'merge-risk-results' }).click();
+  await page.locator('.react-flow__node[data-id="merge-risk-results"]').click();
 
   // Rename via inspector.
   const idInput = page.locator('.wm-inspector .wm-input').first();
   await idInput.fill('risk-join');
   await idInput.blur();
 
-  // Open export dialog and inspect its textarea content for the new id.
+  // Check engine references in steps; canvas layout metadata uses independent keys.
   await page.getByRole('button', { name: 'Export' }).click();
   const exported = await page.locator('.wm-dialog .wm-dialog-textarea').inputValue();
-  expect(exported).toContain('"risk-join"');
-  expect(exported).not.toContain('"merge-risk-results"');
+  expect(JSON.stringify(JSON.parse(exported).steps)).toContain('"risk-join"');
+  expect(JSON.stringify(JSON.parse(exported).steps)).not.toContain('"merge-risk-results"');
 });

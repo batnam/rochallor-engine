@@ -18,6 +18,44 @@ This repo is a monorepo with **nine independently releasable components**, each 
 
 Each tag must match the regex `<prefix>-v[0-9]+.[0-9]+.[0-9]+` — strict three-part semver, no pre-release suffixes. Tags that don't match any pattern are ignored.
 
+The `modeller-v…` tag publishes the **web Docker image**. Desktop packages use
+the separate build workflow described below.
+
+## Desktop Modeller builds
+
+The **Modeller Web and Desktop** workflow (`.github/workflows/modeller-desktop.yml`)
+checks the web app and builds desktop packages on three operating systems.
+It runs for matching changes in pull requests and pushes to `main`, and can
+also be started manually with **Run workflow** in GitHub Actions.
+
+After a successful run, open its **Artifacts** section and download the archive
+for your OS. Extract the archive to find the installer:
+
+| Artifact | Packages |
+|----------|----------|
+| `modeller-desktop-macos-latest` | macOS `.dmg` |
+| `modeller-desktop-windows-latest` | Windows `.exe` (NSIS) and `.msi` |
+| `modeller-desktop-ubuntu-22.04` | Linux `.deb` and `.AppImage` |
+
+Choose a package that matches the target computer's CPU architecture. The
+current workflow builds for each runner's architecture; it does not produce
+every architecture or a universal macOS package.
+
+The desktop version comes from `workflow-modeller/package.json`. Tauri reads it
+through `src-tauri/tauri.conf.json`. For local build commands and output paths,
+see [Build the modeller](development.md#build-the-modeller).
+
+These packages are **unsigned development builds** stored as workflow artifacts.
+This workflow does not create a GitHub Release or publish installers when a
+`modeller-v…` tag is pushed. Signing and macOS notarization still need to be
+configured for public distribution.
+
+The packaged macOS arm64 app has been smoke-tested locally for file import/export,
+clipboard, engine requests, undo/redo, and restoring drafts after restart.
+Native runtime checks on Windows and Linux remain to be performed. Before
+distributing a build, repeat these checks on the target OS, including editing
+dialogs and cancelling file pickers.
+
 ## How to release one component
 
 Pick the prefix from the table, append the new semver, push the tag:
