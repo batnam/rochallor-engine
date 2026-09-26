@@ -244,11 +244,11 @@ it("retains variables with a stale warning and only refreshes them while visible
   await screen.findByRole("heading", { name: "Process Instance live" });
   expect(state.variableRequests).toBe(0);
   fireEvent.click(screen.getByRole("tab", { name: "Variables" }));
-  await screen.findByRole("row", { name: "order number 1" });
+  await screen.findByRole("row", { name: "order 1 number" });
   state.failVariables = true;
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText("Stale Current Variable data");
-  expect(screen.getByRole("row", { name: "order number 1" })).toBeVisible();
+  expect(screen.getByRole("row", { name: "order 1 number" })).toBeVisible();
   expect(state.detailRequests).toBe(2);
   expect(state.historyRequests).toBe(2);
   fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
