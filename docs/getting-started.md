@@ -50,6 +50,12 @@ Services started:
 
 PostgreSQL data persists in a named Docker volume.
 
+Open the web modeller at **http://localhost:13000**, or use the desktop app.
+In either version, set **Engine Settings** → **Engine base URL** to
+`http://localhost:18080`. See [Workflow Modeller — Web and Desktop](modeller.md)
+for installation, editing, and file import/export. Desktop users can connect to
+the engine from this same Compose setup.
+
 Then install an SDK and jump to [Step 5 — Upload a definition](#5-upload-a-workflow-definition).
 
 ---
@@ -440,6 +446,7 @@ public class StartInstance {
 
 | Topic | Doc |
 |-------|-----|
+| Design workflows in the web or desktop editor | [Workflow Modeller](modeller.md) |
 | Full SDK reference — Python | [docs/sdk/python.md](sdk/python.md) |
 | Full SDK reference — Go | [docs/sdk/go.md](sdk/go.md) |
 | Full SDK reference — Node/TypeScript | [docs/sdk/node.md](sdk/node.md) |

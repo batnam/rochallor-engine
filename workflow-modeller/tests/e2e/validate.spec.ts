@@ -17,7 +17,10 @@ test('validate: broken fixture surfaces diagnostics, focuses node, gates Export'
 
   // 1. Import a fixture with a dangling nextStep reference.
   await page.getByRole('button', { name: 'Import' }).click();
-  await page.getByRole('textbox').fill(BROKEN);
+  await page
+    .getByRole('dialog', { name: 'Import workflow JSON' })
+    .getByRole('textbox')
+    .fill(BROKEN);
   await page.getByRole('button', { name: 'Import', exact: true }).last().click();
 
   // 2. Run validation.
@@ -34,11 +37,13 @@ test('validate: broken fixture surfaces diagnostics, focuses node, gates Export'
 
   // 5. Clicking the diagnostic focuses the offending node (selects + highlights it).
   await refResolves.locator('button').click();
-  await expect(page.locator('.wm-node[data-id="s"]')).toHaveClass(/wm-node--has-error/);
+  await expect(page.locator('.react-flow__node[data-id="s"] .wm-node')).toHaveClass(
+    /wm-node--has-error/,
+  );
 
   // 6. Loading a clean fixture clears the diagnostics and re-enables Export.
   await page.getByRole('button', { name: 'Import' }).click();
-  await page.getByRole('textbox').fill(CLEAN);
+  await page.getByRole('dialog', { name: 'Import workflow JSON' }).getByRole('textbox').fill(CLEAN);
   await page.getByRole('button', { name: 'Import', exact: true }).last().click();
   await page.getByRole('button', { name: 'Validate' }).click();
 

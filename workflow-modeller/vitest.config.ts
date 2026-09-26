@@ -6,12 +6,14 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@platform': fileURLToPath(new URL('./src/platform/web.ts', import.meta.url)),
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
   test: {
     environment: 'jsdom',
     globals: false,
+    setupFiles: ['./tests/setup.ts'],
     include: ['tests/unit/**/*.test.ts', 'tests/unit/**/*.test.tsx', 'tests/drift.test.ts'],
     exclude: ['tests/e2e/**', 'node_modules/**'],
     coverage: {

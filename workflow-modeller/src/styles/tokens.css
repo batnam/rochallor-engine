@@ -926,7 +926,7 @@ body,
   color: var(--edge-boundary);
 }
 
-/* Import dialog */
+/* Dialogs */
 .wm-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -936,8 +936,16 @@ body,
   z-index: 50;
 }
 
+.wm-dialog-backdrop > .wm-dialog {
+  /* Keep the dialog in the backdrop grid so WebKit sizes it to its content. */
+  position: static;
+}
+
 .wm-dialog {
   width: min(640px, 92vw);
+  max-height: calc(100vh - 2rem);
+  box-sizing: border-box;
+  overflow: auto;
   background: var(--surface);
   color: var(--text);
   border-radius: var(--bento-radius);
@@ -947,9 +955,29 @@ body,
   gap: 0.75rem;
 }
 
+.wm-dialog .wm-input,
+.wm-dialog-textarea {
+  box-sizing: border-box;
+}
+
 .wm-dialog h2 {
   margin: 0;
   font-size: 1.125rem;
+}
+
+.wm-prompt-dialog {
+  /* WebKit stretches a modal grid to the viewport; the form owns the grid layout. */
+  display: block;
+  margin: auto;
+}
+
+.wm-prompt-dialog::backdrop {
+  background: rgb(15 23 42 / 50%);
+}
+
+.wm-dialog-form {
+  display: grid;
+  gap: 0.75rem;
 }
 
 .wm-dialog-hint {
@@ -985,8 +1013,11 @@ body,
   gap: 0.5rem;
 }
 
-.wm-dialog-actions button {
+.wm-dialog :where(button) {
   font: inherit;
+  font-size: 1rem;
+  min-height: 2rem;
+  justify-self: start;
   padding: 0.375rem 1rem;
   border-radius: 4px;
   border: 1px solid var(--surface-border);
@@ -1001,7 +1032,7 @@ body,
   border-color: var(--step-service-task);
 }
 
-.wm-dialog-actions button:disabled {
+.wm-dialog button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

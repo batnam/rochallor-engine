@@ -2,9 +2,10 @@
 import type { WorkflowDefinition } from '@/domain/types';
 import { createEngineClient } from '@/engine/client';
 import { EngineError } from '@/engine/types';
+import { platform } from '@platform';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const BASE = 'http://mock-engine.example';
 
@@ -55,12 +56,22 @@ const server = setupServer(
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => {
+  vi.restoreAllMocks();
   recordedRequests.length = 0;
   server.resetHandlers();
 });
 afterAll(() => server.close());
 
 describe('engine client', () => {
+  it('uses the platform transport while preserving explicit transport injection', async () => {
+    const transport = vi.spyOn(platform, 'fetch');
+    await createEngineClient({ baseUrl: BASE }).listDefinitions();
+    expect(transport).toHaveBeenCalledOnce();
+    const injected = vi.fn(globalThis.fetch);
+    await createEngineClient({ baseUrl: BASE, fetch: injected }).listDefinitions();
+    expect(injected).toHaveBeenCalledOnce();
+    expect(transport).toHaveBeenCalledOnce();
+  });
   function newClient() {
     return createEngineClient({ baseUrl: BASE, authHeader: 'Bearer xyz' });
   }
@@ -137,6 +148,15 @@ describe('engine client', () => {
     server.use(http.get(`${BASE}/v1/definitions`, () => HttpResponse.error()));
     await expect(client.listDefinitions()).rejects.toMatchObject({
       name: 'EngineError',
+      kind: 'network',
+    });
+  });
+
+  it('preserves string errors returned by the native transport', async () => {
+    const message = 'url not allowed on the configured scope: http://localhost:8080';
+    vi.spyOn(platform, 'fetch').mockRejectedValueOnce(message);
+    await expect(newClient().listDefinitions()).rejects.toMatchObject({
+      message,
       kind: 'network',
     });
   });

@@ -72,7 +72,7 @@ test.describe('engine integration (mocked)', () => {
     await page.getByRole('button', { name: 'Settings' }).click();
     const baseInput = page.getByPlaceholder('http://localhost:8080');
     await baseInput.fill(BASE);
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
 
     // Open the engine browser, list returns one definition.
     await page.getByRole('button', { name: 'Load Workflow from engine' }).click();
@@ -87,8 +87,11 @@ test.describe('engine integration (mocked)', () => {
     await expect(page.locator('.wm-node')).toHaveCount(SAMPLE.steps.length);
 
     // Upload — confirm the dialog and assert a success banner appears.
-    page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Upload' }).click();
+    await page
+      .getByRole('dialog', { name: `Upload current definition to ${BASE}?` })
+      .getByRole('button', { name: 'OK' })
+      .click();
     await expect(page.locator('.wm-banner', { hasText: 'Uploaded as version 5' })).toBeVisible();
   });
 });

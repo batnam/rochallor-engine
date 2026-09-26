@@ -1,5 +1,6 @@
 import { useWorkflowStore } from '@/store/workflowStore';
-import { type ReactNode, useMemo, useState } from 'react';
+import { platform } from '@platform';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 interface ExportDialogProps {
   open: boolean;
@@ -11,6 +12,17 @@ export function ExportDialog({ open, onClose }: ExportDialogProps): ReactNode {
   const definitionName = useWorkflowStore((s) => s.definition.name);
   const [includeLayout, setIncludeLayout] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setMessage('');
+      setError('');
+      setCopied(false);
+    }
+  }, [open]);
 
   const text = useMemo(
     () => (open ? exportToJson({ includeLayout }) : ''),
@@ -19,21 +31,35 @@ export function ExportDialog({ open, onClose }: ExportDialogProps): ReactNode {
 
   if (!open) return null;
 
-  function handleCopy(): void {
-    void navigator.clipboard.writeText(text).then(() => {
+  async function handleCopy(): Promise<void> {
+    setError('');
+    try {
+      await platform.copyText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    }
   }
 
-  function handleDownload(): void {
-    const blob = new Blob([text], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${slug(definitionName)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function handleSave(): Promise<void> {
+    setSaving(true);
+    setMessage('');
+    setError('');
+    try {
+      const result = await platform.saveJson(`${slug(definitionName)}.json`, text);
+      setMessage(
+        result === 'saved'
+          ? 'File saved.'
+          : result === 'download-started'
+            ? 'Download started.'
+            : '',
+      );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -57,15 +83,26 @@ export function ExportDialog({ open, onClose }: ExportDialogProps): ReactNode {
           rows={14}
           spellCheck={false}
         />
+        {message && <output className="wm-dialog-hint">{message}</output>}
+        {error && (
+          <p role="alert" className="wm-dialog-errors">
+            {error}
+          </p>
+        )}
         <div className="wm-dialog-actions">
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={onClose} disabled={saving}>
             Close
           </button>
           <button type="button" onClick={handleCopy}>
             {copied ? 'Copied ✓' : 'Copy to clipboard'}
           </button>
-          <button type="button" className="wm-dialog-primary" onClick={handleDownload}>
-            Download JSON
+          <button
+            type="button"
+            className="wm-dialog-primary"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? 'Saving…' : 'Save JSON'}
           </button>
         </div>
       </dialog>

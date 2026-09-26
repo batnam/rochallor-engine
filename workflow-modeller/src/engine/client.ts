@@ -1,4 +1,5 @@
 import type { WorkflowDefinition } from '@/domain/types';
+import { platform } from '@platform';
 import {
   type DefinitionListResponse,
   EngineError,
@@ -21,7 +22,7 @@ export interface EngineClient {
 }
 
 export function createEngineClient(config: EngineClientConfig): EngineClient {
-  const fetcher = config.fetch ?? fetch;
+  const fetcher = config.fetch ?? platform.fetch;
   const baseUrl = config.baseUrl.replace(/\/+$/, '');
 
   function headers(extra?: Record<string, string>): HeadersInit {
@@ -46,7 +47,8 @@ export function createEngineClient(config: EngineClientConfig): EngineClient {
     try {
       response = await fetcher(`${baseUrl}${path}`, init);
     } catch (e) {
-      throw new EngineError((e as Error).message || 'Network error', {
+      const message = e instanceof Error ? e.message : String(e);
+      throw new EngineError(message || 'Network error', {
         status: 0,
         body: '',
         kind: 'network',

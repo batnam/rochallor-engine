@@ -90,10 +90,14 @@ describe('DecisionTableForm', () => {
 
   it('adds an input column to every existing rule when prompted', async () => {
     seedDt([{ when: {}, outputs: {} }]);
-    vi.spyOn(window, 'prompt').mockReturnValueOnce('region');
-    const { getByText } = renderForm();
+    const { getByText, getByRole } = renderForm();
     const user = userEvent.setup();
     await user.click(getByText('+ add input'));
+    await user.type(
+      getByRole('textbox', { name: 'Input column name (a variable name):' }),
+      'region',
+    );
+    await user.click(getByRole('button', { name: 'OK' }));
     expect(currentDt().decisionTable.rules[0]?.when).toEqual({ region: '' });
   });
 
@@ -102,10 +106,13 @@ describe('DecisionTableForm', () => {
       { when: { score: 'value >= 650' }, outputs: {} },
       { when: { score: 'value < 650' }, outputs: {} },
     ]);
-    vi.spyOn(window, 'prompt').mockReturnValueOnce('creditScore');
-    const { getByLabelText } = renderForm();
+    const { getByLabelText, getByRole } = renderForm();
     const user = userEvent.setup();
     await user.click(getByLabelText('Rename score'));
+    const input = getByRole('textbox', { name: 'Rename input column "score" to:' });
+    await user.clear(input);
+    await user.type(input, 'creditScore');
+    await user.click(getByRole('button', { name: 'OK' }));
     const rules = currentDt().decisionTable.rules;
     expect(rules[0]?.when).toEqual({ creditScore: 'value >= 650' });
     expect(rules[1]?.when).toEqual({ creditScore: 'value < 650' });

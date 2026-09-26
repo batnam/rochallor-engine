@@ -9,7 +9,10 @@ const FIXTURE = readFileSync(
 test('visualise: paste a valid workflow renders the expected graph', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Import' }).click();
-  await page.getByRole('textbox').fill(FIXTURE);
+  await page
+    .getByRole('dialog', { name: 'Import workflow JSON' })
+    .getByRole('textbox')
+    .fill(FIXTURE);
   await page.getByRole('button', { name: 'Import', exact: true }).last().click();
 
   // 14 step nodes on the canvas.

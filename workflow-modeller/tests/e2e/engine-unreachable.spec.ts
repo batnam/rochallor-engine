@@ -18,7 +18,10 @@ test('engine-unreachable: status flips to unreachable and pending edit is preser
 
   // First, paste a definition so we have a non-empty canvas.
   await page.getByRole('button', { name: 'Import' }).click();
-  await page.getByRole('textbox').fill(SAMPLE);
+  await page
+    .getByRole('dialog', { name: 'Import workflow JSON' })
+    .getByRole('textbox')
+    .fill(SAMPLE);
   await page.getByRole('button', { name: 'Import', exact: true }).last().click();
   await expect(page.locator('.wm-node').first()).toBeVisible();
   const nodeCountBefore = await page.locator('.wm-node').count();
@@ -31,7 +34,7 @@ test('engine-unreachable: status flips to unreachable and pending edit is preser
   // Test connection — expect "unreachable".
   await page.getByRole('button', { name: 'Test connection' }).click();
   await expect(page.locator('.wm-status--unreachable')).toBeVisible();
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   // Toolbar status flips to unreachable.
   await expect(page.locator('.wm-engine-status--unreachable')).toBeVisible();
