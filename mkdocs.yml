@@ -57,7 +57,9 @@ nav:
   - Getting Started: getting-started.md
   - Architecture: architecture.md
   - Workflow Modeller: modeller.md
-  - Monitor: monitor.md
+  - Monitor:
+    - Operator Guide: monitor.md
+    - Feature Roadmap: monitor-roadmap.md
   - Workflow Format: workflow-format.md
   - Configuration: configuration.md
   - Deployment:

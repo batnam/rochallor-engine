@@ -201,49 +201,53 @@ describe("Process Instance detail HTTP seam", () => {
     await request(app.getHttpServer())
       .get("/api/v1/process-instances/parallel-active")
       .expect(200)
-      .expect({
-        instance: {
-          id: "parallel-active",
-          definitionId: "parallel-review",
-          definitionVersion: 1,
-          status: "ACTIVE",
-          currentStepIds: ["collect-documents", "manual-review"],
-          startedAt: "2026-03-01T00:00:00.000Z",
-          completedAt: null,
-          failureReason: null,
-          businessKey: "review-001",
-        },
-        definition: {
-          id: "parallel-review",
-          version: 1,
-          name: "Parallel Review v1",
-          steps: [
-            {
-              id: "collect-documents",
-              name: "Collect Documents",
-              type: "USER_TASK",
-              nextStep: "join",
-            },
-            {
-              id: "manual-review",
-              name: "Manual Review",
-              type: "USER_TASK",
-              nextStep: "join",
-            },
-            {
-              id: "join",
-              name: "Join",
-              type: "JOIN_GATEWAY",
-              nextStep: "end",
-            },
-            { id: "end", name: "End", type: "END" },
-          ],
-        },
-        executionOverlay: {
-          currentTokenStepIds: ["collect-documents", "manual-review"],
-          failedStepId: null,
-          latestByStep: [],
-        },
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          observedAt: expect.any(String),
+          executionContext: expect.any(Array),
+          instance: {
+            id: "parallel-active",
+            definitionId: "parallel-review",
+            definitionVersion: 1,
+            status: "ACTIVE",
+            currentStepIds: ["collect-documents", "manual-review"],
+            startedAt: "2026-03-01T00:00:00.000Z",
+            completedAt: null,
+            failureReason: null,
+            businessKey: "review-001",
+          },
+          definition: {
+            id: "parallel-review",
+            version: 1,
+            name: "Parallel Review v1",
+            steps: [
+              {
+                id: "collect-documents",
+                name: "Collect Documents",
+                type: "USER_TASK",
+                nextStep: "join",
+              },
+              {
+                id: "manual-review",
+                name: "Manual Review",
+                type: "USER_TASK",
+                nextStep: "join",
+              },
+              {
+                id: "join",
+                name: "Join",
+                type: "JOIN_GATEWAY",
+                nextStep: "end",
+              },
+              { id: "end", name: "End", type: "END" },
+            ],
+          },
+          executionOverlay: {
+            currentTokenStepIds: ["collect-documents", "manual-review"],
+            failedStepId: null,
+            latestByStep: [],
+          },
+        });
       });
   });
 

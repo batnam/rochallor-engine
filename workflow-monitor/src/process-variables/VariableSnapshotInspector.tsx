@@ -1,5 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+
+import {
+  SnapshotComparison,
+  type SnapshotInterpretation,
+} from "./SnapshotComparison";
 
 export type VariableDocument =
   | { status: "present"; value: unknown; sizeBytes: number }
@@ -8,12 +13,15 @@ export type VariableDocument =
 
 export interface SnapshotExecution {
   id: string;
+  stepId: string;
+  attemptNumber: number;
   status: string;
   hasInputSnapshot: boolean;
   hasOutputSnapshot: boolean;
 }
 
 interface StepExecutionVariablesResponse {
+  outputInterpretation?: SnapshotInterpretation;
   recordedInput: VariableDocument;
   recordedOutput: VariableDocument;
 }
@@ -34,11 +42,19 @@ async function getStepExecutionVariables(
 export function VariableSnapshotInspector({
   instanceId,
   execution,
+  stepName,
+  initiallyExpanded = false,
 }: {
   instanceId: string;
   execution: SnapshotExecution;
+  stepName?: string;
+  initiallyExpanded?: boolean;
 }): ReactNode {
-  const [expanded, setExpanded] = useState(false);
+  const stepLabel = stepName?.trim() || execution.stepId;
+  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const client = useQueryClient();
+  const signature = `${instanceId}:${execution.id}:${execution.status}:${execution.hasInputSnapshot}:${execution.hasOutputSnapshot}`;
+  const previousSignature = useRef(signature);
   const snapshots = useQuery({
     queryKey: ["variable-snapshots", instanceId, execution.id],
     queryFn: () => getStepExecutionVariables(instanceId, execution.id),
@@ -49,17 +65,28 @@ export function VariableSnapshotInspector({
   });
   const hasSnapshots =
     execution.hasInputSnapshot || execution.hasOutputSnapshot;
+  useEffect(() => {
+    if (previousSignature.current === signature) return;
+    previousSignature.current = signature;
+    // History refresh can reveal output after this inspector was opened.
+    // Disabled queries remain on demand; expanded queries retain data on error.
+    void client.invalidateQueries({
+      queryKey: ["variable-snapshots", instanceId, execution.id],
+      exact: true,
+    });
+  }, [client, instanceId, execution.id, signature]);
 
   return (
     <article className="rm-snapshot-card">
       <div className="rm-snapshot-header">
-        <h4 className="rm-mono">{execution.id}</h4>
+        <h4 title={stepLabel}>{stepLabel}</h4>
         <span
           className={`rm-status rm-status--${execution.status.toLowerCase()}`}
         >
           {execution.status}
         </span>
       </div>
+      <p className="rm-muted">Attempt {execution.attemptNumber}</p>
       <div className="rm-snapshot-availability">
         <p>
           <span>Input Snapshot</span>
@@ -80,17 +107,38 @@ export function VariableSnapshotInspector({
           type="button"
           onClick={() => setExpanded((current) => !current)}
         >
-          {expanded ? "Collapse" : "Expand"} snapshots for {execution.id}
+          {expanded ? "Collapse" : "Expand"} snapshots for {stepLabel} (attempt{" "}
+          {execution.attemptNumber})
         </button>
       ) : null}
-      {expanded && snapshots.isPending ? (
+      {expanded && hasSnapshots && snapshots.isPending ? (
         <p>Loading Variable Snapshots…</p>
       ) : null}
       {expanded && snapshots.isError ? (
-        <p>Unable to load Variable Snapshots.</p>
+        snapshots.data ? (
+          <output className="rm-banner rm-banner--warning">
+            Stale Variable Snapshot data
+          </output>
+        ) : (
+          <p>Unable to load Variable Snapshots.</p>
+        )
+      ) : null}
+      {expanded && snapshots.isError ? (
+        <button
+          className="rm-button"
+          type="button"
+          onClick={() => void snapshots.refetch()}
+        >
+          Retry snapshots
+        </button>
       ) : null}
       {expanded && snapshots.data ? (
         <>
+          <SnapshotComparison
+            input={snapshots.data.recordedInput}
+            output={snapshots.data.recordedOutput}
+            interpretation={snapshots.data.outputInterpretation ?? "unknown"}
+          />
           <VariableDocumentView
             document={snapshots.data.recordedInput}
             label="Recorded Input"
@@ -141,16 +189,16 @@ export function VariableTable({ value }: { value: unknown }): ReactNode {
         <thead>
           <tr>
             <th scope="col">Name</th>
-            <th scope="col">Type</th>
             <th scope="col">Value</th>
+            <th scope="col">Type</th>
           </tr>
         </thead>
         <tbody>
           {entries.map(([name, entryValue]) => (
             <tr key={name}>
               <td className="rm-mono">{name}</td>
-              <td>{jsonType(entryValue)}</td>
               <td className="rm-mono">{JSON.stringify(entryValue)}</td>
+              <td>{jsonType(entryValue)}</td>
             </tr>
           ))}
         </tbody>

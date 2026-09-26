@@ -207,6 +207,12 @@ describe("Incident HTTP seam", () => {
         items: [
           {
             id: "execution-service",
+            historical: false,
+            latestAttempt: {
+              executionId: "execution-service",
+              status: "FAILED",
+              attemptNumber: 2,
+            },
             processInstanceId: "instance-service",
             definitionId: "loan-approval",
             definitionVersion: 1,
@@ -223,6 +229,12 @@ describe("Incident HTTP seam", () => {
           },
           {
             id: "execution-script",
+            historical: false,
+            latestAttempt: {
+              executionId: "execution-script",
+              status: "FAILED",
+              attemptNumber: 1,
+            },
             processInstanceId: "instance-script",
             definitionId: "account-review",
             definitionVersion: 2,
@@ -311,6 +323,12 @@ describe("Incident HTTP seam", () => {
       .expect({
         incident: {
           id: "execution-service",
+          historical: false,
+          latestAttempt: {
+            executionId: "execution-service",
+            status: "FAILED",
+            attemptNumber: 2,
+          },
           processInstanceId: "instance-service",
           definitionId: "loan-approval",
           definitionVersion: 1,

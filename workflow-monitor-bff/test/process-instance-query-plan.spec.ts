@@ -1,23 +1,17 @@
-import { Pool } from "pg";
+import { MonitorDatabase } from "../src/common/database/monitor-database";
+import type { ProcessInstanceQuery } from "../src/modules/process-instances/dto/process-instance.dto";
+import { ProcessInstanceQueries } from "../src/modules/process-instances/process-instance.queries";
+import { verifyQueryBudget } from "./support/query-plan";
 
 import {
   type PostgresFixture,
   startPostgresFixture,
 } from "./support/postgres-fixture";
 
-interface ExplainResult {
-  "QUERY PLAN": Array<{
-    "Execution Time": number;
-    Plan: {
-      "Actual Rows": number;
-      "Node Type": string;
-    };
-  }>;
-}
-
 describe("Process Instance query-plan verification", () => {
   let postgres: PostgresFixture | undefined;
-  let monitorPool: Pool | undefined;
+  let database: MonitorDatabase;
+  let queries: ProcessInstanceQueries;
 
   beforeAll(async () => {
     postgres = await startPostgresFixture();
@@ -44,63 +38,43 @@ describe("Process Instance query-plan verification", () => {
       FROM generate_series(1, 100000) AS series;
       ANALYZE workflow_instance;
     `);
-    monitorPool = new Pool({ connectionString: postgres.readOnlyDsn });
+    database = new MonitorDatabase(postgres.readOnlyDsn);
+    queries = new ProcessInstanceQueries(database);
   }, 30_000);
 
   afterAll(async () => {
-    await monitorPool?.end();
+    await database?.onApplicationShutdown();
     await postgres?.stop();
   });
 
-  it.each([
+  it.each<[string, ProcessInstanceQuery]>([
+    ["unfiltered-first-page", {}],
     [
-      "unfiltered first page",
-      `
-        SELECT id
-        FROM workflow_instance
-        ORDER BY started_at DESC, id DESC
-        LIMIT 51
-      `,
+      "filtered-cursor-page",
+      {
+        definitionId: "definition-1",
+        status: ["ACTIVE", "WAITING"],
+        from: "2026-01-01T00:00:00Z",
+        to: "2026-01-03T00:00:00Z",
+      },
     ],
-    [
-      "filtered cursor page",
-      `
-        SELECT id
-        FROM workflow_instance
-        WHERE definition_id = 'definition-1'
-          AND status = ANY(ARRAY['ACTIVE', 'WAITING'])
-          AND started_at >= '2026-01-01T00:00:00Z'
-          AND started_at < '2026-01-03T00:00:00Z'
-          AND (started_at, id) < (
-            '2026-01-02T00:00:00Z',
-            'plan-086400'
-          )
-        ORDER BY started_at DESC, id DESC
-        LIMIT 51
-      `,
-    ],
-    [
-      "exact business-key page",
-      `
-        SELECT id
-        FROM workflow_instance
-        WHERE business_key = 'business-50000'
-        ORDER BY started_at DESC, id DESC
-        LIMIT 51
-      `,
-    ],
-  ])("captures an executable plan for the %s query", async (_name, sql) => {
-    if (!monitorPool) {
-      throw new Error("Monitor database pool did not start");
+    ["exact-business-key", { businessKey: "business-50000" }],
+  ])("keeps %s within its query budget", async (name, filters) => {
+    const query = { ...filters };
+    if (name === "filtered-cursor-page") {
+      const first = await queries.list(query);
+      expect(first.nextCursor).not.toBeNull();
+      query.cursor = first.nextCursor ?? undefined;
     }
-
-    const result = await monitorPool.query<ExplainResult>(
-      `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${sql}`,
+    await verifyQueryBudget(
+      `instances-${name}`,
+      database,
+      () => queries.list(query),
+      {
+        medianMs: 250,
+        sharedBlocks: name === "filtered-cursor-page" ? 2_000 : 250,
+        scannedRows: name === "filtered-cursor-page" ? 10_000 : 1_000,
+      },
     );
-    const explanation = result.rows[0]["QUERY PLAN"][0];
-
-    expect(explanation.Plan["Node Type"]).toBe("Limit");
-    expect(explanation.Plan["Actual Rows"]).toBeLessThanOrEqual(51);
-    expect(explanation["Execution Time"]).toBeGreaterThanOrEqual(0);
   });
 });

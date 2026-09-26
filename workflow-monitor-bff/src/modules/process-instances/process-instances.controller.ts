@@ -7,6 +7,14 @@ import {
   Query,
 } from "@nestjs/common";
 
+import {
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiQuery,
+  getSchemaPath,
+} from "@nestjs/swagger";
+import { ExecutionContext } from "./execution-context";
+
 import type {
   ProcessInstanceDetail,
   ProcessInstanceListItem,
@@ -17,6 +25,7 @@ import type {
 import { ProcessInstanceQueries } from "./process-instance.queries";
 
 @Controller("api/v1/process-instances")
+@ApiExtraModels(ExecutionContext)
 export class ProcessInstancesController {
   constructor(
     @Inject(ProcessInstanceQueries)
@@ -24,6 +33,26 @@ export class ProcessInstancesController {
   ) {}
 
   @Get()
+  @ApiQuery({
+    name: "definitionVersion",
+    required: false,
+    type: Number,
+    minimum: 1,
+    description: "Requires definitionId",
+  })
+  @ApiQuery({
+    name: "currentStepId",
+    required: false,
+    type: String,
+    description: "Requires definitionId; only ACTIVE/WAITING instances",
+  })
+  @ApiQuery({
+    name: "stepStartedBefore",
+    required: false,
+    type: String,
+    description:
+      "Exclusive UTC cutoff on latest RUNNING execution; requires currentStepId",
+  })
   list(@Query() query: ProcessInstanceQuery): Promise<{
     items: ProcessInstanceListItem[];
     nextCursor: string | null;
@@ -32,6 +61,28 @@ export class ProcessInstancesController {
   }
 
   @Get(":id")
+  @ApiOkResponse({
+    schema: {
+      type: "object",
+      required: [
+        "instance",
+        "definition",
+        "executionOverlay",
+        "observedAt",
+        "executionContext",
+      ],
+      properties: {
+        instance: { type: "object" },
+        definition: { type: "object" },
+        executionOverlay: { type: "object" },
+        observedAt: { type: "string", format: "date-time" },
+        executionContext: {
+          type: "array",
+          items: { $ref: getSchemaPath(ExecutionContext) },
+        },
+      },
+    },
+  })
   async detail(@Param("id") id: string): Promise<ProcessInstanceDetail> {
     const detail = await this.queries.detail(id);
     if (!detail) {

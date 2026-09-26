@@ -1,16 +1,29 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
+import { SavedFilters } from "../SavedFilters";
+
+import { DataFreshness } from "../DataFreshness";
+
 import {
   type WorkflowDefinitionOption,
   listWorkflowDefinitions,
 } from "../workflowDefinitions";
 import type { Navigation } from "./Navigation";
+import {
+  FilterError,
+  fetchList,
+  timeRangeError,
+  utcInputValue,
+} from "./listFilters";
 
 interface ProcessInstance {
   definitionId: string;
   id: string;
   status: string;
+  businessKey: string | null;
+  startedAt: string;
+  completedAt: string | null;
 }
 
 interface ProcessInstanceListResponse {
@@ -19,6 +32,9 @@ interface ProcessInstanceListResponse {
 }
 
 interface ProcessInstanceFilters {
+  definitionVersion: string;
+  currentStepId: string;
+  stepStartedBefore: string;
   businessKey: string;
   definitionId: string;
   from: string;
@@ -37,17 +53,19 @@ const PROCESS_INSTANCE_STATUSES = [
 async function listProcessInstances(
   search: string,
 ): Promise<ProcessInstanceListResponse> {
-  const response = await fetch(`/api/v1/process-instances${search}`);
-  if (!response.ok) {
-    throw new Error("Unable to load Process Instances");
-  }
-  return response.json() as Promise<ProcessInstanceListResponse>;
+  return fetchList<ProcessInstanceListResponse>(
+    `/api/v1/process-instances${search}`,
+    "Process Instances",
+  );
 }
 
 function filtersFromSearch(search: string): ProcessInstanceFilters {
   const parameters = new URLSearchParams(search);
   return {
     businessKey: parameters.get("businessKey") ?? "",
+    definitionVersion: parameters.get("definitionVersion") ?? "",
+    currentStepId: parameters.get("currentStepId") ?? "",
+    stepStartedBefore: parameters.get("stepStartedBefore") ?? "",
     definitionId: parameters.get("definitionId") ?? "",
     from: parameters.get("from") ?? "",
     statuses: parameters.getAll("status"),
@@ -62,11 +80,15 @@ export function ProcessInstancesRoute({
   navigation: Navigation;
   search: string;
 }): ReactNode {
+  const [lookupId, setLookupId] = useState("");
+  const [lookupError, setLookupError] = useState<string | null>(null);
   const [filters, setFilters] = useState(() => filtersFromSearch(search));
+  const [filterError, setFilterError] = useState<string | null>(null);
   const processInstances = useQuery({
     queryKey: ["process-instances", search],
     queryFn: () => listProcessInstances(search),
-    refetchInterval: 5_000,
+    refetchInterval: (query) =>
+      query.state.error instanceof FilterError ? false : 5_000,
     refetchIntervalInBackground: false,
     retry: false,
   });
@@ -91,29 +113,21 @@ export function ProcessInstancesRoute({
     );
   }
 
-  if (processInstances.isError && !processInstances.data) {
-    return (
-      <main className="rm-page">
-        <section className="rm-card rm-state-card rm-state-card--error">
-          <h1>Unable to load Process Instances</h1>
-          <p>Check the Monitor API connection and try again.</p>
-          <button
-            className="rm-button"
-            type="button"
-            onClick={() => void processInstances.refetch()}
-          >
-            Retry
-          </button>
-        </section>
-      </main>
-    );
-  }
-
   const applyFilters = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
+    const error = timeRangeError(filters.from, filters.to);
+    setFilterError(error);
+    if (error) return;
     const parameters = new URLSearchParams();
     if (filters.definitionId) {
       parameters.set("definitionId", filters.definitionId);
+    }
+    for (const name of [
+      "definitionVersion",
+      "currentStepId",
+      "stepStartedBefore",
+    ] as const) {
+      if (filters[name]) parameters.set(name, filters[name]);
     }
     for (const status of filters.statuses) {
       parameters.append("status", status);
@@ -151,6 +165,32 @@ export function ProcessInstancesRoute({
           <p>Inspect current and completed workflow executions.</p>
         </div>
       </header>
+      <form
+        className="rm-card rm-context-card rm-instance-lookup"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const id = lookupId.trim();
+          if (!id) {
+            setLookupError("Enter an Instance ID.");
+            return;
+          }
+          setLookupError(null);
+          navigation.push(`/process-instances/${encodeURIComponent(id)}`);
+        }}
+      >
+        <label className="rm-field">
+          Instance ID
+          <input
+            value={lookupId}
+            onChange={(event) => setLookupId(event.target.value)}
+          />
+        </label>
+        <button type="submit" className="rm-button">
+          Open by Instance ID
+        </button>
+        {lookupError ? <p role="alert">{lookupError}</p> : null}
+      </form>
+      <SavedFilters kind="instances" search={search} navigation={navigation} />
       <div className="rm-list-layout">
         <form className="rm-card rm-filter-card" onSubmit={applyFilters}>
           <div className="rm-card-header">
@@ -179,6 +219,47 @@ export function ProcessInstancesRoute({
                 ),
               )}
             </select>
+          </label>
+          <label className="rm-field">
+            <span>Definition Version</span>
+            <input
+              type="number"
+              min="1"
+              max="2147483647"
+              value={filters.definitionVersion}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  definitionVersion: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label className="rm-field">
+            <span>Current Step ID</span>
+            <input
+              value={filters.currentStepId}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  currentStepId: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label className="rm-field">
+            <span>Step Started Before (UTC)</span>
+            <input
+              type="datetime-local"
+              step="0.001"
+              value={filters.stepStartedBefore.replace(/Z$/, "")}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  stepStartedBefore: utcInputValue(event.target.value),
+                }))
+              }
+            />
           </label>
           <fieldset className="rm-fieldset">
             <legend>Status</legend>
@@ -219,11 +300,13 @@ export function ProcessInstancesRoute({
           <label className="rm-field">
             <span>Started From (UTC)</span>
             <input
-              value={filters.from}
+              type="datetime-local"
+              step="1"
+              value={filters.from.replace(/Z$/, "")}
               onChange={(event) =>
                 setFilters((current) => ({
                   ...current,
-                  from: event.target.value,
+                  from: utcInputValue(event.target.value),
                 }))
               }
             />
@@ -231,15 +314,22 @@ export function ProcessInstancesRoute({
           <label className="rm-field">
             <span>Started To (UTC)</span>
             <input
-              value={filters.to}
+              type="datetime-local"
+              step="1"
+              value={filters.to.replace(/Z$/, "")}
               onChange={(event) =>
                 setFilters((current) => ({
                   ...current,
-                  to: event.target.value,
+                  to: utcInputValue(event.target.value),
                 }))
               }
             />
           </label>
+          {filterError || processInstances.error instanceof FilterError ? (
+            <p role="alert" className="rm-banner rm-banner--warning">
+              {filterError ?? processInstances.error?.message}
+            </p>
+          ) : null}
           <button className="rm-button rm-button--primary" type="submit">
             Apply Filters
           </button>
@@ -250,6 +340,10 @@ export function ProcessInstancesRoute({
             <div>
               <span className="rm-eyebrow">Live data</span>
               <h3>Instances</h3>
+              <DataFreshness
+                label="Instances"
+                updatedAt={processInstances.dataUpdatedAt}
+              />
             </div>
             <button
               className="rm-button"
@@ -259,10 +353,26 @@ export function ProcessInstancesRoute({
               Refresh
             </button>
           </div>
-          {processInstances.isError ? (
+          {processInstances.isError &&
+          !processInstances.data &&
+          !(processInstances.error instanceof FilterError) ? (
+            <div role="alert" className="rm-banner rm-banner--warning">
+              <p>{processInstances.error.message}</p>
+              <button
+                className="rm-button"
+                type="button"
+                onClick={() => void processInstances.refetch()}
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
+          {(processInstances.isError ||
+            processInstances.fetchStatus === "paused") &&
+          processInstances.data ? (
             <output className="rm-banner rm-banner--warning">Stale data</output>
           ) : null}
-          {processInstances.data.items.length === 0 ? (
+          {processInstances.data?.items.length === 0 ? (
             <div className="rm-empty-state">
               <h4>No Process Instances found</h4>
               <p>Adjust the filters to broaden the results.</p>
@@ -275,10 +385,13 @@ export function ProcessInstancesRoute({
                     <th scope="col">Instance ID</th>
                     <th scope="col">Definition ID</th>
                     <th scope="col">Status</th>
+                    <th scope="col">Business Key</th>
+                    <th scope="col">Started (UTC)</th>
+                    <th scope="col">Elapsed</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {processInstances.data.items.map((processInstance) => (
+                  {processInstances.data?.items.map((processInstance) => (
                     <tr key={processInstance.id}>
                       <td>
                         <a
@@ -302,6 +415,15 @@ export function ProcessInstancesRoute({
                         >
                           {processInstance.status}
                         </span>
+                      </td>
+                      <td>{processInstance.businessKey ?? "None"}</td>
+                      <td>{processInstance.startedAt}</td>
+                      <td>
+                        {elapsedTime(
+                          processInstance.startedAt,
+                          processInstance.completedAt,
+                          processInstances.dataUpdatedAt,
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -330,8 +452,10 @@ export function ProcessInstancesRoute({
               <button
                 className="rm-button"
                 type="button"
-                disabled={!processInstances.data.nextCursor}
-                onClick={() => moveToCursor(processInstances.data.nextCursor)}
+                disabled={!processInstances.data?.nextCursor}
+                onClick={() =>
+                  moveToCursor(processInstances.data?.nextCursor ?? null)
+                }
               >
                 Next
               </button>
@@ -341,4 +465,18 @@ export function ProcessInstancesRoute({
       </div>
     </main>
   );
+}
+
+function elapsedTime(
+  start: string,
+  end: string | null,
+  observedAt: number,
+): string {
+  const milliseconds = (end ? Date.parse(end) : observedAt) - Date.parse(start);
+  if (!Number.isFinite(milliseconds)) return "Not recorded";
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  return `${days ? `${days}d ` : ""}${hours}h ${minutes}m ${seconds % 60}s`;
 }

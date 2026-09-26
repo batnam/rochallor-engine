@@ -1,5 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+import {
+  ExecutionContextPanel,
+  type StepContext,
+} from "../ExecutionContextPanel";
+
+import { ExecutionTimeline } from "../ExecutionTimeline";
+
+import { DataFreshness } from "../DataFreshness";
 
 import {
   type DiagramStep,
@@ -14,6 +29,8 @@ import {
 } from "../process-variables/VariableSnapshotInspector";
 
 interface ProcessInstanceDetailResponse {
+  observedAt?: string;
+  executionContext?: StepContext[];
   instance: {
     id: string;
     status: string;
@@ -31,9 +48,7 @@ interface ProcessInstanceDetailResponse {
 }
 
 interface StepExecution extends SnapshotExecution {
-  stepId: string;
   stepType: string;
-  attemptNumber: number;
   startedAt: string;
   endedAt: string | null;
   hasFailure: boolean;
@@ -48,12 +63,16 @@ interface CurrentVariablesResponse {
   current: VariableDocument;
 }
 
+class InstanceNotFound extends Error {}
+
 async function getProcessInstanceDetail(
   instanceId: string,
 ): Promise<ProcessInstanceDetailResponse> {
   const response = await fetch(
     `/api/v1/process-instances/${encodeURIComponent(instanceId)}`,
   );
+  if (response.status === 404)
+    throw new InstanceNotFound("Process Instance not found");
   if (!response.ok) {
     throw new Error("Unable to load Process Instance");
   }
@@ -106,27 +125,84 @@ export function ProcessInstanceRoute({
   const [stepExecutionCursorHistory, setStepExecutionCursorHistory] = useState<
     Array<string | null>
   >([]);
+  const [historyView, setHistoryView] = useState<"table" | "timeline">("table");
+  const [inspectedExecutionId, setInspectedExecutionId] = useState<
+    string | null
+  >(null);
   const [detailView, setDetailView] = useState<"overview" | "variables">(
     "overview",
   );
   const processInstanceDetail = useQuery({
     queryKey: ["process-instance", instanceId],
     queryFn: () => getProcessInstanceDetail(instanceId),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: false,
   });
   const stepExecutions = useQuery({
     queryKey: ["step-executions", instanceId, stepExecutionCursor],
     queryFn: () => listStepExecutions(instanceId, stepExecutionCursor),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: false,
   });
   const currentVariables = useQuery({
     queryKey: ["current-variables", instanceId],
     queryFn: () => getCurrentVariables(instanceId),
     enabled: detailView === "variables",
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: false,
   });
+
+  const { refetch: refetchDetail } = processInstanceDetail;
+  const { refetch: refetchExecutions } = stepExecutions;
+  const { refetch: refetchVariables } = currentVariables;
+  const refreshing = useRef(false);
+  const refresh = useCallback(async () => {
+    if (refreshing.current) return;
+    refreshing.current = true;
+    try {
+      // Refresh history after observing the status, including the final transition.
+      await refetchDetail({ cancelRefetch: false });
+      await Promise.all([
+        refetchExecutions(),
+        ...(detailView === "variables" ? [refetchVariables()] : []),
+      ]);
+    } finally {
+      refreshing.current = false;
+    }
+  }, [refetchDetail, refetchExecutions, refetchVariables, detailView]);
+  const status = processInstanceDetail.data?.instance.status;
+  const detailStale =
+    processInstanceDetail.isError ||
+    processInstanceDetail.fetchStatus === "paused";
+  const executionsStale =
+    stepExecutions.isError || stepExecutions.fetchStatus === "paused";
+  const variablesStale =
+    currentVariables.isError || currentVariables.fetchStatus === "paused";
+  const shouldPoll =
+    status === "ACTIVE" ||
+    status === "WAITING" ||
+    detailStale ||
+    executionsStale ||
+    (detailView === "variables" && variablesStale);
+
+  useEffect(() => {
+    const refreshVisible = (): void => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    const timer = shouldPoll
+      ? window.setInterval(refreshVisible, 5_000)
+      : undefined;
+    document.addEventListener("visibilitychange", refreshVisible);
+    window.addEventListener("online", refreshVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshVisible);
+      window.removeEventListener("online", refreshVisible);
+    };
+  }, [refresh, shouldPoll]);
 
   useEffect(() => {
     setSelectedStepId(new URLSearchParams(search).get("stepId"));
@@ -144,17 +220,22 @@ export function ProcessInstanceRoute({
       </main>
     );
   }
-  if (processInstanceDetail.isError) {
+  if (processInstanceDetail.isError && !processInstanceDetail.data) {
     return (
       <main className="rm-page">
         <section className="rm-card rm-state-card rm-state-card--error">
-          <h1>Unable to load Process Instance</h1>
-          <p>Check the Monitor API connection and try again.</p>
-          <button
-            className="rm-button"
-            type="button"
-            onClick={() => void processInstanceDetail.refetch()}
-          >
+          <h1>
+            {processInstanceDetail.error instanceof InstanceNotFound
+              ? "Process Instance not found"
+              : "Unable to load Process Instance"}
+          </h1>
+          <p>
+            {processInstanceDetail.error instanceof InstanceNotFound
+              ? "Check the Instance ID and try again."
+              : "Check the Monitor API connection and try again."}
+          </p>
+          <a href="/">Back to Process Instances</a>
+          <button className="rm-button" type="button" onClick={refresh}>
             Retry
           </button>
         </section>
@@ -163,9 +244,20 @@ export function ProcessInstanceRoute({
   }
 
   const detail = processInstanceDetail.data;
+  const inspectedExecution = stepExecutions.data?.items.find(
+    (item) => item.id === inspectedExecutionId,
+  );
   const selectedStepName = detail.definition.steps.find(
     (step) => step.id === selectedStepId,
   )?.name;
+  const selectedFailedExecution =
+    detail.instance.status !== "CANCELLED"
+      ? detail.executionOverlay.latestByStep.find(
+          (execution) =>
+            execution.stepId === selectedStepId &&
+            execution.status === "FAILED",
+        )
+      : undefined;
 
   return (
     <main className="rm-page">
@@ -174,7 +266,19 @@ export function ProcessInstanceRoute({
           <span className="rm-eyebrow">Execution details</span>
           <h2>Process Instance {detail.instance.id}</h2>
         </div>
+        <button className="rm-button" type="button" onClick={refresh}>
+          Refresh
+        </button>
       </header>
+      {detailStale ? (
+        <output className="rm-banner rm-banner--warning">
+          Stale Process Instance data
+        </output>
+      ) : null}
+      <DataFreshness
+        label="Status and diagram"
+        updatedAt={processInstanceDetail.dataUpdatedAt}
+      />
       <dl className="rm-summary-grid">
         <div className="rm-card rm-summary-card">
           <dt>Status</dt>
@@ -234,23 +338,34 @@ export function ProcessInstanceRoute({
             selectedStepId={selectedStepId}
             steps={detail.definition.steps}
           />
+          {detail.executionContext && detail.observedAt ? (
+            <ExecutionContextPanel
+              contexts={detail.executionContext}
+              observedAt={detail.observedAt}
+              selectedStepId={selectedStepId}
+            />
+          ) : null}
           <section className="rm-card rm-executions-card">
             <div className="rm-card-header">
               <div>
                 <span className="rm-eyebrow">Execution history</span>
                 <h3>Step Executions</h3>
               </div>
-              <button
-                className="rm-button"
-                type="button"
-                onClick={() => void stepExecutions.refetch()}
-              >
-                Refresh Step Executions
-              </button>
             </div>
+            <DataFreshness
+              label="Step Executions"
+              updatedAt={stepExecutions.dataUpdatedAt}
+            />
             {selectedStepName ? (
               <div className="rm-banner rm-banner--info">
                 <span>Highlighting Step Executions for {selectedStepName}</span>
+                {selectedFailedExecution ? (
+                  <a
+                    href={`/incidents/${encodeURIComponent(selectedFailedExecution.executionId)}`}
+                  >
+                    View selected step Incident
+                  </a>
+                ) : null}
                 <button
                   className="rm-button"
                   type="button"
@@ -261,68 +376,144 @@ export function ProcessInstanceRoute({
               </div>
             ) : null}
             {stepExecutions.isPending ? <p>Loading Step Executions…</p> : null}
-            {stepExecutions.isError ? (
+            {executionsStale ? (
               stepExecutions.data ? (
-                <output>Stale Step Execution data</output>
+                <output className="rm-banner rm-banner--warning">
+                  Stale Step Execution data
+                </output>
               ) : (
                 <p>Unable to load Step Executions.</p>
               )
             ) : null}
+            <fieldset
+              className="rm-card-header"
+              aria-label="History presentation"
+            >
+              <button
+                type="button"
+                className="rm-button"
+                aria-pressed={historyView === "table"}
+                onClick={() => setHistoryView("table")}
+              >
+                Table
+              </button>
+              <button
+                type="button"
+                className="rm-button"
+                aria-pressed={historyView === "timeline"}
+                onClick={() => setHistoryView("timeline")}
+              >
+                Timeline
+              </button>
+            </fieldset>
             {stepExecutions.data ? (
               <>
-                {stepExecutions.data.items.length === 0 ? (
-                  <p>No Step Executions recorded.</p>
+                {historyView === "timeline" ? (
+                  <ExecutionTimeline
+                    executions={stepExecutions.data.items}
+                    observedAt={stepExecutions.dataUpdatedAt}
+                    active={status === "ACTIVE" || status === "WAITING"}
+                    partial={Boolean(
+                      stepExecutionCursor || stepExecutions.data.nextCursor,
+                    )}
+                    onInspect={(execution) => {
+                      setSelectedStepId(execution.stepId);
+                      setInspectedExecutionId(execution.id);
+                    }}
+                  />
                 ) : (
-                  <div className="rm-table-scroll">
-                    <table className="rm-table">
-                      <thead>
-                        <tr>
-                          <th scope="col">Execution ID</th>
-                          <th scope="col">Step</th>
-                          <th scope="col">Type</th>
-                          <th scope="col">Attempt</th>
-                          <th scope="col">Status</th>
-                          <th scope="col">Started</th>
-                          <th scope="col">Ended</th>
-                          <th scope="col">Failure</th>
-                          <th scope="col">Input Snapshot</th>
-                          <th scope="col">Output Snapshot</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {stepExecutions.data.items.map((execution) => (
-                          <tr
-                            aria-current={
-                              execution.stepId === selectedStepId
-                                ? "true"
-                                : undefined
-                            }
-                            key={execution.id}
-                          >
-                            <td>{execution.id}</td>
-                            <td>{execution.stepId}</td>
-                            <td>{execution.stepType}</td>
-                            <td>{execution.attemptNumber}</td>
-                            <td>{execution.status}</td>
-                            <td>{execution.startedAt}</td>
-                            <td>{execution.endedAt ?? "In progress"}</td>
-                            <td>{execution.hasFailure ? "Present" : "None"}</td>
-                            <td>
-                              {execution.hasInputSnapshot
-                                ? "Recorded"
-                                : "Not recorded"}
-                            </td>
-                            <td>
-                              {execution.hasOutputSnapshot
-                                ? "Recorded"
-                                : "Not recorded"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <>
+                    {stepExecutions.data.items.length === 0 ? (
+                      <p>No Step Executions recorded.</p>
+                    ) : (
+                      <div className="rm-table-scroll">
+                        <table className="rm-table">
+                          <thead>
+                            <tr>
+                              <th scope="col">Execution ID</th>
+                              <th scope="col">Step</th>
+                              <th scope="col">Type</th>
+                              <th scope="col">Attempt</th>
+                              <th scope="col">Status</th>
+                              <th scope="col">Started</th>
+                              <th scope="col">Ended</th>
+                              <th scope="col">Failure</th>
+                              <th scope="col">Input Snapshot</th>
+                              <th scope="col">Output Snapshot</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {stepExecutions.data.items.map((execution) => (
+                              <tr
+                                aria-current={
+                                  execution.stepId === selectedStepId
+                                    ? "true"
+                                    : undefined
+                                }
+                                key={execution.id}
+                              >
+                                <td>{execution.id}</td>
+                                <td>{execution.stepId}</td>
+                                <td>{execution.stepType}</td>
+                                <td>{execution.attemptNumber}</td>
+                                <td>{execution.status}</td>
+                                <td>{execution.startedAt}</td>
+                                <td>{execution.endedAt ?? "In progress"}</td>
+                                <td>
+                                  {execution.status === "FAILED" &&
+                                  detail.instance.status !== "CANCELLED" ? (
+                                    <a
+                                      href={`/incidents/${encodeURIComponent(execution.id)}`}
+                                    >
+                                      View Incident
+                                    </a>
+                                  ) : execution.hasFailure ? (
+                                    "Present"
+                                  ) : (
+                                    "None"
+                                  )}
+                                </td>
+                                <td>
+                                  {execution.hasInputSnapshot
+                                    ? "Recorded"
+                                    : "Not recorded"}
+                                </td>
+                                <td>
+                                  {execution.hasOutputSnapshot
+                                    ? "Recorded"
+                                    : "Not recorded"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
                 )}
+                {historyView === "timeline" && inspectedExecution ? (
+                  <div className="rm-context-card">
+                    <VariableSnapshotInspector
+                      key={inspectedExecution.id}
+                      execution={inspectedExecution}
+                      instanceId={instanceId}
+                      stepName={
+                        detail.definition.steps.find(
+                          (step) => step.id === inspectedExecution.stepId,
+                        )?.name
+                      }
+                      initiallyExpanded
+                    />
+                    {inspectedExecution.status === "FAILED" &&
+                    status !== "CANCELLED" ? (
+                      <a
+                        href={`/incidents/${encodeURIComponent(inspectedExecution.id)}`}
+                      >
+                        View Incident for {inspectedExecution.id}
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
                 <nav
                   aria-label="Step Execution pages"
                   className="rm-pagination rm-card-footer"
@@ -386,8 +577,18 @@ export function ProcessInstanceRoute({
             {currentVariables.isPending ? (
               <p>Loading Current Variables…</p>
             ) : null}
-            {currentVariables.isError ? (
-              <p>Unable to load Current Variables.</p>
+            <DataFreshness
+              label="Current Variables"
+              updatedAt={currentVariables.dataUpdatedAt}
+            />
+            {variablesStale ? (
+              currentVariables.data ? (
+                <output className="rm-banner rm-banner--warning">
+                  Stale Current Variable data
+                </output>
+              ) : (
+                <p>Unable to load Current Variables.</p>
+              )
             ) : null}
             {currentVariables.data?.current.status === "present" ? (
               <VariableTable value={currentVariables.data.current.value} />
@@ -411,14 +612,29 @@ export function ProcessInstanceRoute({
               variable-change history.
             </p>
             {stepExecutions.isPending ? <p>Loading Step Executions…</p> : null}
-            {stepExecutions.isError ? (
-              <p>Unable to load Step Executions.</p>
+            <DataFreshness
+              label="Step Executions"
+              updatedAt={stepExecutions.dataUpdatedAt}
+            />
+            {executionsStale ? (
+              stepExecutions.data ? (
+                <output className="rm-banner rm-banner--warning">
+                  Stale Step Execution data
+                </output>
+              ) : (
+                <p>Unable to load Step Executions.</p>
+              )
             ) : null}
             <div className="rm-snapshot-grid">
               {stepExecutions.data?.items.map((execution) => (
                 <VariableSnapshotInspector
                   execution={execution}
                   instanceId={detail.instance.id}
+                  stepName={
+                    detail.definition.steps.find(
+                      (step) => step.id === execution.stepId,
+                    )?.name
+                  }
                   key={execution.id}
                 />
               ))}

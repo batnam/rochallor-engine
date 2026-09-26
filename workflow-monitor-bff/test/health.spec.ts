@@ -61,10 +61,6 @@ describe("schema compatibility HTTP seam", () => {
 
   beforeAll(async () => {
     postgres = await startPostgresFixture();
-    const admin = new Pool({ connectionString: postgres.dsn });
-    await admin.query("ALTER TABLE workflow_instance DROP COLUMN status");
-    await admin.end();
-
     app = await createMonitorApp({ postgresDsn: postgres.readOnlyDsn });
     await app.init();
   });
@@ -74,14 +70,67 @@ describe("schema compatibility HTTP seam", () => {
     await postgres?.stop();
   });
 
-  it("reports unavailable when a required column is missing", async () => {
+  it.each([
+    ["workflow_instance", "status"],
+    ["workflow_instance", "variables"],
+    ["workflow_definition", "raw_json"],
+    ["step_execution", "output_snapshot"],
+    ["job", "job_type"],
+  ])("reports unavailable when %s.%s is missing", async (table, column) => {
     if (!app) {
       throw new Error("BFF app did not start");
     }
+    const admin = new Pool({ connectionString: postgres?.dsn });
+    try {
+      await admin.query(
+        `ALTER TABLE ${table} RENAME COLUMN ${column} TO missing_column`,
+      );
+      await request(app.getHttpServer())
+        .get("/health/ready")
+        .expect(503)
+        .expect({ status: "unavailable" });
+    } finally {
+      await admin.query(
+        `ALTER TABLE ${table} RENAME COLUMN missing_column TO ${column}`,
+      );
+      await admin.end();
+    }
+  });
 
-    await request(app.getHttpServer())
-      .get("/health/ready")
-      .expect(503)
-      .expect({ status: "unavailable" });
+  it("rejects an incompatible column type even when all columns exist", async () => {
+    const admin = new Pool({ connectionString: postgres?.dsn });
+    try {
+      await admin.query(
+        "ALTER TABLE workflow_definition ALTER COLUMN raw_json TYPE text",
+      );
+      await request(app?.getHttpServer()).get("/health/ready").expect(503);
+    } finally {
+      await admin.query(
+        "ALTER TABLE workflow_definition ALTER COLUMN raw_json TYPE jsonb USING raw_json::jsonb",
+      );
+      await admin.end();
+    }
+  });
+
+  it("fails startup with a diagnostic before serving an incompatible schema", async () => {
+    const admin = new Pool({ connectionString: postgres?.dsn });
+    let incompatibleApp: INestApplication | undefined;
+    try {
+      await admin.query(
+        "ALTER TABLE job RENAME COLUMN job_type TO missing_column",
+      );
+      incompatibleApp = await createMonitorApp({
+        postgresDsn: postgres?.readOnlyDsn,
+      });
+      await expect(incompatibleApp.init()).rejects.toThrow(
+        /Monitor schema.*job/i,
+      );
+    } finally {
+      await incompatibleApp?.close();
+      await admin.query(
+        "ALTER TABLE job RENAME COLUMN missing_column TO job_type",
+      );
+      await admin.end();
+    }
   });
 });

@@ -178,6 +178,7 @@ describe("Process Variable HTTP seam", () => {
       .expect(200);
 
     expect(response.body).toEqual({
+      outputInterpretation: "variableDelta",
       recordedInput: {
         status: "present",
         value: { applicant: "Ada", notes: null },
@@ -202,6 +203,7 @@ describe("Process Variable HTTP seam", () => {
       )
       .expect(200)
       .expect({
+        outputInterpretation: "variableDelta",
         recordedInput: {
           status: "present",
           value: null,
@@ -224,11 +226,25 @@ describe("Process Variable HTTP seam", () => {
       )
       .expect(200);
 
+    expect(response.body.outputInterpretation).toBe("fullState");
     expect(response.body.recordedOutput).toEqual({
       status: "present",
       value: { applicant: "Ada", riskScore: 720 },
       sizeBytes: expect.any(Number),
     });
+  });
+
+  it("labels unsupported step output semantics as unknown", async () => {
+    if (!app || !postgres) throw new Error("Fixture unavailable");
+    await postgres.query(
+      `INSERT INTO step_execution (id,instance_id,step_id,step_type,status,input_snapshot,output_snapshot) VALUES ('unknown-output','variables-instance','custom','CUSTOM','COMPLETED','{}','{}');`,
+    );
+    const response = await request(app.getHttpServer())
+      .get(
+        "/api/v1/process-instances/variables-instance/step-executions/unknown-output/variables",
+      )
+      .expect(200);
+    expect(response.body.outputInterpretation).toBe("unknown");
   });
 
   it("returns 404 when a Step Execution belongs to another Process Instance", async () => {
@@ -268,6 +284,7 @@ describe("Process Variable HTTP seam", () => {
         )
         .expect(200)
         .expect({
+          outputInterpretation: "variableDelta",
           recordedInput: {
             status: "present",
             value: { ok: true },

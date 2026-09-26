@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
+import { createServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -57,7 +58,22 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 }
 
 async function startReleasePostgres(): Promise<StartedPostgreSqlContainer> {
-  const postgres = await new PostgreSqlContainer("postgres:16-alpine").start();
+  // Docker changes automatically published ports after stop/start. Pin an
+  // available port so the outage test restores the same database endpoint.
+  const portProbe = createServer();
+  await new Promise<void>((resolve, reject) => {
+    portProbe.once("error", reject);
+    portProbe.listen(0, "0.0.0.0", resolve);
+  });
+  const address = portProbe.address();
+  await new Promise<void>((resolve, reject) =>
+    portProbe.close((error) => (error ? reject(error) : resolve())),
+  );
+  if (!address || typeof address === "string")
+    throw new Error("No fixture port available");
+  const postgres = await new PostgreSqlContainer("postgres:16-alpine")
+    .withExposedPorts({ container: 5432, host: address.port })
+    .start();
   const pool = new Pool({ connectionString: postgres.getConnectionUri() });
   const migrationsDirectory = path.join(
     repositoryRoot,
@@ -253,6 +269,14 @@ async function seedReleaseFixture(adminDsn: string): Promise<void> {
       '{"phase":"before-release"}',
       '{"phase":"after-release"}'
     );
+
+    INSERT INTO user_task (id, instance_id, step_execution_id, step_id, assignee_group)
+    VALUES
+      ('review-task-a', 'release-parallel', 'parallel-a-attempt-2', 'review-a', 'release-reviewers'),
+      ('review-task-b', 'release-parallel', 'parallel-b-attempt-1', 'review-b', 'release-reviewers');
+
+    INSERT INTO boundary_event_schedule (id, instance_id, step_execution_id, target_step_id, fire_at, interrupting)
+    VALUES ('review-timer', 'release-parallel', 'parallel-a-attempt-2', 'review-b', '2099-01-01T00:00:00Z', false);
 
     INSERT INTO job (
       id,

@@ -159,7 +159,9 @@ export class IncidentQueries {
         execution.ended_at AS occurred_at,
         related_job.id AS job_id,
         related_job.job_type,
-        related_job.status AS job_status
+        related_job.status AS job_status,
+        latest.id AS latest_execution_id, latest.status AS latest_status,
+        latest.attempt_number AS latest_attempt_number
       FROM step_execution AS execution
       JOIN workflow_instance AS instance
         ON instance.id = execution.instance_id
@@ -176,6 +178,11 @@ export class IncidentQueries {
         ORDER BY step_execution_id, created_at DESC, id DESC
       ) AS related_job
         ON related_job.step_execution_id = execution.id
+      JOIN LATERAL (
+        SELECT id, status, attempt_number FROM step_execution
+        WHERE instance_id = execution.instance_id AND step_id = execution.step_id
+        ORDER BY attempt_number DESC, started_at DESC, id DESC LIMIT 1
+      ) latest ON true
       WHERE ${conditions.join(" AND ")}
       ORDER BY execution.ended_at DESC, execution.id DESC
       LIMIT $${values.length}
@@ -211,7 +218,9 @@ export class IncidentQueries {
           instance.business_key,
           related_job.id AS job_id,
           related_job.job_type,
-          related_job.status AS job_status
+          related_job.status AS job_status,
+        latest.id AS latest_execution_id, latest.status AS latest_status,
+        latest.attempt_number AS latest_attempt_number
         FROM step_execution AS execution
         JOIN workflow_instance AS instance
           ON instance.id = execution.instance_id
@@ -228,6 +237,11 @@ export class IncidentQueries {
           ORDER BY step_execution_id, created_at DESC, id DESC
         ) AS related_job
           ON related_job.step_execution_id = execution.id
+        JOIN LATERAL (
+          SELECT id, status, attempt_number FROM step_execution
+          WHERE instance_id = execution.instance_id AND step_id = execution.step_id
+          ORDER BY attempt_number DESC, started_at DESC, id DESC LIMIT 1
+        ) latest ON true
         WHERE execution.id = $1
           AND execution.status = 'FAILED'
           AND instance.status <> 'CANCELLED'
@@ -253,6 +267,12 @@ export class IncidentQueries {
 function mapListItem(row: IncidentRow): IncidentListItem {
   return {
     id: row.id,
+    historical: row.id !== row.latest_execution_id,
+    latestAttempt: {
+      executionId: row.latest_execution_id,
+      status: row.latest_status,
+      attemptNumber: row.latest_attempt_number,
+    },
     processInstanceId: row.instance_id,
     definitionId: row.definition_id,
     definitionVersion: row.definition_version,

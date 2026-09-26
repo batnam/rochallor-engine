@@ -2,9 +2,8 @@
 
 ## Purpose
 
-This artifact captures the initial query shapes used to qualify the Rochallor
-Monitor Incident list. It is evidence for later performance testing, not a
-production performance guarantee.
+This artifact records measured regression budgets for the production Monitor
+Incident list queries. It is not a production latency guarantee.
 
 ## Dataset
 
@@ -29,10 +28,41 @@ queries through the monitor's `SELECT`-only PostgreSQL role.
 2. A cursor page filtered by exact definition ID, exact Job type, and an
    inclusive-from/exclusive-to UTC occurrence range.
 
-Every plan must execute successfully and return no more than the requested
-51 rows (50 visible rows plus one look-ahead row).
+The tests invoke the production query classes, capture their SQL and parameters,
+then run three warmed `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` samples. The
+cursor case uses the actual cursor returned by the first page. Each plan must
+return between 1 and 51 rows (50 visible rows plus one look-ahead row).
 
-## Initial index constraints
+Latency is the median PostgreSQL execution time, excluding network and browser
+rendering. Shared blocks are root-level hits plus reads, without summing the
+same buffers again from child nodes. Scanned rows sum relation-node rows and
+filter/recheck removals, multiplied by actual loops. Temporary buffer I/O and
+full plans are recorded too. Results live in `testresults/query-plans/` under the
+BFF; CI archives this directory even when a budget fails.
+
+Measurements below were made on 2026-09-25 with PostgreSQL 16 Alpine in local
+Docker and Node.js 24.15.0. Fixed fixtures and warm-cache medians reduce noise;
+budgets allow headroom for shared CI hosts. Compare plans before changing a
+threshold. Repeat with production-like payload sizes, skew, concurrency, and
+hardware before using these values for capacity planning.
+
+## Measured baseline and budgets
+
+| Query | Median ms | Shared blocks | Scanned rows | Maximum ms / blocks / rows |
+| --- | ---: | ---: | ---: | --- |
+| First page with latest-attempt context | 126.094 | 363,658 | 290,091 | 1,000 / 500,000 / 400,000 |
+| Filtered cursor with latest-attempt context | 41.282 | 47,206 | 64,951 | 500 / 50,000 / 100,000 |
+
+These refreshed measurements include the lateral latest-step-attempt lookup
+used to label historical failures. Temporary blocks were 7,362 and 1,005,
+respectively. The original budgets remain unchanged; the filtered query is
+close to its buffer budget and should be watched as the data shape changes.
+
+The small result limit does not imply cheap work: the first page still joins
+and sorts substantial history. Resource limits bound this work, but larger
+deployments still need workload-specific tuning.
+
+## Index evaluation
 
 The unchanged engine schema indexes Step Executions by Process Instance and
 start time, but not by failed status or `ended_at`. It also has no index on
@@ -40,8 +70,29 @@ start time, but not by failed status or `ended_at`. It also has no index on
 once before joining it to canonical failed Step Executions, avoiding a
 correlated Job-table scan for every Incident.
 
-No engine migration is introduced in this version. Any required engine-owned
-indexes must be proposed as a separate engine change.
+Before latest-attempt metadata was added, an isolated test database was used to
+measure these candidate indexes together (historical experiment, not the
+current-query baseline above):
+
+```sql
+CREATE INDEX monitor_experiment_failed_order
+  ON step_execution (ended_at DESC, id DESC) WHERE status = 'FAILED';
+CREATE INDEX monitor_experiment_job_latest
+  ON job (step_execution_id, created_at DESC, id DESC) INCLUDE (job_type, status);
+```
+
+| Query | Before ms | With candidates ms | Shared blocks before → after | Temp blocks before → after |
+| --- | ---: | ---: | --- | --- |
+| First page | 192.604 | 187.787 | 362,450 → 363,085 | 6,978 → 5,973 |
+| Filtered cursor | 31.203 | 24.554 | 22,456 → 23,091 | 1,005 → 0 |
+
+These indexes reduce sorting/spill for the filtered case but do not materially
+reduce first-page work. The global latest-job subquery and joins remain costly.
+No Engine migration is justified by this experiment alone, especially given
+write overhead. Any further proposal should compare query shape and index
+changes together, preserving latest-job/filter semantics, on representative
+history and concurrent Engine writes. The candidate indexes were created only
+inside a disposable test database.
 
 ## Reproduction
 
@@ -49,8 +100,9 @@ Run:
 
 ```sh
 cd workflow-monitor-bff
-DOCKER_HOST=unix:///Users/batnamv/.docker/run/docker.sock pnpm test -- \
+pnpm test -- \
   test/incident-query-plan.spec.ts
 ```
 
-Set `DOCKER_HOST` to the local Docker socket when it differs from the example.
+Docker must be available. Set `DOCKER_HOST` only if your local environment
+requires a non-default Docker socket.

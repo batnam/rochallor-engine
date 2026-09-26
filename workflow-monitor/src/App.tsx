@@ -1,9 +1,22 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import { IncidentsRoute } from "./routes/IncidentsRoute";
 import type { Navigation } from "./routes/Navigation";
-import { ProcessInstanceRoute } from "./routes/ProcessInstanceRoute";
+import { OverviewRoute } from "./routes/OverviewRoute";
 import { ProcessInstancesRoute } from "./routes/ProcessInstancesRoute";
+
+const ProcessInstanceRoute = lazy(() =>
+  import("./routes/ProcessInstanceRoute").then((module) => ({
+    default: module.ProcessInstanceRoute,
+  })),
+);
 
 interface Location {
   pathname: string;
@@ -47,6 +60,10 @@ export function App(): ReactNode {
   if (location.pathname === "/") {
     content = (
       <ProcessInstancesRoute navigation={navigation} search={location.search} />
+    );
+  } else if (location.pathname === "/overview") {
+    content = (
+      <OverviewRoute navigation={navigation} search={location.search} />
     );
   } else if (processInstanceMatch) {
     const instanceId = decodeURIComponent(processInstanceMatch[1]);
@@ -112,6 +129,19 @@ export function App(): ReactNode {
           <span className="rm-sidebar-label">Monitoring</span>
           <nav aria-label="Monitor sections" className="rm-sidebar-nav">
             <a
+              href="/overview"
+              aria-current={
+                location.pathname === "/overview" ? "page" : undefined
+              }
+              onClick={(event) => {
+                event.preventDefault();
+                navigation.push("/overview");
+              }}
+            >
+              <span aria-hidden="true" className="rm-nav-marker" />
+              Overview
+            </a>
+            <a
               aria-current={processInstancesActive ? "page" : undefined}
               href="/"
               onClick={(event) => {
@@ -141,13 +171,29 @@ export function App(): ReactNode {
         <div className="rm-workspace">
           <nav aria-label="Breadcrumb" className="rm-breadcrumb">
             <a
-              href={incidentsActive ? "/incidents" : "/"}
+              href={
+                location.pathname === "/overview"
+                  ? "/overview"
+                  : incidentsActive
+                    ? "/incidents"
+                    : "/"
+              }
               onClick={(event) => {
                 event.preventDefault();
-                navigation.push(incidentsActive ? "/incidents" : "/");
+                navigation.push(
+                  location.pathname === "/overview"
+                    ? "/overview"
+                    : incidentsActive
+                      ? "/incidents"
+                      : "/",
+                );
               }}
             >
-              {incidentsActive ? "Incidents" : "Process Instances"}
+              {location.pathname === "/overview"
+                ? "Overview"
+                : incidentsActive
+                  ? "Incidents"
+                  : "Process Instances"}
             </a>
             {detailId ? (
               <>
@@ -158,7 +204,15 @@ export function App(): ReactNode {
               </>
             ) : null}
           </nav>
-          {content}
+          <Suspense
+            fallback={
+              <main className="rm-page" aria-busy="true">
+                Loading Process Instance…
+              </main>
+            }
+          >
+            {content}
+          </Suspense>
         </div>
       </div>
     </div>

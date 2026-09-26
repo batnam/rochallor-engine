@@ -18,6 +18,8 @@ import type {
   WorkflowDefinitionDocument,
 } from "./dto/process-instance.dto";
 
+import { readExecutionContext } from "./execution-context";
+
 const PROCESS_INSTANCE_STATUSES = new Set([
   "ACTIVE",
   "WAITING",
@@ -34,6 +36,36 @@ function statusValues(status: string | string[] | undefined): string[] {
 }
 
 function validateFilters(filters: ProcessInstanceFilters): void {
+  if (
+    filters.definitionVersion !== undefined &&
+    (typeof filters.definitionVersion !== "string" ||
+      !/^\d+$/.test(filters.definitionVersion) ||
+      Number(filters.definitionVersion) < 1 ||
+      Number(filters.definitionVersion) > 2147483647 ||
+      !filters.definitionId)
+  ) {
+    throw new BadRequestException(
+      "Definition version must be a positive integer with a Definition ID",
+    );
+  }
+  if (
+    filters.currentStepId !== undefined &&
+    (typeof filters.currentStepId !== "string" ||
+      !filters.currentStepId ||
+      !filters.definitionId)
+  ) {
+    throw new BadRequestException("Current Step ID requires a Definition ID");
+  }
+  if (
+    filters.stepStartedBefore !== undefined &&
+    (!filters.currentStepId ||
+      typeof filters.stepStartedBefore !== "string" ||
+      !isUtcTimestamp(filters.stepStartedBefore))
+  ) {
+    throw new BadRequestException(
+      "Step-start cutoff requires a Current Step ID and a valid UTC timestamp",
+    );
+  }
   const statuses = statusValues(filters.status);
   if (statuses.some((status) => !PROCESS_INSTANCE_STATUSES.has(status))) {
     throw new BadRequestException("Unknown Process Instance status");
@@ -58,6 +90,9 @@ function filterFingerprint(filters: ProcessInstanceFilters): string {
     .update(
       JSON.stringify({
         definitionId: filters.definitionId ?? null,
+        definitionVersion: filters.definitionVersion ?? null,
+        currentStepId: filters.currentStepId ?? null,
+        stepStartedBefore: filters.stepStartedBefore ?? null,
         statuses,
         businessKey: filters.businessKey ?? null,
         from: filters.from ?? null,
@@ -175,6 +210,9 @@ export class ProcessInstanceQueries {
   }> {
     const filters: ProcessInstanceFilters = {
       definitionId: query.definitionId,
+      definitionVersion: query.definitionVersion,
+      currentStepId: query.currentStepId,
+      stepStartedBefore: query.stepStartedBefore,
       status: query.status,
       businessKey: query.businessKey,
       from: query.from,
@@ -194,6 +232,22 @@ export class ProcessInstanceQueries {
 
     if (filters.definitionId) {
       addCondition("definition_id = ?", filters.definitionId);
+    }
+    if (filters.definitionVersion)
+      addCondition("definition_version = ?::int", filters.definitionVersion);
+    if (filters.currentStepId) {
+      addCondition("? = ANY(current_step_ids)", filters.currentStepId);
+      conditions.push("workflow_instance.status IN ('ACTIVE', 'WAITING')");
+    }
+    if (filters.stepStartedBefore) {
+      values.push(filters.currentStepId, filters.stepStartedBefore);
+      conditions.push(`EXISTS (
+        SELECT 1 FROM (
+          SELECT status, started_at FROM step_execution
+          WHERE instance_id = workflow_instance.id AND step_id = $${values.length - 1}
+          ORDER BY attempt_number DESC, started_at DESC, id DESC LIMIT 1
+        ) current_execution WHERE status = 'RUNNING' AND started_at < $${values.length}::timestamptz
+      )`);
     }
     const statuses = statusValues(filters.status);
     if (statuses.length > 0) {
@@ -266,9 +320,12 @@ export class ProcessInstanceQueries {
       await client.query(
         "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
       );
-      const instanceResult = await client.query<ProcessInstanceRow>(
+      const instanceResult = await client.query<
+        ProcessInstanceRow & { observed_at: Date }
+      >(
         `
           SELECT
+            transaction_timestamp() AS observed_at,
             id,
             definition_id,
             definition_version,
@@ -340,6 +397,13 @@ export class ProcessInstanceQueries {
         );
         failedStepId = failedExecutionResult.rows[0]?.step_id ?? null;
       }
+      const executionContext = await readExecutionContext(
+        client,
+        instanceId,
+        instanceRow.status === "ACTIVE" || instanceRow.status === "WAITING"
+          ? instanceRow.current_step_ids
+          : [],
+      );
       await client.query("COMMIT");
 
       const instance: ProcessInstanceListItem = {
@@ -354,6 +418,8 @@ export class ProcessInstanceQueries {
         businessKey: instanceRow.business_key,
       };
       return {
+        observedAt: instanceRow.observed_at,
+        executionContext,
         instance,
         definition: {
           ...definitionRow.raw_json,

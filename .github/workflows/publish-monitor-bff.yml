@@ -56,6 +56,14 @@ jobs:
         working-directory: workflow-monitor-bff
         run: pnpm build
 
+      - name: Archive query plans
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-query-plans
+          path: workflow-monitor-bff/testresults/query-plans/
+          if-no-files-found: ignore
+
       - name: Build image
         run: docker build workflow-monitor-bff
 
