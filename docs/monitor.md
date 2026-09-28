@@ -489,7 +489,3 @@ The four first deliveries are available:
 
 Selected business-variable searches remain deferred until concrete fields are
 identified and query cost is measured.
-
-See the [feature roadmap and implementation plan](monitor-roadmap.md) for
-scope, dependencies, implementation tasks, acceptance criteria, and the
-documentation updates required for each delivery.

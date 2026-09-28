@@ -59,7 +59,6 @@ nav:
   - Workflow Modeller: modeller.md
   - Monitor:
     - Operator Guide: monitor.md
-    - Feature Roadmap: monitor-roadmap.md
   - Workflow Format: workflow-format.md
   - Configuration: configuration.md
   - Deployment:
