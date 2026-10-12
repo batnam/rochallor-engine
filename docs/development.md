@@ -304,7 +304,7 @@ cd workflow-engine
 WE_REST_PORT=8080 make contract-replay
 ```
 
-See [coverage and baseline contract decisions](../workflow-engine/test/contract/README.md). Wrong status/schema/business outcome or missing evidence makes the command fail; schema replay does not imply untested API behaviors conform.
+See [coverage and baseline contract decisions](https://github.com/batnam/rochallor-engine/blob/main/workflow-engine/test/contract/README.md). Wrong status/schema/business outcome or missing evidence makes the command fail; schema replay does not imply untested API behaviors conform.
 
 ---
 

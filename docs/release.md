@@ -124,9 +124,10 @@ changes. CI uses explicit Bash `pipefail` when recording verification logs.
 | Python | Version set before wheel/sdist build; fresh consumers verify both. E2E installs the wheel; PyPI receives those same distribution files. |
 | Java | Version set before JAR/POM build; external Maven consumer and E2E resolve the candidate repository. Publish restores verified JAR/POM/module bytes and signs them without regenerating them. |
 
-For local reproduction and package preparation, see [E2E instructions](../e2e/README.md).
-Local evidence for R01–R19 and the remaining acceptance gates is indexed in
-[enhancement plans](enhancements/README.md) and the [review dossier](enhancements/review-2026-10-11.md).
+For local reproduction and package preparation, see [E2E instructions](https://github.com/batnam/rochallor-engine/blob/main/e2e/README.md).
+Local planning and review evidence is kept under `docs/enhancements/`,
+`testresults/` and `perf/reports/` in the review workspace. These gitignored
+files are not included in the repository or this documentation site.
 Checksums identify a local candidate; the tag workflow rebuilds and verifies a
 candidate on the final committed source before publishing its verified bytes.
 

@@ -226,7 +226,7 @@ curl http://localhost:9091/metrics
 
 ## Publishing to Artifact Hub
 
-The [Helm publish workflow](../.github/workflows/publish-helm.yml) verifies, packages and pushes the chart to `oci://ghcr.io/batnam/charts` on `helm-v<x.y.z>` tags. The chart version is independent of the engine version pinned by `appVersion` or `image.tag`.
+The [Helm publish workflow](https://github.com/batnam/rochallor-engine/blob/main/.github/workflows/publish-helm.yml) verifies, packages and pushes the chart to `oci://ghcr.io/batnam/charts` on `helm-v<x.y.z>` tags. The chart version is independent of the engine version pinned by `appVersion` or `image.tag`.
 
 To list the chart on [Artifact Hub](https://artifacthub.io):
 
