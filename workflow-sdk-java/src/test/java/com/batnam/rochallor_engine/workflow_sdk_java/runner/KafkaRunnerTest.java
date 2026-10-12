@@ -48,14 +48,19 @@ class KafkaRunnerTest {
         var partition = new org.apache.kafka.common.TopicPartition("workflow.jobs.test", 0);
         var committed = new java.util.concurrent.CopyOnWriteArrayList<Long>();
         var callbackStarted = new java.util.concurrent.CountDownLatch(1);
+        // Keep acknowledgement pending until polling/revocation is observed,
+        // regardless of whether the test thread outlasts the retry backoff.
+        var allowAcknowledgement = new java.util.concurrent.CountDownLatch(1);
+        var polledWhilePending = new java.util.concurrent.CountDownLatch(1);
         var acknowledged = new java.util.concurrent.CountDownLatch(1);
-        AtomicInteger callbacks = new AtomicInteger(), handlers = new AtomicInteger(), polls = new AtomicInteger();
+        AtomicInteger callbacks = new AtomicInteger(), handlers = new AtomicInteger();
         EngineClient engine = new EngineClient() {
             public List<Job> pollJobs(String worker, List<String> types, int max) { return List.of(); }
-            public void completeJob(String id, String worker, Map<String,Object> vars) {
+            public void completeJob(String id, String worker, Map<String,Object> vars) throws Exception {
                 int count = callbacks.incrementAndGet(); callbackStarted.countDown();
                 if (mode.equals("permanent")) throw new com.batnam.rochallor_engine.workflow_sdk_java.client.HttpError("denied", 403);
                 if (count == 1 || mode.equals("shutdown")) throw new RuntimeException("unavailable");
+                assertTrue(allowAcknowledgement.await(5, java.util.concurrent.TimeUnit.SECONDS));
             }
             public void failJob(String id, String worker, String reason, boolean retryable) { fail("unexpected business failure"); }
         };
@@ -63,7 +68,6 @@ class KafkaRunnerTest {
         registry.register("test", ctx -> { handlers.incrementAndGet(); return Map.of(); });
         var consumer = new org.apache.kafka.clients.consumer.MockConsumer<String,byte[]>(org.apache.kafka.clients.consumer.OffsetResetStrategy.EARLIEST) {
             @Override public synchronized org.apache.kafka.clients.consumer.ConsumerRecords<String,byte[]> poll(java.time.Duration timeout) {
-                polls.incrementAndGet();
                 try { Thread.sleep(2); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
                 return super.poll(timeout);
             }
@@ -88,9 +92,8 @@ class KafkaRunnerTest {
                     return;
                 }
                 assertTrue(callbackStarted.await(1, java.util.concurrent.TimeUnit.SECONDS));
-                int before = polls.get();
-                Thread.sleep(25);
-                assertTrue(polls.get() > before);
+                consumer.schedulePollTask(polledWhilePending::countDown);
+                assertTrue(polledWhilePending.await(1, java.util.concurrent.TimeUnit.SECONDS));
                 assertTrue(committed.isEmpty());
                 if (mode.equals("revoke")) {
                     consumer.schedulePollTask(() -> {
@@ -99,7 +102,10 @@ class KafkaRunnerTest {
                         consumer.updateBeginningOffsets(Map.of(partition, 10L));
                         consumer.seek(partition, 10);
                         consumer.addRecord(new ConsumerRecord<>(partition.topic(), 0, 10, "key", data));
+                        allowAcknowledgement.countDown();
                     });
+                } else if (!mode.equals("shutdown")) {
+                    allowAcknowledgement.countDown();
                 }
                 if (mode.equals("shutdown")) {
                     runner.close(); loop.join(1000); assertTrue(committed.isEmpty());

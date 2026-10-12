@@ -87,13 +87,13 @@ def cluster_checks(args, output):
                    for c in engine_pod(release)["status"].get("conditions", []))
 
     def helm(release, chart, image, *, database="workflow", mode="polling", hook=False,
-             secret=False, success=True):
+             use_external_db: bool = False, success=True):
         repository, tag = image.rsplit(":", 1)
         values = {"image": {"repository": repository, "tag": tag, "pullPolicy": "Never"},
                   "engine": {"dispatchMode": mode}, "kafka": {"seedBrokers": "absent-broker:9092"},
                   "postgresql": {"dsn": f"postgres://workflow:workflow@db/{database}?sslmode=disable"},
                   "migrations": {"enabled": hook, "activeDeadlineSeconds": 25}}
-        if secret:
+        if use_external_db:
             values["postgresql"] = {"existingSecret": "external-db"}
         filename = output / "test-values.yaml"
         filename.write_text(yaml.safe_dump(values))
@@ -101,7 +101,7 @@ def cluster_checks(args, output):
         result = run("helm", "upgrade", "--install", release, str(chart), "-f", str(filename),
                      "--wait", "--timeout", "90s", env=env, check=False, timeout=150)
         commands.append({"release": release, "mode": mode, "hook": hook, "database": database,
-                         "existingSecret": secret, "exit": result.returncode,
+                         "existingSecret": use_external_db, "exit": result.returncode,
                          "seconds": round(time.monotonic() - before, 2)})
         (output / f"helm-{len(commands)}.log").write_text(result.stdout + result.stderr)
         assert (result.returncode == 0) == success, result.stdout + result.stderr
@@ -149,14 +149,14 @@ def cluster_checks(args, output):
             "INSERT INTO schema_migrations VALUES(10, false)", "workflow_pending")
         kubectl("create", "secret", "generic", "external-db", "--from-literal=dsn="
                 "postgres://workflow:workflow@db/workflow_pending?sslmode=disable")
-        helm("probe", args.chart, args.image, hook=True, secret=True)
+        helm("probe", args.chart, args.image, hook=True, use_external_db=True)
         assert sql("SELECT version || ':' || dirty FROM schema_migrations", "workflow_pending") == "11:false"
-        helm("probe", args.chart, args.image, hook=True, secret=True)
+        helm("probe", args.chart, args.image, hook=True, use_external_db=True)
 
         # No live Kafka broker is needed for the migration CLI. The initialized
         # engine remains ready and can buffer durable outbox rows.
         for mode in ("polling", "kafka_outbox"):
-            helm("probe", args.chart, args.image, hook=True, secret=True, mode=mode)
+            helm("probe", args.chart, args.image, hook=True, use_external_db=True, mode=mode)
             pod = engine_pod("probe")
             assert ready("probe")
             (output / f"{mode}-before-outage.json").write_text(json.dumps(pod, indent=2))
@@ -188,7 +188,7 @@ def cluster_checks(args, output):
         # shell exit 0. The failed hook's actual logs/exit code are retained.
         before = json.loads(kubectl("get", "deployment", "probe-rochallor", "-o", "json").stdout)
         sql("UPDATE schema_migrations SET dirty=true", "workflow_pending")
-        helm("probe", args.chart, args.image, hook=True, secret=True, success=False)
+        helm("probe", args.chart, args.image, hook=True, use_external_db=True, success=False)
         after = json.loads(kubectl("get", "deployment", "probe-rochallor", "-o", "json").stdout)
         assert before["metadata"]["generation"] == after["metadata"]["generation"]
         failed = kubectl("get", "pods", "-l", "job-name=probe-rochallor-migrations", "-o", "json").stdout

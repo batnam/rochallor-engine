@@ -31,8 +31,10 @@ jobs:
       - run: pip install PyYAML==6.0.3
       - name: Install kind
         run: |
-          curl -fsSL https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64 -o /usr/local/bin/kind
-          chmod +x /usr/local/bin/kind
+          mkdir -p "$RUNNER_TEMP/kind-bin"
+          curl -fsSL https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64 -o "$RUNNER_TEMP/kind-bin/kind"
+          chmod +x "$RUNNER_TEMP/kind-bin/kind"
+          echo "$RUNNER_TEMP/kind-bin" >> "$GITHUB_PATH"
       - name: Package exact candidate and select engine
         id: candidate
         env:

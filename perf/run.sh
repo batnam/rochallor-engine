@@ -459,6 +459,7 @@ else
     PERF_K6_CONTAINER="${COMPOSE_PROJECT_NAME}-k6"
     export PERF_K6_CONTAINER
     docker run --rm --name "$PERF_K6_CONTAINER" \
+      --user "$(id -u):$(id -g)" \
       --network "${COMPOSE_PROJECT_NAME}-net" \
       -v "${SCRIPT_DIR}/scenarios:/scenarios:ro" \
       -v "${SCRIPT_DIR}/lib:/lib:ro" \
