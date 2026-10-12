@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net"
@@ -40,6 +42,19 @@ func main() {
 }
 
 func run() error {
+	command, err := parseCommand(os.Args[1:])
+	if errors.Is(err, flag.ErrHelp) {
+		fmt.Println("Usage: engine [-migrate-only | -migrate-down]")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if command != "" {
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		return runMigration(ctx, command)
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -141,7 +156,8 @@ func run() error {
 	boundary.StartTimerSweeper(ctx, dbConn, bndStore, instSvc, 5*time.Second)
 	boundary.StartBoundaryHousekeeper(ctx, dbConn, bndStore, 1*time.Hour, 24*time.Hour)
 	// ── REST server ───────────────────────────────────────────────────────────
-	restHandler := rest.NewRouter(dbConn, jobStore, defRepo, instSvc, dispatchRT.Dispatcher(), cfg.DispatchMode)
+	readiness := rest.NewReadiness(ctx, pool.Ping)
+	restHandler := rest.NewRouter(dbConn, jobStore, defRepo, instSvc, dispatchRT.Dispatcher(), cfg.DispatchMode, readiness)
 	restServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.RESTPort),
 		Handler:      restHandler,
@@ -161,6 +177,17 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("grpc listen: %w", err)
 	}
+	defer grpcLis.Close()
+	restLis, err := net.Listen("tcp", restServer.Addr)
+	if err != nil {
+		return fmt.Errorf("rest listen: %w", err)
+	}
+	defer restLis.Close()
+	metricsLis, err := net.Listen("tcp", metricsServer.Addr)
+	if err != nil {
+		return fmt.Errorf("metrics listen: %w", err)
+	}
+	defer metricsLis.Close()
 	grpcSrv := grpc.NewServer(
 		grpc.UnaryInterceptor(grpcserver.LoggingUnaryInterceptor()),
 	)
@@ -168,17 +195,18 @@ func run() error {
 
 	// ── Start all servers ─────────────────────────────────────────────────────
 	errCh := make(chan error, 3)
+	readiness.MarkReady()
 
 	go func() {
 		slog.Info("engine: REST listening", "addr", restServer.Addr)
-		if err := restServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := restServer.Serve(restLis); err != nil && err != http.ErrServerClosed {
 			errCh <- fmt.Errorf("rest: %w", err)
 		}
 	}()
 
 	go func() {
 		slog.Info("engine: metrics listening", "addr", metricsServer.Addr)
-		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := metricsServer.Serve(metricsLis); err != nil && err != http.ErrServerClosed {
 			errCh <- fmt.Errorf("metrics: %w", err)
 		}
 	}()

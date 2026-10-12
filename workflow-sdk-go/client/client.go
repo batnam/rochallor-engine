@@ -5,6 +5,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -20,11 +21,23 @@ type EngineClient interface {
 	FailJob(ctx context.Context, jobID, workerID, errorMessage string, retryable bool) error
 }
 
+// LeaseExtender is optional: existing custom EngineClient implementations need
+// not add methods unless they opt into heartbeat.
+type LeaseExtender interface {
+	ExtendJobLease(ctx context.Context, jobID, workerID string, leaseSeconds int) (time.Time, error)
+}
+
+var (
+	ErrHeartbeatUnsupported = errors.New("engine/client does not support heartbeat; upgrade every engine replica before enabling it")
+	ErrLeaseLost            = errors.New("job lease lost")
+)
+
 // PollJobsRequest is the input to PollJobs.
 type PollJobsRequest struct {
-	WorkerID string
-	JobTypes []string
-	MaxJobs  int
+	WorkerID     string
+	JobTypes     []string
+	MaxJobs      int
+	LeaseSeconds int // omitted/0: 30 seconds on supported engines; otherwise 5–3600
 }
 
 // Job is a unit of work returned by PollJobs.

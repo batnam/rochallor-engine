@@ -1,0 +1,77 @@
+name: Verify performance harness
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['perf/**', 'workflow-engine/**', 'workflow-sdk-go/**', 'e2e/workers/go/**', 'proto/**', '.github/workflows/verify-performance.yml']
+  pull_request:
+    paths: ['perf/**', 'workflow-engine/**', 'workflow-sdk-go/**', 'e2e/workers/go/**', 'proto/**', '.github/workflows/verify-performance.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: node --test perf/test/report.test.cjs
+      - run: python3 -m unittest discover -s perf/test -p "*test.py" -v
+      - name: REST request metrics stay bounded with real k6
+        run: python3 perf/test/request_groups.py
+      - name: PostgreSQL statistics are collected after writer connections close
+        run: python3 perf/test/postgres_stats.py
+
+  smoke:
+    needs: fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [polling, kafka_outbox]
+        transport: [rest, grpc]
+    env:
+      PERF_WORKER_REPLICAS: '2'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Real short harness run
+        env:
+          TEST_MODE: ${{ matrix.mode }}
+          TEST_TRANSPORT: ${{ matrix.transport }}
+        run: |
+          args=()
+          if [[ "$TEST_MODE" == kafka_outbox ]]; then args+=(--kafka); fi
+          if [[ "$TEST_TRANSPORT" == grpc ]]; then args+=(--grpc); fi
+          bash perf/run.sh --containerized-k6 --ramp-up=5s --steady=30s --ramp-down=5s --target-vus=5 "${args[@]}"
+          bash perf/run.sh --containerized-k6 --scenario=loan-chain-full --ramp-up=5s --steady=30s --ramp-down=5s --target-vus=5 "${args[@]}"
+      - name: Real paired heartbeat cost command
+        if: matrix.mode == 'polling'
+        run: |
+          docker build -t perf-heartbeat-engine workflow-engine
+          docker build -f e2e/workers/go/Dockerfile -t perf-heartbeat-worker .
+          python3 perf/heartbeat.py --sdk=go --transport=${{ matrix.transport }} \
+            --engine-image=perf-heartbeat-engine --worker-image=perf-heartbeat-worker \
+            --output=testresults/heartbeat-cost
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-${{ matrix.mode }}-${{ matrix.transport }}
+          path: |
+            perf/reports/
+            testresults/heartbeat-cost/

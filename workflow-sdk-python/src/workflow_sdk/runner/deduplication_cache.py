@@ -3,7 +3,7 @@ import threading
 from typing import Dict
 
 class DeduplicationCache:
-    def __init__(self, window_seconds: float = 600.0):
+    def __init__(self, window_seconds: float = 600.0) -> None:
         self.window_seconds = window_seconds
         self.cache: Dict[str, float] = {}
         self.lock = threading.Lock()
@@ -23,13 +23,23 @@ class DeduplicationCache:
             self.cache[id] = now
             return False
 
-    def _sweep_loop(self):
+    def contains(self, id: str) -> bool:
+        with self.lock:
+            seen_at = self.cache.get(id)
+            return seen_at is not None and time.time() - seen_at < self.window_seconds
+
+    def mark(self, id: str) -> None:
+        if id:
+            with self.lock:
+                self.cache[id] = time.time()
+
+    def _sweep_loop(self) -> None:
         sweep_interval = max(1.0, self.window_seconds / 4)
         while self.running:
             time.sleep(sweep_interval)
             self.sweep()
 
-    def sweep(self):
+    def sweep(self) -> None:
         now = time.time()
         cutoff = now - self.window_seconds
         with self.lock:
@@ -38,7 +48,7 @@ class DeduplicationCache:
             for k in to_delete:
                 del self.cache[k]
 
-    def close(self):
+    def close(self) -> None:
         self.running = False
         with self.lock:
             self.cache.clear()

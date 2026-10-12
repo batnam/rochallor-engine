@@ -39,6 +39,23 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 
 	registry := handler.New()
+	var recoveryMu sync.Mutex
+	recoveryCalls := map[string]int{}
+	for _, jobType := range []string{"go-sdk-recovery", "go-sdk-failure"} {
+		registry.Register(jobType, func(_ context.Context, job handler.JobContext) (handler.Result, error) {
+			recoveryMu.Lock()
+			recoveryCalls[job.InstanceID]++
+			calls := recoveryCalls[job.InstanceID]
+			recoveryMu.Unlock()
+			if job.JobType == "go-sdk-failure" && job.RetriesRemaining == 2 {
+				return handler.Result{}, fmt.Errorf("sdkRecovery business failure: %s", job.InstanceID)
+			}
+			return handler.Result{VariablesToSet: map[string]any{
+				"sdkRecovery": true, "instanceId": job.InstanceID,
+				"handlerCalls": calls, "attemptId": job.JobID, "remaining": job.RetriesRemaining,
+			}}, nil
+		})
+	}
 
 	// Linear scenario handlers
 	registry.Register("go-step-a", func(_ context.Context, _ handler.JobContext) (handler.Result, error) {
@@ -233,11 +250,56 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Info("worker starting (kafka mode)", "brokers", brokers, "workerID", workerID, "jobTypes", jobTypes)
-		r.Run(ctx)
+		if err := r.Run(ctx); err != nil {
+			slog.Error("Kafka runner stopped with unacknowledged work", "err", err)
+			os.Exit(1)
+		}
 	} else {
-		r := runner.New(runner.Config{WorkerID: workerID}, engineClient, registry)
+		var heartbeatDone chan error
+		if os.Getenv("E2E_HEARTBEAT") == "1" {
+			heartbeatRegistry := handler.New()
+			heartbeatRegistry.Register("go-sdk-heartbeat", func(ctx context.Context, j handler.JobContext) (handler.Result, error) {
+				recoveryMu.Lock()
+				recoveryCalls[j.InstanceID]++
+				calls := recoveryCalls[j.InstanceID]
+				recoveryMu.Unlock()
+				duration, _ := j.Variables["durationMs"].(float64)
+				timer := time.NewTimer(time.Duration(duration) * time.Millisecond)
+				defer timer.Stop()
+				select {
+				case <-ctx.Done():
+					return handler.Result{}, ctx.Err()
+				case <-timer.C:
+				}
+				if failure, _ := j.Variables["failure"].(bool); failure && j.RetriesRemaining == 2 {
+					return handler.Result{}, fmt.Errorf("sdkRecovery heartbeat business failure: %s", j.InstanceID)
+				}
+				return handler.Result{VariablesToSet: map[string]any{"sdkRecovery": true, "instanceId": j.InstanceID, "handlerCalls": calls, "attemptId": j.JobID, "remaining": j.RetriesRemaining}}, nil
+			})
+			heartbeatRunner := runner.New(runner.Config{WorkerID: workerID + "-heartbeat", Parallelism: 2, Heartbeat: envOrDefault("E2E_HEARTBEAT_ENABLED", "1") == "1", LeaseSeconds: 30}, engineClient, heartbeatRegistry)
+			heartbeatDone = make(chan error, 1)
+			go func() {
+				err := heartbeatRunner.RunWithError(ctx)
+				heartbeatDone <- err
+				if err != nil {
+					slog.Error("heartbeat runner failed", "err", err)
+					stop()
+				}
+			}()
+		}
+		r := runner.New(runner.Config{WorkerID: workerID, Parallelism: 2}, engineClient, registry)
 		slog.Info("worker starting (polling mode)", "workerID", workerID)
-		r.Run(ctx)
+		err := r.RunWithError(ctx)
+		stop()
+		if heartbeatDone != nil {
+			if heartbeatErr := <-heartbeatDone; err == nil {
+				err = heartbeatErr
+			}
+		}
+		if err != nil {
+			slog.Error("polling runner failed", "err", err)
+			os.Exit(1)
+		}
 	}
 	slog.Info("worker stopped")
 }

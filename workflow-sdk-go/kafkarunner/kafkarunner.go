@@ -29,7 +29,9 @@ import (
 
 	"github.com/batnam/rochallor-engine/workflow-sdk-go/client"
 	"github.com/batnam/rochallor-engine/workflow-sdk-go/handler"
+	"github.com/batnam/rochallor-engine/workflow-sdk-go/internal/callback"
 	workflowv1 "github.com/batnam/rochallor-engine/workflow-sdk-go/internal/gen/workflow/v1"
+	"github.com/batnam/rochallor-engine/workflow-sdk-go/metrics"
 	"github.com/batnam/rochallor-engine/workflow-sdk-go/retry"
 )
 
@@ -95,6 +97,8 @@ func New(cfg Config, engine client.EngineClient, registry *handler.Registry) (*R
 // Run joins the consumer groups and dispatches records to handlers until
 // ctx is cancelled. In-flight handlers are awaited before Run returns.
 func (r *Runner) Run(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	topics := make([]string, 0, len(r.cfg.JobTypes))
 	for _, jt := range r.cfg.JobTypes {
 		topics = append(topics, "workflow.jobs."+jt)
@@ -107,6 +111,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	// topic maps to the same group; we want per-type groups so canary
 	// fleets don't steal each other's work. Use one client per job type.
 	var clients []*kgo.Client
+	var owners []*ownership
 	defer func() {
 		for _, c := range clients {
 			c.Close()
@@ -125,21 +130,30 @@ func (r *Runner) Run(ctx context.Context) error {
 			kgo.ConsumeTopics(topic),
 			// Standardized cooperative partition assignment strategy
 			kgo.Balancers(kgo.CooperativeStickyBalancer()),
-			kgo.DisableAutoCommit(),
 		)
 		opts = append(opts, r.cfg.KgoOpts...)
+		owner := newOwnership(ctx)
+		// Ownership and commit policy cannot be overridden by tuning options.
+		opts = append(opts, kgo.DisableAutoCommit(), kgo.BlockRebalanceOnPoll(),
+			kgo.OnPartitionsAssigned(owner.assigned),
+			kgo.OnPartitionsRevoked(owner.revoked), kgo.OnPartitionsLost(owner.revoked))
 		cl, err := kgo.NewClient(opts...)
 		if err != nil {
 			return fmt.Errorf("kgo client for %s: %w", topic, err)
 		}
 		clients = append(clients, cl)
+		owners = append(owners, owner)
+	}
+	// Start only after all clients have been constructed successfully.
+	for i, cl := range clients {
 		wg.Add(1)
-		go func(c *kgo.Client) {
+		go func(c *kgo.Client, owner *ownership) {
 			defer wg.Done()
-			if err := r.consumeLoop(ctx, c); err != nil && !errors.Is(err, context.Canceled) {
+			if err := r.consumeLoop(ctx, c, owner); err != nil && !errors.Is(err, context.Canceled) {
 				errCh <- err
+				cancel()
 			}
-		}(cl)
+		}(cl, owners[i])
 	}
 
 	// Dedup TTL sweeper.
@@ -160,96 +174,134 @@ func (r *Runner) Run(ctx context.Context) error {
 	return nil
 }
 
-// consumeLoop polls records, dispatches them, and commits offsets on success.
-func (r *Runner) consumeLoop(ctx context.Context, c *kgo.Client) error {
-	for {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		fetches := c.PollFetches(ctx)
-		if errs := fetches.Errors(); len(errs) > 0 {
-			for _, e := range errs {
+// consumeLoop processes one record at a time. A pending record prevents any
+// later record from its partition from being committed, including on shutdown.
+func (r *Runner) consumeLoop(ctx context.Context, c *kgo.Client, owners *ownership) error {
+	defer c.AllowRebalance()
+	for ctx.Err() == nil {
+		fetches := c.PollRecords(ctx, 1)
+		records := fetches.Records()
+		if len(records) == 0 {
+			c.AllowRebalance()
+			for _, e := range fetches.Errors() {
 				slog.Warn("kafkarunner: fetch error", "topic", e.Topic, "err", e.Err)
 			}
+			continue
 		}
-		it := fetches.RecordIter()
-		for !it.Done() {
-			rec := it.Next()
-			r.dispatchRecord(ctx, rec)
+		rec := records[0]
+		// Capture the assignment before allowing rebalance callbacks. They
+		// cancel this context on revocation while the handler/retry is running.
+		owner := owners.get(rec)
+		c.AllowRebalance()
+		if owner == nil {
+			continue
 		}
-		// Commit offsets for the records we've processed. On a crash before
-		// commit, the broker redelivers — dedup catches the duplicate.
-		if err := c.CommitUncommittedOffsets(ctx); err != nil {
-			slog.Warn("kafkarunner: commit offsets", "err", err)
+		if err := r.dispatchRecord(owner.ctx, rec); err != nil {
+			if owner.ctx.Err() != nil && ctx.Err() == nil {
+				continue
+			}
+			return fmt.Errorf("record %s/%d/%d remains unacknowledged: %w", rec.Topic, rec.Partition, rec.Offset, err)
+		}
+		err := owners.commit(rec, owner, func(ownerCtx context.Context) error {
+			commitCtx, cancel := context.WithTimeout(ownerCtx, callback.AttemptTimeout)
+			defer cancel()
+			return c.CommitRecords(commitCtx, rec)
+		})
+		if err != nil {
+			if owner.ctx.Err() != nil && ctx.Err() == nil {
+				continue
+			}
+			return fmt.Errorf("commit %s/%d/%d: %w", rec.Topic, rec.Partition, rec.Offset, err)
 		}
 	}
+	return ctx.Err()
 }
 
-func (r *Runner) dispatchRecord(ctx context.Context, rec *kgo.Record) {
+func (r *Runner) dispatchRecord(ctx context.Context, rec *kgo.Record) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	log := slog.With("topic", rec.Topic, "partition", rec.Partition, "offset", rec.Offset)
 	var event workflowv1.JobDispatchEvent
 	if err := proto.Unmarshal(rec.Value, &event); err != nil {
-		slog.Error("kafkarunner: proto unmarshal", "topic", rec.Topic, "err", err)
-		return
+		metrics.KafkaRecordErrors.Inc()
+		log.Error("kafkarunner: invalid record; stopping without commit", "err", err)
+		return fmt.Errorf("decode dispatch event: %w", err)
 	}
+	if event.JobId == "" {
+		metrics.KafkaRecordErrors.Inc()
+		log.Error("kafkarunner: dispatch event has no job ID; stopping without commit")
+		return errors.New("dispatch event has no job ID; stopping without commit")
+	}
+	log = log.With("job_id", event.JobId, "dedup_id", event.DedupId)
 	if event.DedupId != "" && r.seenRecently(event.DedupId) {
-		slog.Debug("kafkarunner: skipping duplicate job", "job_id", event.JobId, "dedup_id", event.DedupId)
-		return
+		log.Debug("kafkarunner: skipping confirmed duplicate")
+		return nil
 	}
 
-	h, err := r.registry.Get(event.JobType)
-	if err != nil {
-		slog.Error("kafkarunner: no handler", "job_id", event.JobId, "job_type", event.JobType)
-		_ = r.engine.FailJob(ctx, event.JobId, r.cfg.WorkerID, "no handler registered for "+event.JobType, false)
-		return
-	}
-
-	var vars map[string]any
-	if len(event.JobPayload) > 0 {
-		_ = json.Unmarshal(event.JobPayload, &vars)
-	}
-	jctx := handler.JobContext{
-		JobID:            event.JobId,
-		InstanceID:       event.InstanceId,
-		StepID:           event.StepExecutionId,
-		JobType:          event.JobType,
-		RetriesRemaining: int(event.RetriesRemaining),
-		Variables:        vars,
-	}
-
-	slog.Info("kafkarunner: dispatching job", "job_id", event.JobId, "job_type", event.JobType)
-	result, err := safeCall(ctx, h, jctx)
-	if err == nil {
-		slog.Info("kafkarunner: job completed", "job_id", event.JobId)
-		if completeErr := r.engine.CompleteJob(ctx, event.JobId, r.cfg.WorkerID, result.VariablesToSet); completeErr != nil {
-			slog.Error("kafkarunner: CompleteJob failed", "job_id", event.JobId, "err", completeErr)
+	kind := "complete"
+	var variables map[string]any
+	var handlerErr error
+	h, handlerErr := r.registry.Get(event.JobType)
+	if handlerErr == nil && len(event.JobPayload) > 0 {
+		if err := json.Unmarshal(event.JobPayload, &variables); err != nil {
+			handlerErr = &retry.NonRetryable{Cause: fmt.Errorf("invalid job payload: %w", err)}
 		}
-		return
 	}
-	isNonRetryable := retry.IsNonRetryable(err)
-	if isNonRetryable {
-		slog.Warn("kafkarunner: job failed (non-retryable)", "job_id", event.JobId, "err", err)
+	var result handler.Result
+	if handlerErr == nil {
+		log.Info("kafkarunner: dispatching job", "job_type", event.JobType)
+		result, handlerErr = safeCall(ctx, h, handler.JobContext{
+			JobID: event.JobId, InstanceID: event.InstanceId, StepID: event.StepExecutionId,
+			JobType: event.JobType, RetriesRemaining: int(event.RetriesRemaining), Variables: variables,
+		})
+	} else if h == nil {
+		handlerErr = &retry.NonRetryable{Cause: handlerErr}
+	}
+
+	// Freeze the JSON result before any callback attempt. A retained handler
+	// map must not change a later retry's payload.
+	var encoded []byte
+	if handlerErr == nil {
+		var err error
+		encoded, err = json.Marshal(result.VariablesToSet)
+		if err != nil {
+			handlerErr = &retry.NonRetryable{Cause: fmt.Errorf("invalid handler result: %w", err)}
+		}
+	}
+	var send func(context.Context) error
+	if handlerErr != nil {
+		kind = "fail"
+		reason, retryable := handlerErr.Error(), !retry.IsNonRetryable(handlerErr)
+		send = func(attempt context.Context) error {
+			return r.engine.FailJob(attempt, event.JobId, r.cfg.WorkerID, reason, retryable)
+		}
 	} else {
-		slog.Warn("kafkarunner: job failed (retryable)", "job_id", event.JobId, "err", err)
+		send = func(attempt context.Context) error {
+			var output map[string]any
+			_ = json.Unmarshal(encoded, &output)
+			return r.engine.CompleteJob(attempt, event.JobId, r.cfg.WorkerID, output)
+		}
 	}
-	if failErr := r.engine.FailJob(ctx, event.JobId, r.cfg.WorkerID, err.Error(), !isNonRetryable); failErr != nil {
-		slog.Error("kafkarunner: FailJob failed", "job_id", event.JobId, "err", failErr)
+	if err := callback.Retry(ctx, "kafka", kind, log, send); err != nil {
+		return err
 	}
+	if event.DedupId != "" {
+		r.dedupMu.Lock()
+		r.dedup[event.DedupId] = time.Now()
+		r.dedupMu.Unlock()
+	}
+	log.Info("kafkarunner: callback confirmed", "callback", kind)
+	return nil
 }
 
-// seenRecently returns true if dedupID was seen within the DedupWindow and,
-// as a side effect, records this observation. Callers that never retry on
-// their own rely on this window absorbing broker-side redeliveries.
+// seenRecently checks only confirmed outcomes. Pending work is held by the
+// dispatch call and never expires with the deduplication cache.
 func (r *Runner) seenRecently(dedupID string) bool {
 	r.dedupMu.Lock()
 	defer r.dedupMu.Unlock()
-	now := time.Now()
-	if seen, ok := r.dedup[dedupID]; ok {
-		if now.Sub(seen) < r.cfg.DedupWindow {
-			return true
-		}
-	}
-	r.dedup[dedupID] = now
-	return false
+	seen, ok := r.dedup[dedupID]
+	return ok && time.Since(seen) < r.cfg.DedupWindow
 }
 
 // dedupSweep runs every DedupWindow/4 and evicts entries older than the window.

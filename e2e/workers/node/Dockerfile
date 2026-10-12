@@ -1,31 +1,19 @@
 FROM node:24-alpine AS build
-RUN apk add --no-cache protobuf-dev
 WORKDIR /app
 
-# Copy SDK TypeScript source for direct compilation
-COPY workflow-sdk-node/src ./sdk-src
-COPY proto ./proto
+# Install the exact candidate verified by the external consumer test.
+COPY workflow-sdk-node/artifacts/sdk.tgz workflow-sdk-node/artifacts/SHA256SUMS ./
+RUN sha256sum -c SHA256SUMS
+COPY e2e/workers/node/package.json e2e/workers/node/package-lock.json ./
+RUN npm ci && npm install --package-lock=false ./sdk.tgz
 
-# Install worker dependencies (undici + dev tools)
-COPY e2e/workers/node/package.json ./
-RUN npm install
-
-# Generate protos
-RUN mkdir -p sdk-src/generated && \
-    protoc \
-    --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto \
-    --ts_proto_out=sdk-src/generated \
-    --ts_proto_opt=env=node,outputServices=grpc-js,esModuleInterop=true \
-    -I ./proto \
-    ./proto/workflow/v1/engine.proto
-
-# Copy tsconfig and worker source, then compile everything together
 COPY e2e/workers/node/tsconfig.json .
 COPY e2e/workers/node/src ./src
-RUN npx tsc
+RUN npx tsc && npm prune --omit=dev --package-lock=false
 
 FROM node:24-alpine
 WORKDIR /app
+COPY --from=build /app/package.json ./
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
-CMD ["node", "dist/src/worker.js"]
+CMD ["node", "dist/worker.js"]

@@ -22,6 +22,41 @@ tags:
     description: Human-task completion endpoints
 
 paths:
+  /healthz:
+    get:
+      summary: Process liveness (independent of dependencies)
+      responses:
+        '200':
+          description: Process is alive; empty response body
+  /readyz:
+    get:
+      summary: Database and runtime readiness
+      description: |
+        Ready after migrations, dispatch initialization and listener binds. Database
+        ping has a 500 ms deadline. Shutdown revokes readiness immediately. An
+        initialized Kafka outbox runtime stays ready during a broker outage because
+        writes remain durable; monitor outbox backlog and age separately.
+      responses:
+        '200':
+          description: Ready to accept requests
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                additionalProperties: false
+                properties:
+                  status: { const: ready }
+        '503':
+          description: Starting, stopping, or database unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                additionalProperties: false
+                properties:
+                  status: { const: not_ready }
   /v1/definitions:
     post:
       tags: [definitions]
@@ -310,8 +345,75 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobPollResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '410':
           description: Gone (Returned if engine runs in kafka_outbox mode where polling is disabled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PollDisabledError'
+
+  /v1/jobs/{id}/heartbeat:
+    post:
+      tags: [jobs]
+      summary: Extend the current worker's active polling lease
+      description: |
+        Requires a LOCKED, unexpired current attempt owned by workerId, with active
+        instance and execution. Omitted or zero leaseSeconds uses 30; otherwise
+        5–3600. Expiry is max(current expiry, database time + duration), never
+        shortened. Extension does not consume retries or create a new attempt.
+        A missing, stale, expired, terminal or wrong-worker job returns 409 with
+        error lease-lost. Older engines return 404 (gRPC UNIMPLEMENTED); enable
+        heartbeat only after every serving engine replica supports this API.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workerId]
+              properties:
+                workerId: { type: string, minLength: 1 }
+                leaseSeconds:
+                  type: integer
+                  default: 30
+                  anyOf:
+                    - const: 0
+                    - minimum: 5
+                      maximum: 3600
+      responses:
+        '200':
+          description: Lease extended (or a longer existing lease retained)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted, lockExpiresAt]
+                additionalProperties: false
+                properties:
+                  accepted: { const: true }
+                  lockExpiresAt: { type: string, format: date-time }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: This worker no longer owns a live polling lease
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, reason]
+                additionalProperties: false
+                properties:
+                  error: { const: lease-lost }
+                  reason: { type: string }
+        '500':
+          description: Internal or dependency failure; acceptance is not known
           content:
             application/json:
               schema:
@@ -588,16 +690,23 @@ components:
           items: { type: string }
           minItems: 1
         maxJobs: { type: integer, minimum: 1, maximum: 100, default: 1 }
-        leaseSeconds: { type: integer, minimum: 5, maximum: 3600, default: 60 }
+        leaseSeconds:
+          description: Omitted or zero uses 30 seconds; otherwise 5–3600 seconds. Expiry uses database time at claim.
+          type: integer
+          default: 30
+          anyOf:
+            - const: 0
+            - minimum: 5
+              maximum: 3600
 
     Job:
       type: object
-      required: [id, jobType, instanceId, stepId, stepExecutionId, retriesRemaining, variables, lockExpiresAt]
+      description: The job identifies an execution attempt through stepExecutionId; it does not expose the definition step id.
+      required: [id, jobType, instanceId, stepExecutionId, retriesRemaining, variables, lockExpiresAt]
       properties:
         id: { type: string }
         jobType: { type: string }
         instanceId: { type: string }
-        stepId: { type: string }
         stepExecutionId: { type: string }
         retriesRemaining: { type: integer, minimum: 0 }
         variables:
@@ -610,7 +719,8 @@ components:
       required: [jobs]
       properties:
         jobs:
-          type: array
+          type: [array, 'null']
+          description: The legacy REST response uses null when no job is available.
           items:
             $ref: '#/components/schemas/Job'
 
@@ -662,13 +772,20 @@ components:
           additionalProperties: true
           description: Keys to shallow-merge into the instance variables prior to re-dispatch.
 
+    PollDisabledError:
+      type: object
+      required: [error, dispatch_mode, hint]
+      properties:
+        error: { const: 'poll path disabled' }
+        dispatch_mode: { const: kafka_outbox }
+        hint: { type: string }
+
     Error:
       type: object
-      required: [error, message]
+      required: [error, reason]
       properties:
         error: { type: string }
-        message: { type: string }
-        see: { type: string }
+        reason: { type: string }
 
   responses:
     ValidationError:

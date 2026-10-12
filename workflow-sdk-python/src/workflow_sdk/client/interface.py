@@ -6,6 +6,15 @@ from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
+class LeaseExtender(Protocol):
+    """Optional capability; EngineClient itself is unchanged."""
+
+    def extend_job_lease(self, job_id: str, worker_id: str, lease_seconds: int = 0) -> str:
+        """Return the accepted lease deadline as an ISO-8601 timestamp."""
+        ...
+
+
+@runtime_checkable
 class EngineClient(Protocol):
     """Transport-agnostic interface for communicating with the workflow engine.
 

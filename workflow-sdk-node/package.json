@@ -1,6 +1,6 @@
 {
   "name": "rochallor-workflow-sdk-node",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Node/TypeScript SDK for the Rochallor Workflow engine",
   "type": "module",
   "main": "dist/index.js",
@@ -12,24 +12,38 @@
   },
   "homepage": "https://github.com/batnam/rochallor-engine",
   "bugs": "https://github.com/batnam/rochallor-engine/issues",
-  "keywords": ["workflow", "orchestration", "engine", "sdk", "worker"],
+  "keywords": [
+    "workflow",
+    "orchestration",
+    "engine",
+    "sdk",
+    "worker"
+  ],
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
+  "allowScripts": {
+    "@confluentinc/kafka-javascript": true,
+    "esbuild": true
+  },
   "scripts": {
+    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; for (const path of ['dist', 'src/generated']) rmSync(path, { recursive: true, force: true })\"",
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src --ext .ts",
-    "proto-gen": "protoc --plugin=protoc-gen-ts_proto=$(pwd)/node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=src/generated --ts_proto_opt=env=node,outputServices=grpc-js,esModuleInterop=true -I ../proto ../proto/workflow/v1/engine.proto"
+    "proto-gen": "mkdir -p src/generated && protoc --plugin=protoc-gen-ts_proto=$(pwd)/node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=src/generated --ts_proto_opt=env=node,outputServices=grpc-js,esModuleInterop=true,importSuffix=.js -I ../proto ../proto/workflow/v1/engine.proto",
+    "package:verify": "npm run clean && npm run proto-gen && npm run build && npm test && npm audit --omit=dev --audit-level=high && node scripts/pack.mjs && npm run test:package",
+    "test:package": "node scripts/check-package.mjs artifacts/sdk.tgz --test-failures"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.11.0",
     "@confluentinc/kafka-javascript": "^1.9.0",
-    "@grpc/grpc-js": "^1.12.6",
+    "@grpc/grpc-js": "^1.14.5",
     "@grpc/proto-loader": "^0.7.13",
     "prom-client": "^15.1.3",
-    "undici": "^7.3.0"
+    "undici": "^7.29.1"
   },
   "devDependencies": {
     "@types/node": "^24",

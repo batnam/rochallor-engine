@@ -49,6 +49,15 @@ public class DeduplicationCache implements AutoCloseable {
         return false;
     }
 
+    public boolean contains(String id) {
+        Instant seenAt = cache.get(id);
+        return seenAt != null && Duration.between(seenAt, Instant.now()).compareTo(window) < 0;
+    }
+
+    public void mark(String id) {
+        if (id != null && !id.isEmpty()) cache.put(id, Instant.now());
+    }
+
     private void sweep() {
         Instant cutoff = Instant.now().minus(window);
         cache.entrySet().removeIf(entry -> entry.getValue().isBefore(cutoff));

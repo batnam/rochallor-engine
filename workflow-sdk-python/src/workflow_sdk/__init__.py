@@ -17,6 +17,8 @@ Quickstart::
     runner.run()  # blocks until SIGTERM/SIGINT
 """
 
-__version__ = "1.0.0"
+from importlib.metadata import version
+
+__version__ = version("rochallor-sdk")
 
 __all__ = ["__version__"]

@@ -33,14 +33,15 @@ const RAMP_UP           = __ENV.PERF_RAMP_UP   || '2m';
 const STEADY            = __ENV.PERF_STEADY    || '10m';
 const RAMP_DOWN         = __ENV.PERF_RAMP_DOWN || '1m';
 const TARGET_VUS        = parseInt(__ENV.PERF_TARGET_VUS || '1000', 10);
-const SENIOR_COMPLETER_VUS = parseInt(__ENV.PERF_SENIOR_COMPLETER_VUS || '500', 10);
+// A single owner avoids completing the same unclaimed user task concurrently.
+const SENIOR_COMPLETER_VUS = 1;
 
 const POLL_INTERVAL_MS   = 250;
 const ITERATION_DEADLINE = 120;
 const APP_USER_TASK_ID   = 'manual-review-task';
 const DISB_USER_TASK_ID  = 'senior-approval-task';
 const TEARDOWN_DRAIN_PASSES = 120;          // up to ~120 × 1 s = 120 s drain budget
-const TEARDOWN_SETTLE_SEC = 30;            // sleep after drain before final count
+const TEARDOWN_SETTLE_SEC = 30;            // minimum drain window before checking completion
 
 // protobuf JSON enum: full names
 const TERMINAL_STATUSES = [
@@ -88,8 +89,7 @@ function totalDurationStr() {
 }
 
 export const options = {
-  // k6 default is 60s, which force-kills the drain loop below before it can
-  // finish (TEARDOWN_DRAIN_PASSES × 1s + TEARDOWN_SETTLE_SEC ≈ 150s budget).
+  // k6's 60s default is shorter than the 120-second drain window.
   teardownTimeout: '5m',
   scenarios: {
     chain_load: {
@@ -116,7 +116,10 @@ export const options = {
     // doesn't error with "no metric name ... found".
     const base = Object.assign({}, GRPC_THRESHOLDS);
     delete base['workflows_unfinished_after_steady_state'];
+    for (const key of Object.keys(base)) if (key.includes('workflow.history')) delete base[key];
     return Object.assign(base, {
+      'grpc_error_rate{operation:workflow.task_complete}': ['rate<0.001'],
+      'grpc_req_duration{operation:workflow.task_complete}': ['p(95)<500'],
       'chain_app_unfinished_after_steady_state':  ['count==0'],
       'chain_disb_unfinished_after_steady_state': ['count==0'],
       'chain_app_completed':                      ['count>0'],
@@ -127,6 +130,7 @@ export const options = {
 // --- Lifecycle ---
 
 export function setup() {
+  for (const counter of Object.values(failKind)) counter.add(0);
   if (!APP_DEFINITION_ID || !DISB_DEFINITION_ID) {
     throw new Error('PERF_LOAN_APP_DEFINITION_ID / PERF_LOAN_DISB_DEFINITION_ID not set — run via perf/run.sh --scenario=loan-chain-full --grpc');
   }
@@ -301,14 +305,14 @@ export function teardown(data) {
   const { appDefinitionId, disbDefinitionId, grpcUrl } = data;
 
   console.log('[perf] loan-chain-grpc teardown: draining remaining senior-approval-tasks...');
+  const settleUntil = Date.now() + TEARDOWN_SETTLE_SEC * 1000;
   for (let i = 0; i < TEARDOWN_DRAIN_PASSES; i++) {
-    const n = findAndCompleteSeniorTasks(grpcUrl, disbDefinitionId, /*pageLimit*/ 20);
-    if (n === 0) break;
+    findAndCompleteSeniorTasks(grpcUrl, disbDefinitionId, /*pageLimit*/ 20);
+    if (Date.now() >= settleUntil &&
+        countNonTerminal(grpcUrl, appDefinitionId, 'app') === 0 &&
+        countNonTerminal(grpcUrl, disbDefinitionId, 'disb') === 0) break;
     sleep(1);
   }
-
-  console.log(`[perf] loan-chain-grpc teardown: sleeping ${TEARDOWN_SETTLE_SEC}s before final non-terminal count...`);
-  sleep(TEARDOWN_SETTLE_SEC);
 
   appUnfinished.add(countNonTerminal(grpcUrl, appDefinitionId, 'app'));
   disbUnfinished.add(countNonTerminal(grpcUrl, disbDefinitionId, 'disb'));
@@ -321,7 +325,7 @@ function countNonTerminal(grpcUrl, definitionId, label) {
     let page = 0;
     while (true) {
       const res = listInstances(grpcUrl, { definitionId, status: statusInt, page, pageSize });
-      if (!res.ok) break;
+      if (!res.ok) throw new Error('outcome listing failed: ' + res.status);
       const items = (res.message && res.message.instances) || [];
       nonTerminal += items.length;
       if (items.length < pageSize) break;

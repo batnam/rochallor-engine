@@ -13,15 +13,18 @@ export class DeduplicationCache {
   seenRecently(id: string): boolean {
     if (!id) return false;
 
-    const now = Date.now();
-    const seenAt = this.cache.get(id);
-
-    if (seenAt !== undefined && now - seenAt < this.windowMs) {
-      return true;
-    }
-
-    this.cache.set(id, now);
+    if (this.has(id)) return true;
+    this.mark(id);
     return false;
+  }
+
+  has(id: string): boolean {
+    const seenAt = this.cache.get(id);
+    return seenAt !== undefined && Date.now() - seenAt < this.windowMs;
+  }
+
+  mark(id: string): void {
+    if (id) this.cache.set(id, Date.now());
   }
 
   private sweep(): void {

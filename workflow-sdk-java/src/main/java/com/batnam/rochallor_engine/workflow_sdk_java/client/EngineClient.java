@@ -17,6 +17,12 @@ public interface EngineClient {
      */
     List<Job> pollJobs(String workerId, List<String> jobTypes, int maxJobs) throws Exception;
 
+    /** Optional lease selection. Existing custom clients retain their original methods. */
+    default List<Job> pollJobs(String workerId, List<String> jobTypes, int maxJobs, int leaseSeconds) throws Exception {
+        if (leaseSeconds != 0) throw new UnsupportedOperationException("custom client does not support polling leaseSeconds");
+        return pollJobs(workerId, jobTypes, maxJobs);
+    }
+
     /**
      * Marks a job completed and merges {@code variables} into the instance.
      */

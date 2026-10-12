@@ -215,7 +215,10 @@ func (s *EngineServer) PollJobs(ctx context.Context, req *workflowv1.PollJobsReq
 	if max <= 0 {
 		max = 1
 	}
-	jobs, err := job.Poll(ctx, s.jobStore, req.WorkerId, req.JobTypes, max)
+	jobs, err := job.PollWithLease(ctx, s.jobStore, req.WorkerId, req.JobTypes, max, int(req.LeaseSeconds))
+	if err == job.ErrInvalidLeaseSeconds {
+		return nil, engineapi.GRPCInvalidArgument(err.Error())
+	}
 	if err != nil {
 		return nil, engineapi.GRPCInternal(err)
 	}
@@ -242,6 +245,20 @@ func (s *EngineServer) PollJobs(ctx context.Context, req *workflowv1.PollJobsReq
 		pjobs = append(pjobs, pj)
 	}
 	return &workflowv1.PollJobsResponse{Jobs: pjobs}, nil
+}
+
+func (s *EngineServer) ExtendJobLease(ctx context.Context, req *workflowv1.ExtendJobLeaseRequest) (*workflowv1.ExtendJobLeaseResponse, error) {
+	expiry, err := job.ExtendLease(ctx, s.db, s.jobStore, req.JobId, req.WorkerId, int(req.LeaseSeconds))
+	switch err {
+	case job.ErrInvalidLeaseSeconds, job.ErrInvalidLeaseOwner:
+		return nil, engineapi.GRPCInvalidArgument(err.Error())
+	case job.ErrLeaseLost:
+		return nil, engineapi.GRPCFailedPrecondition(err.Error())
+	case nil:
+		return &workflowv1.ExtendJobLeaseResponse{Accepted: true, LockExpiresAt: timestamppb.New(expiry)}, nil
+	default:
+		return nil, engineapi.GRPCInternal(err)
+	}
 }
 
 func (s *EngineServer) CompleteJob(ctx context.Context, req *workflowv1.CompleteJobRequest) (*workflowv1.CompleteJobResponse, error) {

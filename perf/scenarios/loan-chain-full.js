@@ -53,14 +53,15 @@ const RAMP_UP           = __ENV.PERF_RAMP_UP   || '2m';
 const STEADY            = __ENV.PERF_STEADY    || '10m';
 const RAMP_DOWN         = __ENV.PERF_RAMP_DOWN || '1m';
 const TARGET_VUS        = parseInt(__ENV.PERF_TARGET_VUS || '1000', 10);
-const SENIOR_COMPLETER_VUS = parseInt(__ENV.PERF_SENIOR_COMPLETER_VUS || '500', 10);
+// A single owner avoids completing the same unclaimed user task concurrently.
+const SENIOR_COMPLETER_VUS = 1;
 
 const POLL_INTERVAL_MS   = 250;
 const ITERATION_DEADLINE = 120;            // seconds — chain is ~12 steps + 1 user task
 const APP_USER_TASK_ID   = 'manual-review-task';
 const DISB_USER_TASK_ID  = 'senior-approval-task';
 const TEARDOWN_DRAIN_PASSES = 120;         // up to ~120 × 1 s = 120 s drain budget
-const TEARDOWN_SETTLE_SEC = 30;            // sleep after drain before final count
+const TEARDOWN_SETTLE_SEC = 30;            // minimum drain window before checking completion
 
 // --- Custom metrics ---
 const appStarted    = new Counter('chain_app_started');
@@ -102,8 +103,7 @@ function totalDurationStr() {
 }
 
 export const options = {
-  // k6 default is 60s, which force-kills the drain loop below before it can
-  // finish (TEARDOWN_DRAIN_PASSES × 1s + TEARDOWN_SETTLE_SEC ≈ 150s budget).
+  // k6's 60s default is shorter than the 120-second drain window.
   teardownTimeout: '5m',
   scenarios: {
     chain_load: {
@@ -130,7 +130,10 @@ export const options = {
     // doesn't error with "no metric name ... found".
     const base = Object.assign({}, THRESHOLDS);
     delete base['workflows_unfinished_after_steady_state'];
+    for (const key of Object.keys(base)) if (key.includes('workflow.history')) delete base[key];
     return Object.assign(base, {
+      'http_req_failed{operation:workflow.task_complete}': ['rate<0.001'],
+      'http_req_duration{operation:workflow.task_complete}': ['p(95)<500'],
       'chain_app_unfinished_after_steady_state':  ['count==0'],
       'chain_disb_unfinished_after_steady_state': ['count==0'],
       'chain_app_completed':                      ['count>0'],
@@ -141,6 +144,7 @@ export const options = {
 // --- Lifecycle ---
 
 export function setup() {
+  for (const counter of Object.values(failKind)) counter.add(0);
   if (!APP_DEFINITION_ID || !DISB_DEFINITION_ID) {
     throw new Error('PERF_LOAN_APP_DEFINITION_ID / PERF_LOAN_DISB_DEFINITION_ID not set — run via perf/run.sh --scenario=loan-chain-full');
   }
@@ -234,7 +238,7 @@ export function chainLoad(data) {
         APP_USER_TASK_ID,
         { reviewDecision: 'APPROVED' },
       );
-      if (check(completeRes, { 'workflow.task_complete: 200': (r) => r.status === 200 })) {
+      if (check(completeRes, { 'workflow.task_complete: 204': (r) => r.status === 204 })) {
         userTaskCompleted = true;
         userTasksDone.add(1);
       } else {
@@ -295,7 +299,7 @@ function findAndCompleteSeniorTasks(baseUrl, disbDefinitionId, pageLimit) {
         DISB_USER_TASK_ID,
         { seniorDecision: 'APPROVED' },
       );
-      if (check(completeRes, { 'workflow.task_complete: 200': (r) => r.status === 200 })) {
+      if (check(completeRes, { 'workflow.task_complete: 204': (r) => r.status === 204 })) {
         completed++;
         userTasksDone.add(1);
       } else {
@@ -313,14 +317,14 @@ export function teardown(data) {
   const { appDefinitionId, disbDefinitionId, baseUrl } = data;
 
   console.log('[perf] loan-chain teardown: draining remaining senior-approval-tasks...');
+  const settleUntil = Date.now() + TEARDOWN_SETTLE_SEC * 1000;
   for (let i = 0; i < TEARDOWN_DRAIN_PASSES; i++) {
-    const n = findAndCompleteSeniorTasks(baseUrl, disbDefinitionId, /*pageLimit*/ 20);
-    if (n === 0) break;
+    findAndCompleteSeniorTasks(baseUrl, disbDefinitionId, /*pageLimit*/ 20);
+    if (Date.now() >= settleUntil &&
+        countNonTerminal(baseUrl, appDefinitionId, 'app') === 0 &&
+        countNonTerminal(baseUrl, disbDefinitionId, 'disb') === 0) break;
     sleep(1);
   }
-
-  console.log(`[perf] loan-chain teardown: sleeping ${TEARDOWN_SETTLE_SEC}s before final non-terminal count...`);
-  sleep(TEARDOWN_SETTLE_SEC);
 
   appUnfinished.add(countNonTerminal(baseUrl, appDefinitionId, 'app'));
   disbUnfinished.add(countNonTerminal(baseUrl, disbDefinitionId, 'disb'));
@@ -333,7 +337,7 @@ function countNonTerminal(baseUrl, definitionId, label) {
     let page = 0;
     while (true) {
       const res = listInstances(baseUrl, { definitionId, status, page, pageSize });
-      if (res.status !== 200) break;
+      if (res.status !== 200) throw new Error('outcome listing failed: ' + res.status);
       const body = JSON.parse(res.body);
       const items = body.items || [];
       nonTerminal += items.length;

@@ -10,8 +10,14 @@ permissions:
   id-token: write
 
 jobs:
+  verify:
+    uses: ./.github/workflows/verify-sdk-java.yml
+    with:
+      version: ${{ github.ref_name }}
+
   publish-sdk-java:
     name: Publish Java SDK → Maven Central
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -21,9 +27,20 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Publish to Maven Central
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v7
+        with:
+          name: java-sdk-candidate
+          path: workflow-sdk-java/artifacts/candidate/
+      - name: Verify identity and restore candidate files
         working-directory: workflow-sdk-java
-        run: ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache -Pversion=${GITHUB_REF_NAME#sdk-java-v}
+        run: python scripts/verify-package.py --restore
+
+      - name: Sign and publish verified candidate to Maven Central
+        working-directory: workflow-sdk-java
+        run: ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache -PverifiedCandidate -Pversion=${GITHUB_REF_NAME#sdk-java-v}
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}

@@ -22,6 +22,17 @@ public class Worker {
                 ? new GrpcEngineClient(grpcHost)
                 : new RestEngineClient(engineUrl);
         HandlerRegistry registry = new HandlerRegistry();
+        var recoveryCalls = new ConcurrentHashMap<String, Integer>();
+        for (String jobType : new String[]{"java-sdk-recovery", "java-sdk-failure"}) {
+            registry.register(jobType, ctx -> {
+                int calls = recoveryCalls.merge(ctx.instanceId(), 1, Integer::sum);
+                if (ctx.jobType().equals("java-sdk-failure") && ctx.retriesRemaining() == 2) {
+                    throw new RuntimeException("sdkRecovery business failure: " + ctx.instanceId());
+                }
+                return Map.of("sdkRecovery", true, "instanceId", ctx.instanceId(), "handlerCalls", calls,
+                    "attemptId", ctx.jobId(), "remaining", ctx.retriesRemaining());
+            });
+        }
 
         // Linear scenario handlers
         registry.register("java-step-a", ctx -> Map.of("stepA", "done"));
@@ -123,11 +134,36 @@ public class Worker {
             String brokers = env("WE_KAFKA_SEED_BROKERS", "localhost:9092");
             System.out.println("worker starting (kafka mode): brokers=" + brokers + " workerId=" + workerId);
             KafkaRunner runner = new KafkaRunner(workerId, brokers, client, registry, null);
+            Runtime.getRuntime().addShutdownHook(new Thread(runner::close));
             runner.start();
         } else {
             System.out.println("worker starting (polling mode): engine=" + engineUrl + " workerId=" + workerId);
-            Runner runner = new Runner(workerId, 64, 500, client, registry);
+            Runner runner = new Runner(workerId, 2, 500, client, registry);
             runner.start();
+            if ("1".equals(env("E2E_HEARTBEAT", "0"))) {
+                var heartbeatRegistry = new HandlerRegistry();
+                heartbeatRegistry.register("java-sdk-heartbeat", ctx -> {
+                    int calls = recoveryCalls.merge(ctx.instanceId(), 1, Integer::sum);
+                    Number duration = (Number) ctx.variables().getOrDefault("durationMs", 0);
+                    Thread.sleep(duration.longValue());
+                    if (Boolean.TRUE.equals(ctx.variables().get("failure")) && ctx.retriesRemaining() == 2) {
+                        throw new RuntimeException("sdkRecovery heartbeat business failure: " + ctx.instanceId());
+                    }
+                    return Map.of("sdkRecovery", true, "instanceId", ctx.instanceId(), "handlerCalls", calls,
+                        "attemptId", ctx.jobId(), "remaining", ctx.retriesRemaining());
+                });
+                var options = new Runner.LeaseOptions("1".equals(env("E2E_HEARTBEAT_ENABLED", "1")), 30, java.time.Duration.ZERO);
+                var heartbeatRunner = new Runner(workerId + "-heartbeat", 2, 500, client, heartbeatRegistry, options);
+                heartbeatRunner.start();
+                while (true) {
+                    var failure = heartbeatRunner.failure().or(runner::failure);
+                    if (failure.isPresent()) {
+                        runner.stop(5); heartbeatRunner.stop(5);
+                        throw new IllegalStateException("heartbeat worker failed", failure.get());
+                    }
+                    Thread.sleep(50);
+                }
+            }
         }
 
         // Block the main thread; the runner's daemon thread handles SIGTERM via shutdown hook

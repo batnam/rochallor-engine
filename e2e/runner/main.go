@@ -185,6 +185,40 @@ func runSDKSuite(transport string, client scenarios.ClientIface, sdk, scenariosD
 	if os.Getenv("WE_DISPATCH_MODE") != "kafka_outbox" {
 		suite = append(suite, entry{"job-lease-recovery", scenarios.RunJobLeaseRecovery})
 	}
+	if os.Getenv("E2E_SDK_FAULTS") == "1" {
+		suite = append(suite, entry{"sdk-callback-recovery", scenarios.RunSDKCallbackRecovery})
+		if os.Getenv("WE_DISPATCH_MODE") == "kafka_outbox" {
+			suite = append(suite, entry{"sdk-kafka-recovery", scenarios.RunSDKKafkaRecovery})
+		} else {
+			suite = append(suite, entry{"sdk-polling-recovery", scenarios.RunSDKPollingRecovery})
+		}
+	}
+
+	if os.Getenv("E2E_HEARTBEAT") == "1" && os.Getenv("WE_DISPATCH_MODE") != "kafka_outbox" {
+		suite = append(suite, entry{"sdk-heartbeat", scenarios.RunSDKHeartbeat})
+	}
+
+	if os.Getenv("E2E_HEARTBEAT_UNSUPPORTED") == "1" {
+		suite = append(suite, entry{"sdk-heartbeat-unsupported", scenarios.RunSDKHeartbeatUnsupported})
+	}
+	if selected := os.Getenv("E2E_SCENARIOS"); selected != "" {
+		wanted := map[string]bool{}
+		for _, name := range strings.Split(selected, ",") {
+			wanted[name] = true
+		}
+		filtered := []entry{}
+		for _, test := range suite {
+			if wanted[test.name] {
+				filtered = append(filtered, test)
+				delete(wanted, test.name)
+			}
+		}
+		if len(wanted) > 0 {
+			fmt.Fprintf(os.Stderr, "unknown E2E_SCENARIOS: %v\n", wanted)
+			os.Exit(1)
+		}
+		suite = filtered
+	}
 
 	var results []Result
 	for _, s := range suite {
@@ -215,7 +249,7 @@ func printReport(results []Result) {
 			passed++
 		}
 		fmt.Printf("  [%s] %s/%s/%s\n", status, r.Transport, r.SDK, r.Scenario)
-		if !r.Passed {
+		if !r.Passed || strings.HasPrefix(r.Scenario, "sdk-heartbeat") {
 			for _, l := range r.Logs {
 				fmt.Printf("        %s\n", l)
 			}

@@ -165,7 +165,6 @@ func (s *JobStore) PollJobs(ctx context.Context, workerID string, jobTypes []str
 	if len(jobTypes) == 0 || max <= 0 {
 		return nil, nil
 	}
-	lockExpiresAt := time.Now().Add(time.Duration(lockDurationSeconds) * time.Second)
 
 	var jobs []instance.Job
 	var rowsErr error
@@ -174,8 +173,8 @@ func (s *JobStore) PollJobs(ctx context.Context, workerID string, jobTypes []str
 			UPDATE job
 			SET    status = 'LOCKED',
 			       worker_id = $1,
-			       locked_at = now(),
-			       lock_expires_at = $2
+			       locked_at = clock_timestamp(),
+			       lock_expires_at = clock_timestamp() + $2 * interval '1 second'
 			WHERE  id IN (
 			    SELECT id FROM job
 			    WHERE  status = 'UNLOCKED' AND job_type = ANY($3)
@@ -186,7 +185,7 @@ func (s *JobStore) PollJobs(ctx context.Context, workerID string, jobTypes []str
 			RETURNING id, instance_id, step_execution_id, job_type, status,
 			          worker_id, locked_at, lock_expires_at,
 			          retries_remaining, payload, created_at`,
-			workerID, lockExpiresAt, jobTypes, max,
+			workerID, lockDurationSeconds, jobTypes, max,
 		)
 		if qerr != nil {
 			return fmt.Errorf("poll jobs: %w", qerr)

@@ -1,221 +1,131 @@
-# Node / TypeScript SDK
+# Go SDK
 
-**Package**: `rochallor-workflow-sdk-node` ([npm](https://www.npmjs.com/package/rochallor-workflow-sdk-node))
+Module: `github.com/batnam/rochallor-engine/workflow-sdk-go`. See the [Go SDK guide](../docs/sdk/go.md) for polling, REST/gRPC, handler and configuration examples.
 
-## Key types
-
-| Module | Type | Purpose |
-|--------|------|---------|
-| `src/client/rest.ts` | `RestEngineClient(baseUrl)` | REST client using `undici` |
-| `src/client/grpc.ts` | `GrpcEngineClient(target, credentials?)` | gRPC client using `@grpc/grpc-js` |
-| `src/client/types.ts` | `EngineClient` interface | Transport abstraction |
-| `src/client/types.ts` | `Job` | Job record returned by `pollJobs` |
-| `src/handler/registry.ts` | `HandlerRegistry` | Maps `jobType` strings to `Handler` functions |
-| `src/handler/registry.ts` | `JobContext` | Passed to every handler — `jobId`, `instanceId`, `jobType`, `retriesRemaining`, `variables` |
-| `src/handler/registry.ts` | `HandlerResult` | `{ variablesToSet?: Record<string, unknown> }` |
-| `src/handler/registry.ts` | `Handler` | `(ctx: JobContext) => Promise<HandlerResult>` |
-| `src/handler/registry.ts` | `NonRetryableError` | Throw to bypass the retry budget |
-| `src/runner/runner.ts` | `Runner(engine, registry, config)` | Poll/dispatch loop |
-| `src/runner/runner.ts` | `RunnerConfig` | `{ workerId, concurrency?, pollIntervalMs? }` |
-| `src/runner/runner.ts` | `Runner.run(signal)` | Async; resolves when `signal.aborted` and in-flight jobs drain |
-
----
-
-## How the runner works
-
-`new HandlerRegistry()` + `registry.register(...)` just build a `jobType → Handler` map in memory — no connection, no I/O. The `Runner` is what drives everything:
-
-1. A `setInterval` loop fires every `pollIntervalMs` (default 500 ms) and calls `POST /v1/jobs/poll`.
-2. The engine claims available jobs atomically with `FOR UPDATE SKIP LOCKED` and returns them.
-3. Each job is dispatched as an async task (bounded by `concurrency`, default 64 in-flight promises).
-4. The task calls your registered handler, then calls `completeJob` or `failJob` based on the result.
-
-**Error handling**: throw a plain `Error` → `failJob(retryable=true)` → engine retries up to `retryCount`. Throw `NonRetryableError` → `failJob(retryable=false)` → fails immediately regardless of retry budget.
-
-For the full model (sequence diagram, retry flow, graceful shutdown), see [architecture.md — Worker polling model](../architecture.md#worker-polling-model).
-
----
-
-## Minimal example — REST transport
-
-```typescript
-import { RestEngineClient } from './src/client/rest.js'
-import { HandlerRegistry } from './src/handler/registry.js'
-import { Runner } from './src/runner/runner.js'
-
-const engine   = new RestEngineClient('http://localhost:8080')
-const registry = new HandlerRegistry()
-
-registry.register('process-order', async ctx => {
-  const orderId = ctx.variables['orderId'] as string
-  // ... process order ...
-  return { variablesToSet: { processed: true, orderId } }
-})
-
-const controller = new AbortController()
-process.on('SIGINT',  () => controller.abort())
-process.on('SIGTERM', () => controller.abort())
-
-const runner = new Runner(engine, registry, { workerId: 'node-worker-1' })
-await runner.run(controller.signal)
+```sh
+go get github.com/batnam/rochallor-engine/workflow-sdk-go
 ```
 
----
+## Kafka worker
 
-## Full demo — multiple handlers, non-retryable errors, gRPC transport
+```go
+package main
 
-```typescript
-import * as grpc from '@grpc/grpc-js'
-import { GrpcEngineClient }  from './src/client/grpc.js'
-import { HandlerRegistry, NonRetryableError } from './src/handler/registry.js'
-import { Runner } from './src/runner/runner.js'
+import (
+    "context"
+    "log"
+    "os/signal"
+    "syscall"
 
-// Use gRPC transport — swap for new RestEngineClient('http://...') to use REST
-const engine   = new GrpcEngineClient('localhost:9090', grpc.credentials.createInsecure())
-const registry = new HandlerRegistry()
+    "github.com/batnam/rochallor-engine/workflow-sdk-go/client"
+    "github.com/batnam/rochallor-engine/workflow-sdk-go/handler"
+    "github.com/batnam/rochallor-engine/workflow-sdk-go/kafkarunner"
+)
 
-// Handler: validate-application
-registry.register('validate-application', async ctx => {
-  const applicantId = ctx.variables['applicantId'] as string | undefined
-  if (!applicantId) {
-    // NonRetryableError — engine will not retry regardless of retryCount
-    throw new NonRetryableError('applicantId is required')
-  }
-  console.log(`Validating applicant ${applicantId} (retries left: ${ctx.retriesRemaining})`)
-  // ... call validation service ...
-  return {
-    variablesToSet: {
-      validationPassed: true,
-      validatedAt: new Date().toISOString(),
-    },
-  }
-})
-
-// Handler: credit-score
-// Any thrown Error (other than NonRetryableError) is treated as retryable.
-registry.register('credit-score', async ctx => {
-  const applicantId = ctx.variables['applicantId'] as string
-  const score = await fetchCreditScore(applicantId)  // may throw on transient error
-  return { variablesToSet: { creditScore: score } }
-})
-
-// Handler: send-notification (no output variables)
-registry.register('send-notification', async ctx => {
-  const email = ctx.variables['email'] as string
-  console.log(`Sending notification to ${email}`)
-  // ... send email ...
-  return { variablesToSet: { notificationSent: true } }
-})
-
-const controller = new AbortController()
-process.on('SIGINT',  () => controller.abort())
-process.on('SIGTERM', () => controller.abort())
-
-const runner = new Runner(engine, registry, {
-  workerId:      'node-worker-1',
-  concurrency:   32,    // parallel async dispatches
-  pollIntervalMs: 250,
-})
-
-console.log('Worker starting')
-await runner.run(controller.signal)
-console.log('Worker stopped')
-
-async function fetchCreditScore(_applicantId: string): Promise<number> {
-  return 720  // placeholder
+func main() {
+    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+    defer stop()
+    engine := client.NewRest("http://localhost:8080", "go-worker-1")
+    registry := handler.New()
+    registry.Register("process-order", func(ctx context.Context, job handler.JobContext) (handler.Result, error) {
+        return handler.Result{VariablesToSet: map[string]any{"processed": true}}, nil
+    })
+    worker, err := kafkarunner.New(kafkarunner.Config{
+        WorkerID: "go-worker-1", SeedBrokers: "localhost:9092", JobTypes: registry.JobTypes(),
+    }, engine, registry)
+    if err != nil { log.Fatal(err) }
+    if err := worker.Run(ctx); err != nil { log.Fatal(err) }
 }
 ```
 
----
+Use `client.NewGrpc(target, workerID)` to select gRPC; check its error and close the client on exit. For polling use `runner.New(config, engine, registry).Run(ctx)`. The engine must use the matching dispatch mode.
 
-## Upload a definition from Node
 
-```typescript
-import { RestEngineClient } from './src/client/rest.js'
+## Callback recovery and operations
 
-const client = new RestEngineClient('http://localhost:8080')
+The Kafka runner retains the handler result and retries the same completion or failure callback. Each REST/gRPC attempt has a 5-second context deadline. Backoff starts at 100 ms, doubles with ±20% jitter and is capped at 30 seconds. Retry continues while the partition assignment and runner context remain valid. Handlers and custom `EngineClient` implementations must observe their context cancellation.
 
-// The Node client exposes pollJobs / completeJob / failJob (worker interface).
-// Use the REST API directly for admin operations (upload, start instance, etc.):
-const resp = await fetch('http://localhost:8080/v1/definitions', {
-  method:  'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    id:    'greet-workflow',
-    name:  'Greet Workflow',
-    steps: [
-      { id: 'say-hello', name: 'Say Hello', type: 'SERVICE_TASK',
-        jobType: 'greet', nextStep: 'end' },
-      { id: 'end', name: 'End', type: 'END' },
-    ],
-  }),
-})
-const definition = await resp.json()
-console.log('Uploaded:', definition.id, 'v' + definition.version)
+A record is added to the dedup cache only after callback confirmation. Offsets are committed synchronously per processed record, with a 5-second deadline. Pending records block later offsets from the same partition. Kafka heartbeats and rebalance callbacks continue while handlers/retries run; revocation cancels the old assignment, and that assignment cannot commit after ownership is released. A handler can execute again after process death or partition reassignment; use a stable business idempotency key.
+
+Malformed protobuf or a missing job ID stops `Run` with an error and leaves the offset uncommitted. A valid job with invalid JSON or a missing handler sends a non-retryable failure, which must be confirmed before commit. Permanent HTTP/gRPC callback rejection also stops the runner. HTTP 408/429 and server/transport errors are retried; other 4xx responses require operator action.
+
+Metrics registered with the default Prometheus registry:
+
+| Metric | Meaning |
+|---|---|
+| `workflow_sdk_callback_pending` | Unconfirmed outcomes |
+| `workflow_sdk_callback_retries_total` | Retries of the existing outcome |
+| `workflow_sdk_callback_oldest_pending_seconds` | Oldest pending age, zero when idle |
+| `workflow_sdk_callback_rejected_total` | Permanent callback rejections |
+| `workflow_sdk_kafka_record_errors_total` | Records that cannot be associated with a valid job |
+
+Callback labels are `dispatch` (`polling`/`kafka`) and `callback` (`complete`/`fail`). Logs carry job/dedup IDs and topic/partition/offset. Track pending age and consumer lag together: rising age with increasing lag means a partition is waiting for callback recovery.
+
+For a blocked partition, inspect the logged record and engine callback status. Restore engine connectivity or correct credentials/configuration, then restart the worker if `Run` returned. For malformed records, stop the affected worker, preserve the record and offset for investigation, and have the workflow owner approve a remediation/replay procedure. Do not silently skip records or reset offsets to clear lag. Cancel the runner context before shutdown and allow handlers to drain; a handler ignoring cancellation can delay shutdown and may still perform side effects after lease/assignment loss.
+
+Roll out one worker group first and verify persisted workflow outcomes. To roll back, drain/cancel and use the previously verified worker image; leave unconfirmed offsets for redelivery. The previous SDK may reintroduce callback loss, so rollback requires monitoring and reconciliation.
+
+
+## Verification
+
+```sh
+go test -race ./...
+go vet ./...
+sh scripts/check-consumer.sh
 ```
 
----
+The external module consumer compiles both clients and runners against the candidate source. PR and tag workflows additionally run REST/gRPC × polling/Kafka E2E. Set `E2E_SDK_FAULTS=1` with the Kafka E2E stack to exercise callback response loss, pending offsets, shutdown, worker death, rebalance and malformed records. The Go module tag is created only after those gates pass on the source to be tagged.
 
-## Kafka Dispatch (Opt-In)
+R02/R05 address Kafka delivery and polling callback/admission behavior. Long handlers still require idempotency; optional heartbeat requires the engine capability and configuration described below.
 
-The Node.js SDK supports push-based job dispatch via Kafka for high-scale environments.
+## Polling delivery and capacity (R05)
 
-### Usage
+`Parallelism` bounds all claimed work: running handlers plus unacknowledged callbacks. Poll requests use only free slots; jobs do not wait in a local queue after their lease starts. REST and gRPC preserve `Job.LockExpiresAt`. Handlers receive a context bounded by shutdown and that lease. A handler ignoring cancellation keeps its slot until it returns.
 
-```typescript
-import { KafkaRunner } from './src/runner/kafka_runner.js'
+The runner snapshots the result or failure and retries that callback with 5-second attempt contexts and exponential backoff with jitter, bounded by the lease. A completion transport error never calls FailJob or spends a business retry. Expiry/shutdown stops delivery and lets the engine recover a new attempt. Permanent HTTP/gRPC rejection is logged and counted without acknowledging work. Custom clients keep the existing interface and must honor context cancellation; jobs without lease metadata receive one bounded callback attempt.
 
-const runner = new KafkaRunner(
-  {
-    workerId: 'node-worker-1',
-    brokers: ['localhost:9092'],
-  },
-  engine,
-  registry
-)
+Use the callback metrics above with `dispatch="polling"`; watch pending age, lease recoveries and handler duration against the 30-second baseline lease. If pending age rises, check transport health/authorization before increasing concurrency. Drain and canary a worker group, then verify workflow outcomes. Rollback pins the prior worker build; it may restore A6/A7. Fault E2E now covers polling callback loss, full capacity, lease replacement/stale callbacks and shutdown on both transports. No heartbeat or engine/schema change is required.
 
-await runner.start()
+### Optional polling heartbeat (v1.2.0 candidate)
+
+Heartbeat is off by default. Upgrade every engine replica to the version that
+supports `ExtendJobLease` / `/v1/jobs/{id}/heartbeat` before enabling it.
+
+```go
+r := runner.New(runner.Config{
+    WorkerID: "payments-1", Parallelism: 8,
+    LeaseSeconds: 30, Heartbeat: true,
+    HeartbeatInterval: 10 * time.Second,
+    ShutdownTimeout: 5 * time.Second,
+}, engineClient, registry)
+if err := r.RunWithError(ctx); err != nil { log.Print(err) }
 ```
 
-### At-least-once delivery and idempotent handlers
+Lease duration zero uses the engine default 30 seconds; otherwise 5–3600.
+Heartbeat interval defaults to one third of the requested lease and cannot
+exceed that bound. Each request has at most five seconds and cannot outlive the
+current known lease. A separate goroutine watches expiry while the heartbeat
+request, handler or immutable callback retry is pending. Heartbeat starts before
+the handler and continues until callback acknowledgment or lease loss.
 
-`KafkaRunner` delivers jobs with **at-least-once** semantics. An in-process dedup window (default 10 min) absorbs most duplicates transparently — but a handler **can** be invoked more than once for the same `jobId` when:
+`EngineClient` is unchanged. REST/gRPC clients additionally implement the optional
+`client.LeaseExtender`; custom clients only need it when opting in. Unsupported
+clients/engines return `client.ErrHeartbeatUnsupported`; no long handler starts
+under a false assumption of protection. `RunWithError` exposes that failure;
+existing `Run` callers get an explicit error log. `client.ErrLeaseLost` means the
+attempt must stop. REST 404/405/501 and gRPC UNIMPLEMENTED indicate missing
+capability, while HTTP 409 / gRPC FAILED_PRECONDITION indicate lease loss.
 
-- The relay was down longer than `dedupWindowMs` before republishing.
-- This runner restarted between the original message and a relay-republished duplicate.
+Handlers should observe their context. Lost ownership cancels it and suppresses
+old callbacks, but an uncooperative handler still occupies its slot until it
+returns. Shutdown cancels active work and bounds drain by `ShutdownTimeout`;
+external effects may outlive that timeout. The same runner rejects another Run
+while such a handler is still draining. Custom transports must honor context
+cancellation. Go goroutines allow CPU work and heartbeat to run independently;
+this does not make external side effects exactly-once.
 
-**Handlers must be idempotent.** Use a stable business operation key from variables (for example, an invoice ID) for external side effects. `jobId` identifies one delivery attempt and changes on automatic retry or lease recovery; it only deduplicates redelivery of that same attempt.
-
-```typescript
-registry.register('send-invoice', async (job) => {
-  const invoiceId = job.variables.invoiceId
-  if (typeof invoiceId !== 'string') throw new NonRetryableError('invoiceId is required')
-  if (await db.invoiceAlreadySent(invoiceId)) return {}
-  return sendInvoiceToCustomer(job.variables, { idempotencyKey: invoiceId })
-})
-```
-
-Enforce the operation key with a database unique constraint or pass it to the external service as its idempotency key. A check-before-send alone does not prevent concurrent duplicates.
-
-The engine's `completeJob` / `failJob` calls are already idempotent — a second call with the same `jobId` is a no-op. Only your external side-effects need to be guarded.
-
----
-
-### KafkaRunner configuration reference
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `workerId` | string | *(required)* | Unique identifier for this worker. |
-| `brokers` | string[] | *(required)* | Array of Kafka broker addresses. |
-| `clientId` | string | `workerId` | Kafka client identifier. |
-| `dedupWindowMs` | number | `600000` | Window (ms) for in-memory deduplication (default 10m). |
-
----
-
-## Runner configuration reference (Polling Mode)
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `workerId` | string | *(required)* | Unique identifier for this worker process. |
-| `concurrency` | number | `64` | Maximum parallel in-flight async dispatches. |
-| `pollIntervalMs` | number | `500` | Milliseconds to sleep between poll rounds when the queue is empty. |
+Monitor `workflow_sdk_heartbeat_total{result}` (`accepted`, `retry`, `lease_lost`,
+`rejected`), callback pending age and engine heartbeat DB latency/write volume.
+On repeated lease loss, check DB/network latency, handler cancellation and mixed
+engine versions. Disable heartbeat and drain long jobs before rolling back the
+engine/SDK; an old engine ignores custom lease duration and uses 30 seconds.

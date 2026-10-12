@@ -141,8 +141,8 @@ def charge_payment(ctx: dict) -> dict:
 ## Key design properties
 
 - **No framework dependencies in SDKs** — each SDK is a thin polling library. No Spring, no DI container, no special runtime.
-- **Stateless workers** — workers hold no in-memory state between jobs. Restart, redeploy, or scale them at will.
-- **At-least-once delivery** — if a worker crashes mid-job, the 30 s lease expires and the engine re-queues the job for another worker.
+- **Durable workflow state** — the engine persists progress; workers keep active handlers and pending callbacks in memory. Restarting a worker can redeliver unfinished work.
+- **At-least-once delivery** — if a polling worker crashes mid-job, its lease expires and the engine creates a replacement attempt. The default lease is 30 seconds; [optional heartbeat](docs/development.md#polling-lease-and-heartbeat-contract-engine-v120-candidate) supports longer handlers after the engine upgrade.
 - **Idempotent completion** — calling `complete_job` after a lease has expired is safe and does not double-count.
 - **Variables are the interface** — steps communicate entirely through the shared variable map. No message schemas, no custom serialisation.
 - **Versioned definitions** — each upload creates a new version. Running instances stay pinned to their original version; new instances pick up the latest.

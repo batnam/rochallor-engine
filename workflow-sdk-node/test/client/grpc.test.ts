@@ -7,6 +7,7 @@ vi.mock('../../src/generated/workflow/v1/engine.js', () => {
     pollJobs: vi.fn(),
     completeJob: vi.fn(),
     failJob: vi.fn(),
+    extendJobLease: vi.fn(),
     close: vi.fn(),
   }
   return {
@@ -54,6 +55,7 @@ describe('GrpcEngineClient', () => {
             instanceId: 'i1',
             stepExecutionId: 'se1',
             retriesRemaining: 2,
+            lockExpiresAt: new Date('2026-10-11T00:00:30.000Z'),
             variables: undefined,
           },
         ],
@@ -65,6 +67,7 @@ describe('GrpcEngineClient', () => {
       expect(jobs[0].id).toBe('j1')
       expect(jobs[0].jobType).toBe('my-job')
       expect(jobs[0].retriesRemaining).toBe(2)
+      expect(jobs[0].lockExpiresAt).toBe('2026-10-11T00:00:30.000Z')
     })
 
     it('populates variables when server returns them', async () => {
@@ -111,4 +114,33 @@ describe('GrpcEngineClient', () => {
       ).resolves.toBeUndefined()
     })
   })
+})
+
+it('cancels an in-flight gRPC callback on abort', async () => {
+  const client = new GrpcEngineClient('localhost:9090')
+  const cancel = vi.fn()
+  ;(getStub().completeJob as ReturnType<typeof vi.fn>).mockImplementation(() => ({ cancel }))
+  const controller = new AbortController()
+  const pending = client.completeJob('j1', 'w1', {}, { signal: controller.signal })
+  controller.abort(new Error('lease expired'))
+  await expect(pending).rejects.toThrow('lease expired')
+  expect(cancel).toHaveBeenCalledTimes(1)
+})
+
+it('sends custom gRPC leases and decodes the extended deadline', async () => {
+  const client = new GrpcEngineClient('localhost:9090')
+  stubReturns('pollJobs', { jobs: [] })
+  await client.pollJobs({ workerId: 'w', jobTypes: [], maxJobs: 1, leaseSeconds: 60 })
+  expect(getStub().pollJobs).toHaveBeenCalledWith(expect.objectContaining({ leaseSeconds: 60 }), expect.any(Function))
+  stubReturns('extendJobLease', { accepted: true, lockExpiresAt: new Date('2026-10-11T00:00:30Z') })
+  expect(await client.extendJobLease('job', 'w', 60)).toBe('2026-10-11T00:00:30.000Z')
+  expect(getStub().extendJobLease).toHaveBeenCalledWith({ jobId: 'job', workerId: 'w', leaseSeconds: 60 }, expect.any(Function))
+})
+
+it.each([[12, 'heartbeat'], [9, 'lease lost'], [14, 'unavailable']])('maps heartbeat gRPC code %s', async (code, message) => {
+  const client = new GrpcEngineClient('localhost:9090')
+  vi.mocked(getStub().extendJobLease!).mockImplementation(((_request: unknown, callback: (error: unknown) => void) => {
+    callback(Object.assign(new Error('unavailable'), { code })); return {}
+  }) as never)
+  await expect(client.extendJobLease('job', 'w')).rejects.toThrow(String(message))
 })

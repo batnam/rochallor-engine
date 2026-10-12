@@ -16,14 +16,12 @@ java {
 }
 
 repositories {
+    maven { url = uri("/candidate/repository") }
     mavenCentral()
 }
 
 dependencies {
-    implementation("io.github.batnam:workflow-sdk-java:1.0.0")
-    implementation("io.grpc:grpc-netty-shaded:1.71.0")
-    implementation("io.grpc:grpc-stub:1.71.0")
-    implementation("io.grpc:grpc-protobuf:1.71.0")
+    implementation("io.github.batnam:workflow-sdk-java:${providers.gradleProperty("sdkVersion").get()}")
 }
 
 application {

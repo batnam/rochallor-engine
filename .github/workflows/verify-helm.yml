@@ -1,0 +1,73 @@
+name: Verify Helm candidate
+
+on:
+  workflow_call:
+    inputs:
+      released-engine:
+        type: boolean
+        default: false
+  workflow_dispatch:
+  pull_request:
+    paths: ['deploy/helm/**', 'workflow-engine/**', '.github/workflows/verify-helm.yml', '.github/workflows/publish-helm.yml']
+  push:
+    branches: [main]
+    paths: ['deploy/helm/**', 'workflow-engine/**', '.github/workflows/verify-helm.yml', '.github/workflows/publish-helm.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: azure/setup-helm@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install PyYAML==6.0.3
+      - name: Install kind
+        run: |
+          curl -fsSL https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64 -o /usr/local/bin/kind
+          chmod +x /usr/local/bin/kind
+      - name: Package exact candidate and select engine
+        id: candidate
+        env:
+          RELEASED_ENGINE: ${{ inputs.released-engine }}
+        run: |
+          mkdir -p artifacts/helm
+          VERSION=$(helm show chart deploy/helm/rochallor | python -c 'import sys,yaml; print(yaml.safe_load(sys.stdin)["version"])')
+          if [[ "$GITHUB_REF_NAME" == helm-v* ]]; then VERSION=${GITHUB_REF_NAME#helm-v}; fi
+          helm package deploy/helm/rochallor --version "$VERSION" --destination artifacts/helm
+          APP_VERSION=$(helm show chart deploy/helm/rochallor | python -c 'import sys,yaml; print(yaml.safe_load(sys.stdin)["appVersion"])')
+          if [[ "$RELEASED_ENGINE" == true ]]; then
+            IMAGE="ghcr.io/${{ github.repository_owner }}/rochallor-engine:$APP_VERSION"
+            docker pull "$IMAGE"
+          else
+            IMAGE=rochallor-engine:helm-candidate
+            docker build -t "$IMAGE" workflow-engine
+          fi
+          docker pull ghcr.io/batnam/rochallor-engine:v1.1.2
+          docker pull postgres:16-alpine
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "chart=artifacts/helm/rochallor-$VERSION.tgz" >> "$GITHUB_OUTPUT"
+          sha256sum "artifacts/helm/rochallor-$VERSION.tgz" > artifacts/helm/SHA256SUMS
+      - name: Verify packaged chart with real upgrade, outage, hook and rollback
+        run: >-
+          python deploy/helm/test/verify.py
+          --chart=${{ steps.candidate.outputs.chart }}
+          --image=${{ steps.candidate.outputs.image }}
+          --output=testresults/helm
+      - uses: actions/upload-artifact@v6
+        with:
+          name: verified-helm-package
+          path: artifacts/helm/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: helm-gate-evidence
+          path: testresults/helm/

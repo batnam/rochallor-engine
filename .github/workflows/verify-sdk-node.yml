@@ -1,0 +1,131 @@
+name: Verify Node SDK candidate
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Release version or sdk-node-v tag; empty keeps package.json version
+        type: string
+        required: false
+        default: ''
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    name: Build, audit and verify external consumer
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: workflow-sdk-node/package-lock.json
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Set candidate version before building
+        if: inputs.version != ''
+        working-directory: workflow-sdk-node
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION=${RELEASE_VERSION#sdk-node-v}
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+      - name: Install locked dependencies
+        working-directory: workflow-sdk-node
+        run: npm ci
+      - name: Verify candidate and deliberately broken consumers
+        working-directory: workflow-sdk-node
+        run: |
+          mkdir -p artifacts
+          npm run package:verify 2>&1 | tee artifacts/verify.log
+      - name: Save verified candidate
+        uses: actions/upload-artifact@v6
+        with:
+          name: node-sdk-candidate
+          path: workflow-sdk-node/artifacts/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save failed verification logs
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: node-sdk-verification-failure
+          path: workflow-sdk-node/artifacts/verify.log
+          if-no-files-found: ignore
+
+  e2e:
+    name: Packaged Node / ${{ matrix.dispatch }} / ${{ matrix.transport }}
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        dispatch: [polling, kafka_outbox]
+        transport: [rest, grpc]
+    env:
+      WE_DISPATCH_MODE: ${{ matrix.dispatch }}
+      E2E_SDK_FAULTS: '1'
+      E2E_HEARTBEAT: '1'
+      COMPOSE_PROJECT_NAME: verify-sdk-node
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: e2e/runner/go.mod
+          cache-dependency-path: e2e/runner/go.sum
+      - uses: actions/download-artifact@v7
+        with:
+          name: node-sdk-candidate
+          path: workflow-sdk-node/artifacts/
+      - name: Verify candidate checksum
+        working-directory: workflow-sdk-node/artifacts
+        run: sha256sum -c SHA256SUMS
+      - name: Run packaged SDK E2E
+        run: ./e2e/run.sh --sdk=node --transport=${{ matrix.transport }}
+      - name: Verify heartbeat off and explicit unsupported error on engine v1.1.2
+        if: matrix.dispatch == 'polling'
+        run: |
+          git fetch --depth=1 origin tag engine-v1.1.2
+          mkdir -p "$RUNNER_TEMP/heartbeat-engine-baseline"
+          git archive engine-v1.1.2 workflow-engine | tar -x -C "$RUNNER_TEMP/heartbeat-engine-baseline"
+          docker build -t heartbeat-engine-baseline "$RUNNER_TEMP/heartbeat-engine-baseline/workflow-engine"
+          export E2E_ENGINE_IMAGE=heartbeat-engine-baseline E2E_ENGINE_HEALTH_PATH=healthz
+          export E2E_WORKER_IMAGE=verify-sdk-node-worker-node
+          E2E_HEARTBEAT=0 E2E_SCENARIOS=linear,retry-fail,transformation \
+            E2E_LOGS_DIR=e2e/logs/old-engine-off ./e2e/run.sh --sdk=node --transport=${{ matrix.transport }}
+          E2E_HEARTBEAT=1 E2E_HEARTBEAT_UNSUPPORTED=1 E2E_SCENARIOS=sdk-heartbeat-unsupported \
+            E2E_LOGS_DIR=e2e/logs/old-engine-on ./e2e/run.sh --sdk=node --transport=${{ matrix.transport }}
+      - name: Measure heartbeat off/on on the verified worker
+        if: matrix.dispatch == 'polling'
+        run: |
+          python3 perf/heartbeat.py --sdk=node --transport=${{ matrix.transport }} \
+            --engine-image=verify-sdk-node-engine --worker-image=verify-sdk-node-worker-node \
+            --output=testresults/heartbeat-cost
+      - name: Save heartbeat cost evidence
+        if: always() && matrix.dispatch == 'polling'
+        uses: actions/upload-artifact@v6
+        with:
+          name: node-heartbeat-cost-${{ matrix.transport }}
+          path: testresults/heartbeat-cost/
+          if-no-files-found: ignore
+      - name: Save E2E logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: node-sdk-e2e-${{ matrix.dispatch }}-${{ matrix.transport }}
+          path: e2e/logs/
+          if-no-files-found: ignore
+          retention-days: 14

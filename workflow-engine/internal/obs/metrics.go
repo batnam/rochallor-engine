@@ -12,6 +12,11 @@ import (
 // Exceptions: polling-specific metrics are registered conditionally via RegisterPollingMetrics.
 
 var (
+	JobHeartbeatTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "engine_job_heartbeat_total",
+		Help: "Polling lease extension requests by result: accepted, lease_lost, error.",
+	}, []string{"result"})
+
 	// ── Definitions ──────────────────────────────────────────────────────────
 
 	// DefinitionsUploadedTotal counts successful definition uploads.

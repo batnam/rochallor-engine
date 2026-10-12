@@ -10,9 +10,15 @@ permissions:
   id-token: write
 
 jobs:
+  verify:
+    uses: ./.github/workflows/verify-sdk-python.yml
+    with:
+      version: ${{ github.ref_name }}
+
   publish-sdk-python:
     name: Publish Python SDK → PyPI
     runs-on: ubuntu-latest
+    needs: verify
     environment: pypi
     steps:
       - uses: actions/checkout@v5
@@ -21,21 +27,27 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Set version from tag
+      - uses: actions/download-artifact@v7
+        with:
+          name: python-sdk-candidate
+          path: workflow-sdk-python/
+      - name: Verify source, version and distribution checksums
         working-directory: workflow-sdk-python
         run: |
-          VERSION=${GITHUB_REF_NAME#sdk-python-v}
-          sed -i "s/^version = .*/version = \"${VERSION}\"/" pyproject.toml
-
-      - name: Build
-        working-directory: workflow-sdk-python
-        run: pip install build && python -m build
+          (cd dist && sha256sum -c SHA256SUMS)
+          python - <<'PYCODE'
+          import json, os
+          metadata = json.load(open('artifacts/package.json'))
+          assert metadata['source'] == os.environ['GITHUB_SHA']
+          assert metadata['version'] == os.environ['GITHUB_REF_NAME'].removeprefix('sdk-python-v')
+          PYCODE
+          mkdir -p verified-publish
+          cp dist/*.whl dist/*.tar.gz verified-publish/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: workflow-sdk-python/dist/
-          skip-existing: true
+          packages-dir: workflow-sdk-python/verified-publish/
 
   github-release:
     name: Create GitHub Release

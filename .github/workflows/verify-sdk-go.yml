@@ -1,0 +1,84 @@
+name: Verify Go SDK candidate
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: workflow-sdk-go/go.mod
+          cache-dependency-path: workflow-sdk-go/go.sum
+      - name: Unit, race, vet and external consumer
+        working-directory: workflow-sdk-go
+        run: |
+          go test -race ./...
+          go vet ./...
+          sh scripts/check-consumer.sh
+
+  e2e:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        dispatch: [polling, kafka_outbox]
+        transport: [rest, grpc]
+    env:
+      WE_DISPATCH_MODE: ${{ matrix.dispatch }}
+      E2E_SDK_FAULTS: '1'
+      E2E_HEARTBEAT: '1'
+      COMPOSE_PROJECT_NAME: verify-sdk-go
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: e2e/runner/go.mod
+          cache-dependency-path: e2e/runner/go.sum
+      - name: Test fault injector
+        working-directory: e2e/runner
+        run: go test -race ./faultproxy
+      - name: Run Go SDK E2E and callback recovery gates
+        run: ./e2e/run.sh --sdk=go --transport=${{ matrix.transport }}
+      - name: Verify heartbeat off and explicit unsupported error on engine v1.1.2
+        if: matrix.dispatch == 'polling'
+        run: |
+          git fetch --depth=1 origin tag engine-v1.1.2
+          mkdir -p "$RUNNER_TEMP/heartbeat-engine-baseline"
+          git archive engine-v1.1.2 workflow-engine | tar -x -C "$RUNNER_TEMP/heartbeat-engine-baseline"
+          docker build -t heartbeat-engine-baseline "$RUNNER_TEMP/heartbeat-engine-baseline/workflow-engine"
+          export E2E_ENGINE_IMAGE=heartbeat-engine-baseline E2E_ENGINE_HEALTH_PATH=healthz
+          export E2E_WORKER_IMAGE=verify-sdk-go-worker-go
+          E2E_HEARTBEAT=0 E2E_SCENARIOS=linear,retry-fail,transformation \
+            E2E_LOGS_DIR=e2e/logs/old-engine-off ./e2e/run.sh --sdk=go --transport=${{ matrix.transport }}
+          E2E_HEARTBEAT=1 E2E_HEARTBEAT_UNSUPPORTED=1 E2E_SCENARIOS=sdk-heartbeat-unsupported \
+            E2E_LOGS_DIR=e2e/logs/old-engine-on ./e2e/run.sh --sdk=go --transport=${{ matrix.transport }}
+      - name: Measure heartbeat off/on on the verified worker
+        if: matrix.dispatch == 'polling'
+        run: |
+          python3 perf/heartbeat.py --sdk=go --transport=${{ matrix.transport }} \
+            --engine-image=verify-sdk-go-engine --worker-image=verify-sdk-go-worker-go \
+            --output=testresults/heartbeat-cost
+      - name: Save heartbeat cost evidence
+        if: always() && matrix.dispatch == 'polling'
+        uses: actions/upload-artifact@v6
+        with:
+          name: go-heartbeat-cost-${{ matrix.transport }}
+          path: testresults/heartbeat-cost/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: go-sdk-e2e-${{ matrix.dispatch }}-${{ matrix.transport }}
+          path: e2e/logs/
+          if-no-files-found: ignore
+          retention-days: 14

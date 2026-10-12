@@ -1,224 +1,181 @@
 #!/usr/bin/env node
-// Post-run report builder for the perf load test.
-// Reads k6-output.json + host-stats.json, produces the phaseMetrics array
-// and failures object that are merged into summary.json.
-//
-// Usage: node perf/lib/report.js <reports-dir> [baseline-summary.json]
-// Outputs two JSON objects to stdout separated by a NUL byte:
-//   1. Partial summary.json patch (phaseMetrics, failures, hostStatsSummary,
-//      unfinishedWorkflows, comparison if baseline provided)
-//   2. (currently omitted — future: full summary rewrite)
-//
-// Contract: specs/003-performance-load-testing/contracts/run-report.md §1
-// Data model: specs/003-performance-load-testing/data-model.md §PhaseMetric
-
 'use strict';
+// Validate all evidence before producing a verdict. Exit 1 on invalid evidence
+// or a failed gate, even when k6 itself returned success.
+const fs = require('node:fs');
+const path = require('node:path');
+const readline = require('node:readline');
 
-const fs = require('fs');
-const path = require('path');
-
-const reportsDir = process.argv[2];
-const baselinePath = process.argv[3] || null;
-
-if (!reportsDir) {
-  process.stderr.write('Usage: report.js <reports-dir> [baseline-summary.json]\n');
-  process.exit(1);
+const PHASES = ['ramp-up', 'steady-state', 'ramp-down'];
+const OPERATIONS = ['workflow.start', 'workflow.poll', 'workflow.list', 'workflow.history',
+  'workflow.cancel', 'workflow.signal', 'workflow.task_complete'];
+function requireThat(condition, message) { if (!condition) throw new Error(message); }
+function number(value, name) {
+  requireThat(typeof value === 'number' && Number.isFinite(value) && value >= 0, `invalid ${name}`);
+  return value;
 }
-
-// --- Load k6 output ---
-const k6OutputPath = path.join(reportsDir, 'k6-output.json');
-const summaryExportPath = path.join(reportsDir, 'k6-summary-export.json');
-const hostStatsPath = path.join(reportsDir, 'host-stats.json');
-const currentSummaryPath = path.join(reportsDir, 'summary.json');
-
-// k6 --out json produces one JSON object per line (streaming JSON, not an array)
-function loadK6Output(filePath) {
-  if (!fs.existsSync(filePath)) return [];
-  const lines = fs.readFileSync(filePath, 'utf8').trim().split('\n');
-  const events = [];
-  for (const line of lines) {
-    try { events.push(JSON.parse(line)); } catch (_) { /* skip malformed */ }
+function seconds(value) {
+  const match = /^(\d+(?:\.\d+)?)(ms|s|m|h)$/.exec(value);
+  requireThat(match, `invalid phase duration: ${value}`);
+  const result = Number(match[1]) * { ms: 0.001, s: 1, m: 60, h: 3600 }[match[2]];
+  requireThat(result > 0, 'phase duration must be positive');
+  return result;
+}
+function percentile(values, percent) {
+  return values.length ? values[Math.ceil(values.length * percent / 100) - 1] : null;
+}
+function compatible(base, current) {
+  requireThat(base.schemaVersion === '2.0' && base.result === 'pass', 'baseline must be a passing v2 report');
+  for (const key of ['harnessSha', 'thresholds', 'scenario', 'host', 'generator']) {
+    const comparable = key === 'scenario' ? { name: current.scenario.name, config: current.scenario.config } : current[key];
+    const prior = key === 'scenario' ? { name: base.scenario?.name, config: base.scenario?.config } : base[key];
+    requireThat(comparable !== undefined && JSON.stringify(prior) === JSON.stringify(comparable), `baseline differs: ${key}`);
   }
-  return events;
+  for (const key of ['transport', 'dispatchMode', 'workerReplicas'])
+    requireThat(base.engine?.[key] === current.engine[key], `baseline differs: engine.${key}`);
 }
 
-function loadJson(filePath) {
-  if (!fs.existsSync(filePath)) return null;
-  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch (_) { return null; }
-}
-
-const k6Events   = loadK6Output(k6OutputPath);
-const summaryExp = loadJson(summaryExportPath);
-const hostStats  = loadJson(hostStatsPath);
-const currentSum = loadJson(currentSummaryPath);
-const baseline   = baselinePath ? loadJson(baselinePath) : null;
-
-// --- Phase × operation metric aggregation from k6 streaming output ---
-// Each k6 Point event has: { metric, type, data: { tags, value, time } }
-// We filter on type==="Point" and aggregate by (phase tag, operation tag).
-
-const PHASES      = ['ramp-up', 'steady-state', 'ramp-down'];
-const OPERATIONS  = [
-  'workflow.start', 'workflow.poll', 'workflow.list', 'workflow.history',
-  'workflow.cancel', 'workflow.signal', 'workflow.task_complete',
-];
-
-// Bucket structure: { phase: { operation: { count, sum, errors, values[] } } }
-const buckets = {};
-for (const ph of PHASES) {
-  buckets[ph] = {};
-  for (const op of OPERATIONS) {
-    buckets[ph][op] = { count: 0, sumMs: 0, errorCount: 0, values: [] };
+async function main() {
+  const [directory, baselinePath] = process.argv.slice(2);
+  requireThat(directory, 'usage: report.js <reports-dir> [baseline-summary.json]');
+  const load = name => JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'));
+  const current = load('summary.json');
+  const summary = load('k6-summary-export.json');
+  const host = load('host-stats.json');
+  const outcomes = load('workflow-outcomes.json');
+  requireThat(current.schemaVersion === '2.0' && current.harnessSha, 'missing current harness identity');
+  requireThat(['rest', 'grpc'].includes(current.engine?.transport), 'invalid transport');
+  requireThat(['polling', 'kafka_outbox'].includes(current.engine.dispatchMode), 'invalid dispatch mode');
+  requireThat(summary.metrics && Object.keys(summary.metrics).length, 'missing k6 metrics');
+  const durations = { 'ramp-up': seconds(current.scenario.config.rampUp),
+    'steady-state': seconds(current.scenario.config.steady), 'ramp-down': seconds(current.scenario.config.rampDown) };
+  const transport = current.engine.transport;
+  const latencyMetric = transport === 'rest' ? 'http_req_duration' : 'grpc_req_duration';
+  const errorMetric = transport === 'rest' ? 'http_req_failed' : 'grpc_error_rate';
+  const buckets = new Map();
+  for (const phase of PHASES) for (const operation of OPERATIONS)
+    buckets.set(`${phase}/${operation}`, { phase, operation, values: [], errorSamples: 0, errors: 0 });
+  let lines = 0;
+  const input = readline.createInterface({ input: fs.createReadStream(path.join(directory, 'k6-output.json')), crlfDelay: Infinity });
+  for await (const line of input) {
+    if (!line.trim()) continue;
+    lines++;
+    const event = JSON.parse(line); // Malformed lines invalidate the report.
+    if (event.type !== 'Point' || ![latencyMetric, errorMetric].includes(event.metric)) continue;
+    const bucket = buckets.get(`${event.data?.tags?.phase}/${event.data?.tags?.operation}`);
+    if (!bucket) continue; // Setup/teardown calls are outside the load phases.
+    if (transport === 'rest') {
+      const tags = event.data.tags;
+      requireThat(tags.name === tags.operation && tags.url === tags.operation,
+        `ungrouped REST request metrics: ${tags.operation}`);
+    }
+    const value = number(event.data.value, `${event.metric} sample`);
+    if (event.metric === latencyMetric) bucket.values.push(value);
+    else {
+      requireThat(value === 0 || value === 1, 'error sample must be 0 or 1');
+      bucket.errorSamples++; bucket.errors += value;
+    }
   }
-}
-
-for (const ev of k6Events) {
-  if (ev.type !== 'Point') continue;
-  const tags = (ev.data && ev.data.tags) || {};
-  const phase = tags.phase;
-  const operation = tags.operation;
-  const metric = ev.metric;
-  const value = ev.data && ev.data.value;
-
-  if (!phase || !operation) continue;
-  if (!PHASES.includes(phase) || !OPERATIONS.includes(operation)) continue;
-
-  const b = buckets[phase][operation];
-
-  if (metric === 'http_req_duration') {
-    b.count++;
-    b.sumMs += value;
-    b.values.push(value);
-  } else if (metric === 'http_req_failed') {
-    if (value > 0) b.errorCount++;
+  requireThat(lines > 0, 'empty k6 output');
+  const requiredOps = ['workflow.start', 'workflow.poll', 'workflow.list', 'workflow.history'];
+  if (current.scenario.name.startsWith('loan-chain-full')) {
+    requiredOps.splice(requiredOps.indexOf('workflow.history'), 1);
+    requiredOps.push('workflow.task_complete');
   }
-}
-
-function percentile(sortedArr, p) {
-  if (!sortedArr.length) return 0;
-  const idx = Math.ceil((p / 100) * sortedArr.length) - 1;
-  return sortedArr[Math.max(0, idx)];
-}
-
-const phaseMetrics = [];
-for (const ph of PHASES) {
-  for (const op of OPERATIONS) {
-    const b = buckets[ph][op];
+  for (const operation of requiredOps)
+    requireThat(buckets.get(`steady-state/${operation}`).values.length > 0, `missing steady-state metric: ${operation}`);
+  const phaseMetrics = Array.from(buckets.values()).map(b => {
+    requireThat(b.errorSamples === b.values.length, `missing error/latency samples: ${b.phase}/${b.operation}`);
     b.values.sort((a, z) => a - z);
-    const rate = b.count;  // raw count; run.sh knows the duration to compute req/s if needed
-    const errorRate = b.count > 0 ? b.errorCount / b.count : 0;
-    phaseMetrics.push({
-      phase: ph,
-      operation: op,
-      count: b.count,
-      rate,
-      errorRate,
-      p50Ms: percentile(b.values, 50),
-      p95Ms: percentile(b.values, 95),
-      p99Ms: percentile(b.values, 99),
-    });
-  }
-}
+    return { phase: b.phase, operation: b.operation, count: b.values.length,
+      rate: b.values.length / durations[b.phase], errorRate: b.values.length ? b.errors / b.values.length : null,
+      p50Ms: percentile(b.values, 50), p95Ms: percentile(b.values, 95), p99Ms: percentile(b.values, 99) };
+  }).filter(row => row.count > 0);
 
-// --- Failure kind counts from summary export ---
-const failures = {
-  engine_error: 0,
-  engine_timeout: 0,
-  engine_unresponsive: 0,
-  generator_side: 0,
-  surface_drift: 0,
-  setup_failed: 0,
-};
-
-if (summaryExp && summaryExp.metrics) {
-  const m = summaryExp.metrics;
-  for (const kind of Object.keys(failures)) {
-    const key = `failure_kind_${kind}`;
-    if (m[key] && m[key].values) {
-      failures[kind] = m[key].values.count || 0;
+  const gateFailures = [];
+  const breachedThresholds = [];
+  for (const [name, metric] of Object.entries(summary.metrics)) {
+    for (const [rule, result] of Object.entries(metric.thresholds || {})) {
+      const failed = typeof result === 'boolean' ? result : result?.ok === false;
+      requireThat(typeof result === 'boolean' || typeof result?.ok === 'boolean', `invalid threshold: ${name}`);
+      if (failed) breachedThresholds.push({ threshold: name, ruleString: rule, observed: metric.values || metric });
     }
   }
-}
-
-// --- Unfinished workflow count (from the custom metric in summary export) ---
-const unfinishedWorkflows = { count: 0, sampleIds: [] };
-if (summaryExp && summaryExp.metrics) {
-  const uf = summaryExp.metrics['workflows_unfinished_after_steady_state'];
-  if (uf && uf.values) {
-    unfinishedWorkflows.count = uf.values.count || 0;
+  if (breachedThresholds.length) gateFailures.push('k6 thresholds breached');
+  const checks = summary.metrics.checks?.values || summary.metrics.checks;
+  requireThat(checks, 'missing k6 checks');
+  if (number(checks.fails, 'failed checks') > 0) gateFailures.push('k6 checks failed');
+  number(checks.passes, 'passed checks');
+  const failures = {};
+  for (const kind of ['engine_error', 'engine_timeout', 'engine_unresponsive', 'generator_side']) {
+    const metric = summary.metrics[`failure_kind_${kind}`];
+    requireThat(metric, `missing failure metric: ${kind}`);
+    failures[kind] = number((metric.values || metric).count, kind);
+    if (failures[kind] > 0) gateFailures.push(`${kind}: ${failures[kind]}`);
   }
-}
+  const unfinishedNames = current.scenario.name.startsWith('loan-chain-full')
+    ? ['chain_app_unfinished_after_steady_state', 'chain_disb_unfinished_after_steady_state']
+    : ['workflows_unfinished_after_steady_state'];
+  let unfinished = 0;
+  for (const name of unfinishedNames) {
+    const metric = summary.metrics[name];
+    requireThat(metric, `missing outcome metric: ${name}`);
+    unfinished += number((metric.values || metric).count, name);
+  }
+  if (unfinished) gateFailures.push(`unfinished workflows: ${unfinished}`);
 
-// --- Host stats summary ---
-const hostStatsSummary = hostStats ? hostStats.summary : null;
+  requireThat(Array.isArray(outcomes.instances) && outcomes.instances.length > 0, 'missing workflow outcomes');
+  const statusCounts = {};
+  const ids = new Set();
+  for (const item of outcomes.instances) {
+    requireThat(typeof item.id === 'string' && item.id && !ids.has(item.id), 'invalid/duplicate outcome id');
+    requireThat(['COMPLETED', 'FAILED', 'CANCELLED', 'ACTIVE', 'WAITING'].includes(item.status), 'invalid outcome status');
+    ids.add(item.id); statusCounts[item.status] = (statusCounts[item.status] || 0) + 1;
+  }
+  if (statusCounts.COMPLETED !== outcomes.instances.length) gateFailures.push('unexpected workflow outcomes (all must be COMPLETED)');
+  if (number(outcomes.pendingChains, 'pending chains') > 0) gateFailures.push('pending chained workflows');
+  requireThat(host.summary && Array.isArray(host.samples) && host.samples.length > 0, 'missing host samples');
+  requireThat(host.summary.sampleCount === host.samples.length, 'host sample count mismatch');
+  number(host.summary.k6CpuPctPeak, 'generator CPU');
+  requireThat(typeof host.summary.generatorLikelySaturated === 'boolean', 'missing generator saturation assessment');
+  requireThat(!host.errors?.length, `host sampling failed: ${host.errors}`);
+  if (host.summary.generatorLikelySaturated) gateFailures.push('load generator saturated');
 
-// --- Regression comparison (placeholder here) ---
-let comparison = null;
-if (baseline && baseline.phaseMetrics) {
-  const BAND = { p95Pct: 15, throughputPct: 10 };
-  const perOperation = [];
-  let flaggedCount = 0;
-  let hasWorse = false;
-  let hasBetter = false;
-
-  for (const cur of phaseMetrics) {
-    if (cur.phase !== 'steady-state') continue;  // compare steady-state only
-    const base = baseline.phaseMetrics
-      ? baseline.phaseMetrics.find(
-          (b) => b.phase === cur.phase && b.operation === cur.operation,
-        )
-      : null;
-    if (!base || base.p95Ms === 0) continue;
-
-    for (const { metric, baseVal, curVal, band, direction } of [
-      { metric: 'p95',       baseVal: base.p95Ms,     curVal: cur.p95Ms,     band: BAND.p95Pct,       direction: 'up-is-worse'   },
-      { metric: 'errorRate', baseVal: base.errorRate,  curVal: cur.errorRate,  band: null,              direction: 'up-is-worse'   },
-      { metric: 'throughput',baseVal: base.count,      curVal: cur.count,      band: BAND.throughputPct,direction: 'down-is-worse' },
-    ]) {
-      if (baseVal === 0) continue;
-      const deltaPct = baseVal !== 0 ? ((curVal - baseVal) / baseVal) * 100 : 0;
-      let flagged = false;
-      if (band !== null) {
-        flagged = Math.abs(deltaPct) > band;
-      } else {
-        // errorRate: flag if absolute increase > 0.05%
-        flagged = (curVal - baseVal) > 0.0005;
+  let comparison = null;
+  if (baselinePath) {
+    const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+    compatible(baseline, current);
+    requireThat(Array.isArray(baseline.phaseMetrics), 'baseline missing phase metrics');
+    const perOperation = [];
+    let worse = false; let better = false;
+    for (const row of phaseMetrics.filter(p => p.phase === 'steady-state')) {
+      const base = baseline.phaseMetrics.find(p => p.phase === row.phase && p.operation === row.operation);
+      requireThat(base && base.count > 0 && base.p95Ms > 0 && base.rate > 0, `baseline missing ${row.operation}`);
+      for (const [metric, key, band, direction] of [['p95', 'p95Ms', 15, 1], ['throughput', 'rate', 10, -1], ['errorRate', 'errorRate', null, 1]]) {
+        number(base[key], `baseline ${key}`);
+        const delta = row[key] - base[key];
+        const deltaPct = base[key] === 0 ? null : 100 * delta / base[key];
+        const flagged = band === null ? Math.abs(delta) > 0.0005 : Math.abs(deltaPct) > band;
+        if (flagged) { if (delta * direction > 0) worse = true; else better = true; }
+        perOperation.push({ phase: row.phase, operation: row.operation, metric,
+          baseline: base[key], current: row[key], deltaPct, flagged });
       }
-      if (flagged) {
-        flaggedCount++;
-        const worse = (direction === 'up-is-worse' && deltaPct > 0) ||
-                      (direction === 'down-is-worse' && deltaPct < 0);
-        if (worse) hasWorse = true; else hasBetter = true;
-      }
-      perOperation.push({
-        phase: cur.phase,
-        operation: cur.operation,
-        metric,
-        baseline: baseVal,
-        current: curVal,
-        deltaPct: Math.round(deltaPct * 10) / 10,
-        flagged,
-      });
     }
+    comparison = { baselineRunId: baseline.runId, varianceBand: { p95Pct: 15, throughputPct: 10 },
+      perOperation, flaggedCount: perOperation.filter(p => p.flagged).length,
+      verdict: worse ? 'regressed' : better ? 'improved' : 'within-noise' };
+    if (worse) gateFailures.push('regression exceeds variance band');
   }
-
-  comparison = {
-    baselineRunId: baseline.runId,
-    varianceBand: BAND,
-    perOperation,
-    flaggedCount,
-    verdict: hasWorse ? 'regressed' : hasBetter ? 'improved' : 'within-noise',
-  };
+  if (current.result !== 'pass') gateFailures.push('k6 execution failed');
+  const patch = { result: gateFailures.length ? 'fail' : 'pass', phaseMetrics, failures,
+    unfinishedWorkflows: { count: unfinished, sampleIds: [] }, hostStatsSummary: host.summary,
+    workflowOutcomes: { total: ids.size, statusCounts, pendingChains: outcomes.pendingChains },
+    comparison, breachedThresholds, gateFailures };
+  process.stdout.write(JSON.stringify(patch, null, 2) + '\n');
+  if (gateFailures.length) process.exitCode = 1;
 }
 
-// --- Output the patch object ---
-const patch = {
-  phaseMetrics,
-  failures,
-  unfinishedWorkflows,
-  hostStatsSummary,
-  comparison,
-};
-
-process.stdout.write(JSON.stringify(patch, null, 2));
-process.stdout.write('\n');
+main().catch(error => {
+  process.stderr.write(`Report failed: ${error.message}\n`);
+  process.exitCode = 1;
+});

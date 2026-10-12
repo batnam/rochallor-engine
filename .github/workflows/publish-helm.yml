@@ -10,8 +10,16 @@ permissions:
   packages: write
 
 jobs:
+  verify:
+    uses: ./.github/workflows/verify-helm.yml
+    permissions:
+      contents: read
+    with:
+      released-engine: true
+
   publish-helm-chart:
     name: Publish Helm chart → GHCR OCI
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -29,14 +37,16 @@ jobs:
       - name: Install oras
         uses: oras-project/setup-oras@v1
 
-      - name: Package and push chart
+      - uses: actions/download-artifact@v6
+        with:
+          name: verified-helm-package
+          path: artifacts/helm
+
+      - name: Publish verified package without repackaging
         run: |
+          sha256sum --check artifacts/helm/SHA256SUMS
           VERSION=${GITHUB_REF_NAME#helm-v}
-          APP_VERSION=${GITHUB_REF_NAME#helm-}
-          helm package deploy/helm/rochallor/ \
-            --version "${VERSION}" \
-            --app-version "${APP_VERSION}"
-          helm push "rochallor-${VERSION}.tgz" \
+          helm push "artifacts/helm/rochallor-${VERSION}.tgz" \
             oci://ghcr.io/${{ github.repository_owner }}/charts
 
       - name: Push Artifact Hub metadata

@@ -2,6 +2,7 @@ package rest
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -28,9 +29,10 @@ func NewJobHandlers(dbConn db.DB, jobStore job.JobStore, instSvc *instance.Servi
 }
 
 type pollRequest struct {
-	WorkerID string   `json:"workerId"`
-	JobTypes []string `json:"jobTypes"`
-	MaxJobs  int      `json:"maxJobs,omitempty"`
+	WorkerID     string   `json:"workerId"`
+	JobTypes     []string `json:"jobTypes"`
+	MaxJobs      int      `json:"maxJobs,omitempty"`
+	LeaseSeconds int      `json:"leaseSeconds,omitempty"`
 }
 
 // Poll handles POST /v1/jobs/poll.
@@ -53,7 +55,11 @@ func (h *JobHandlers) Poll(w http.ResponseWriter, r *http.Request) {
 		max = 10
 	}
 
-	jobs, err := job.Poll(r.Context(), h.jobStore, req.WorkerID, req.JobTypes, max)
+	jobs, err := job.PollWithLease(r.Context(), h.jobStore, req.WorkerID, req.JobTypes, max, req.LeaseSeconds)
+	if errors.Is(err, job.ErrInvalidLeaseSeconds) {
+		engineapi.WriteBadRequest(w, err.Error())
+		return
+	}
 	if err != nil {
 		engineapi.WriteInternalError(w, err.Error())
 		return
@@ -102,4 +108,26 @@ func (h *JobHandlers) Fail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *JobHandlers) Heartbeat(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		WorkerID     string `json:"workerId"`
+		LeaseSeconds int    `json:"leaseSeconds,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		engineapi.WriteBadRequest(w, "invalid request body: "+err.Error())
+		return
+	}
+	expiry, err := job.ExtendLease(r.Context(), h.db, h.jobStore, chi.URLParam(r, "id"), req.WorkerID, req.LeaseSeconds)
+	switch {
+	case errors.Is(err, job.ErrInvalidLeaseSeconds), errors.Is(err, job.ErrInvalidLeaseOwner):
+		engineapi.WriteBadRequest(w, err.Error())
+	case errors.Is(err, job.ErrLeaseLost):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "lease-lost", "reason": err.Error()})
+	case err != nil:
+		engineapi.WriteInternalError(w, err.Error())
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"accepted": true, "lockExpiresAt": expiry})
+	}
 }

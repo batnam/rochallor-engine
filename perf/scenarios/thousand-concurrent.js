@@ -125,6 +125,8 @@ function classifyFailure(res, iterationDeadlineExpired) {
 
 // setup() runs once before VUs start. DEFINITION_ID is already uploaded by run.sh.
 export function setup() {
+  for (const counter of Object.values(failKind)) counter.add(0);
+  unfinishedCounter.add(0);
   if (!DEFINITION_ID) {
     throw new Error('PERF_DEFINITION_ID is not set — run via perf/run.sh');
   }
@@ -188,6 +190,7 @@ export default function (data) {
     }
 
     if (isTerminal(status)) {
+      if (!check(status, {"workflow outcome: COMPLETED": value => value === 'COMPLETED'})) failKind.engine_error.add(1);
       terminal = true;
       break;
     }
@@ -244,7 +247,7 @@ export function teardown(data) {
     let more = true;
     while (more) {
       const res = listInstances(baseUrl, { page, pageSize, status });
-      if (res.status !== 200) break;
+      if (res.status !== 200) throw new Error('outcome listing failed: ' + res.status);
 
       const body = JSON.parse(res.body);
       const items = body.items || [];

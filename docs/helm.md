@@ -201,7 +201,7 @@ helm upgrade rochallor oci://ghcr.io/batnam/charts/rochallor --version <new-vers
   --set migrations.enabled=true
 ```
 
-The `pre-upgrade` hook starts the engine, waits for the health endpoint (confirming migrations completed), then shuts it down. Once the hook Job succeeds, Helm proceeds with the Deployment rollout.
+The `pre-upgrade` hook runs `/engine -migrate-only` and reports the process exit code. It exits after applying migrations without starting HTTP/gRPC servers, Kafka consumers or sweepers. Once the hook Job succeeds, Helm proceeds with the Deployment rollout. Use an engine image that supports this command, as described in the [candidate compatibility guidance](#readiness-engine-version-and-migration-hooks-chart-020-candidate).
 
 ---
 
@@ -226,7 +226,7 @@ curl http://localhost:9091/metrics
 
 ## Publishing to Artifact Hub
 
-The `Release` CI job (`.github/workflows/publish.yml`) automatically packages and pushes the chart to `oci://ghcr.io/batnam/charts` on every version tag.
+The [Helm publish workflow](../.github/workflows/publish-helm.yml) verifies, packages and pushes the chart to `oci://ghcr.io/batnam/charts` on `helm-v<x.y.z>` tags. The chart version is independent of the engine version pinned by `appVersion` or `image.tag`.
 
 To list the chart on [Artifact Hub](https://artifacthub.io):
 
@@ -302,3 +302,58 @@ spec:
         - name: kafka.existingSecret
           value: rochallor-kafka
 ```
+
+## Readiness, engine version and migration hooks (chart 0.2.0 candidate)
+
+Chart and engine versions are independent. `Chart.appVersion` pins `v1.2.0`, the
+candidate engine providing `/readyz` and `-migrate-only`; publish that verified
+engine before publishing this chart. A Helm tag changes only the chart version.
+`image.tag` overrides the engine tag for an explicitly tested pair. Do not point
+this chart at an older engine lacking those capabilities.
+
+Readiness uses `/readyz` (2 s timeout, 5 s period, two failures); liveness stays on
+`/healthz`. The startup probe allows roughly 95 s for migration/startup before
+liveness is enabled. Database failure removes a pod from service without a
+liveness restart. An initialized outbox runtime may remain ready while Kafka is
+unavailable; monitor backlog/oldest-row age and relay failures separately.
+
+`migrations.enabled=true` runs `/engine -migrate-only` as a **pre-upgrade** hook;
+installation still uses normal engine startup migrations. The Job and Deployment
+use the same engine image. Only the DB DSN is supplied to the Job: Kafka and
+runtime listener configuration are unnecessary. A nonzero exit or the 300 s
+job deadline fails the hook and blocks Deployment rollout.
+
+An `existingSecret` must exist with the intended DSN **before** upgrade. For a
+chart-managed DSN, a hook Secret of weight -10 provides the incoming value before
+the Job of weight -5; the ordinary release Secret is not updated until later.
+This hook Secret is replaced on each upgrade and retained for the next upgrade;
+Helm does not remove hook resources on uninstall. After uninstall, explicitly
+delete `<fullname>-migrations-db` when it is no longer needed. Failed migration
+Jobs retain logs until the next upgrade. Avoid overriding reserved `helm.sh/*`
+hook annotations with `migrations.annotations`.
+
+Roll back the chart while retaining the newer engine first; only then restore
+an older engine with its compatible `/healthz` chart. Keep the migrated schema
+when compatible. Never use `-migrate-down` as application rollback: it drops all
+migrated schema.
+
+Verification packages the chart once, checks both dispatch modes and image
+overrides, then tests a real old→new upgrade, database outage/recovery, empty/
+pending/no-change migrations, failed hooks blocking rollout and rollback in a
+disposable kind cluster. Publication downloads and pushes those same bytes.
+
+```sh
+helm package deploy/helm/rochallor --destination /tmp/helm-candidate
+python3 deploy/helm/test/verify.py \
+  --chart=/tmp/helm-candidate/rochallor-0.2.0.tgz \
+  --image=rochallor-engine:local --output=testresults/helm
+```
+
+Prerequisites: Helm, Docker with API 1.48+, kubectl, kind 0.33.0, Python with PyYAML; candidate,
+Postgres and baseline engine images already available locally. The runner creates
+a dedicated cluster and kubeconfig and deletes them on success/failure. kind
+installation follows its [official quick start](https://kind.sigs.k8s.io/docs/user/quick-start/).
+
+The cluster verifier uses [Docker platform-specific image export](https://docs.docker.com/reference/cli/docker/image/save/)
+to import the exact local image platform, including registry images whose other
+architecture layers have not been pulled.

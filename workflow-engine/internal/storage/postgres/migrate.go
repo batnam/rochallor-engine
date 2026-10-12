@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -18,7 +19,14 @@ func Migrate(pool *pgxpool.Pool) error {
 	db := stdlib.OpenDBFromPool(pool)
 	defer db.Close()
 
-	driver, err := pgmigrate.WithInstance(db, &pgmigrate.Config{})
+	// Own the dedicated connection even if driver initialization fails. Without
+	// closing it, pgxpool.Close (and migrate-only itself) waits forever.
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		return fmt.Errorf("migrate: acquire connection: %w", err)
+	}
+	defer conn.Close()
+	driver, err := pgmigrate.WithConnection(context.Background(), conn, &pgmigrate.Config{})
 	if err != nil {
 		return fmt.Errorf("migrate: create pg driver: %w", err)
 	}
@@ -27,6 +35,7 @@ func Migrate(pool *pgxpool.Pool) error {
 	if err != nil {
 		return fmt.Errorf("migrate: create iofs source: %w", err)
 	}
+	defer src.Close()
 
 	m, err := migrate.NewWithInstance("iofs", src, "postgres", driver)
 	if err != nil {
@@ -44,7 +53,12 @@ func MigrateDown(pool *pgxpool.Pool) error {
 	db := stdlib.OpenDBFromPool(pool)
 	defer db.Close()
 
-	driver, err := pgmigrate.WithInstance(db, &pgmigrate.Config{})
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		return fmt.Errorf("migrate-down: acquire connection: %w", err)
+	}
+	defer conn.Close()
+	driver, err := pgmigrate.WithConnection(context.Background(), conn, &pgmigrate.Config{})
 	if err != nil {
 		return fmt.Errorf("migrate-down: create pg driver: %w", err)
 	}
@@ -53,6 +67,7 @@ func MigrateDown(pool *pgxpool.Pool) error {
 	if err != nil {
 		return fmt.Errorf("migrate-down: create iofs source: %w", err)
 	}
+	defer src.Close()
 
 	m, err := migrate.NewWithInstance("iofs", src, "postgres", driver)
 	if err != nil {

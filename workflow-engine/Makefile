@@ -51,7 +51,7 @@ test-integration:
 
 # ── Database migrations ───────────────────────────────────────────────────────
 migrate:
-	@echo "Running migrations against $$WE_POSTGRES_DSN"
+	@echo "Applying pending database migrations"
 	go run ./cmd/engine -migrate-only
 
 migrate-down:
@@ -94,5 +94,4 @@ lint:
 
 # ── Contract replay ───────────────────────────────────────────────────────────
 contract-replay:
-	@echo "Replaying REST contract against http://localhost:$$WE_REST_PORT"
-	go run ./test/contract/... -openapi=$(OPENAPI) -base=http://localhost:$${WE_REST_PORT:-8080}
+	python3 test/contract/replay.py --openapi=$(OPENAPI) --base=http://localhost:$${WE_REST_PORT:-8080} --mode=$${WE_DISPATCH_MODE:-polling}

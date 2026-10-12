@@ -7,14 +7,18 @@ for bounded concurrency.
 from __future__ import annotations
 
 import logging
+import math
 import signal
 import threading
 import time
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import Any
 
-from workflow_sdk.client.interface import EngineClient
-from workflow_sdk.errors import NonRetryableError, WorkflowSDKError
+from workflow_sdk.client.interface import EngineClient, LeaseExtender
+from workflow_sdk.errors import HeartbeatUnsupportedError, WorkflowSDKError
+from workflow_sdk.client.deadline import request_lease, request_timeout
+from workflow_sdk.runner.heartbeat import Lease
+from workflow_sdk.runner.callback import deliver, execute, lease_deadline
 from workflow_sdk.handler.registry import HandlerRegistry
 from workflow_sdk.metrics.metrics import Metrics
 from prometheus_client import CollectorRegistry
@@ -30,7 +34,8 @@ class Runner:
 
     The runner blocks inside :meth:`run` until ``stop_event`` is set or a
     ``SIGTERM`` / ``SIGINT`` signal is received.  All in-flight job executions
-    are drained before the method returns.
+    are given a bounded drain period before the method returns. Uncooperative
+    handler threads retain their slots and may keep the Python process alive.
 
     Example::
 
@@ -63,10 +68,30 @@ class Runner:
         parallelism: int = _DEFAULT_PARALLELISM,
         poll_interval: float = _DEFAULT_POLL_INTERVAL,
         metrics: Metrics | None = None,
+        *,
+        lease_seconds: int = 0,
+        heartbeat: bool = False,
+        heartbeat_interval: float | None = None,
+        shutdown_timeout: float = 5.0,
     ) -> None:
         if not worker_id:
             raise ValueError("worker_id must not be empty")
 
+        if not isinstance(lease_seconds, int) or lease_seconds != 0 and not 5 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be 0 or 5–3600")
+        interval = (lease_seconds or 30) / 3 if heartbeat_interval is None else heartbeat_interval
+        if not 0 < interval <= (lease_seconds or 30) / 3:
+            raise ValueError("heartbeat_interval must be positive and at most one third of the lease")
+        if not math.isfinite(shutdown_timeout) or shutdown_timeout <= 0:
+            raise ValueError("shutdown_timeout must be finite and positive")
+        self._lease_seconds, self._heartbeat = lease_seconds, heartbeat
+        self._heartbeat_interval, self._shutdown_timeout = interval, shutdown_timeout
+        self._state_lock = threading.Lock()
+        self._running = False
+        self._pending: list[Future[None]] = []
+        self._leases: set[Lease] = set()
+        self._fatal_error: Exception | None = None
+        self._stop_event = threading.Event()
         self._client = client
         self._registry = registry
         self._worker_id = worker_id
@@ -91,6 +116,15 @@ class Runner:
         if stop_event is None:
             stop_event = threading.Event()
 
+        if self._heartbeat and not isinstance(self._client, LeaseExtender):
+            raise HeartbeatUnsupportedError("heartbeat requires a client with extend_job_lease")
+        with self._state_lock:
+            if self._running or any(not future.done() for future in self._pending):
+                raise RuntimeError("runner already running or draining handlers")
+            self._running = True
+            self._fatal_error = None
+            self._pending = []
+        self._stop_event = stop_event
         self._install_signal_handlers(stop_event)
 
         job_types = self._registry.job_types()
@@ -101,23 +135,27 @@ class Runner:
             self._parallelism,
         )
 
-        in_flight: list[Future[None]] = []
-
-        with ThreadPoolExecutor(max_workers=self._parallelism) as executor:
+        in_flight = self._pending
+        executor = ThreadPoolExecutor(max_workers=self._parallelism)
+        try:
             while not stop_event.is_set():
                 self._poll_and_dispatch(executor, in_flight, job_types)
-                # Prune completed futures to avoid memory growth
-                in_flight[:] = [f for f in in_flight if not f.done()]
+                in_flight[:] = [future for future in in_flight if not future.done()]
                 stop_event.wait(timeout=self._poll_interval)
-
-            # Drain remaining in-flight jobs
-            logger.info("runner: draining %d in-flight jobs", len(in_flight))
-            for future in in_flight:
-                try:
-                    future.result(timeout=300)
-                except Exception:
-                    pass  # errors were already handled inside _dispatch
-
+        finally:
+            stop_event.set()
+            with self._state_lock:
+                leases = list(self._leases)
+            for lease in leases:
+                lease.stop()
+            executor.shutdown(wait=False, cancel_futures=True)
+            _, pending = wait(in_flight, timeout=self._shutdown_timeout)
+            with self._state_lock:
+                self._running = False
+            if pending and self._fatal_error is None:
+                self._fatal_error = RuntimeError("runner shutdown timed out; handlers still running")
+        if self._fatal_error is not None:
+            raise self._fatal_error
         logger.info("runner: stopped")
 
     # ------------------------------------------------------------------ #
@@ -130,11 +168,14 @@ class Runner:
         in_flight: list[Future[None]],
         job_types: list[str],
     ) -> None:
+        in_flight[:] = [future for future in in_flight if not future.done()]
+        available = self._parallelism - len(in_flight)
+        if available <= 0 or self._stop_event.is_set():
+            return
         start = time.monotonic()
         try:
-            jobs = self._client.poll_jobs(
-                self._worker_id, job_types, max_jobs=self._parallelism
-            )
+            with request_timeout(5.0), request_lease(self._lease_seconds):
+                jobs = self._client.poll_jobs(self._worker_id, job_types, max_jobs=available)
         except WorkflowSDKError as exc:
             logger.warning("runner: poll error — %s", exc)
             return
@@ -154,76 +195,43 @@ class Runner:
             in_flight.append(future)
 
     def _dispatch(self, job: dict[str, Any]) -> None:
-        job_id: str = job["id"]
-        job_type: str = job["jobType"]
-
-        handler = self._registry.get(job_type)
-        if handler is None:
-            logger.error("runner: no handler for job_type=%s job_id=%s", job_type, job_id)
-            self._safe_fail(job_id, f"no handler registered for {job_type!r}", retryable=False)
+        deadline = lease_deadline(job)
+        if self._stop_event.is_set() or deadline is not None and deadline <= time.monotonic():
             return
-
-        ctx: dict[str, Any] = {
-            "id": job_id,
-            "jobType": job_type,
-            "instanceId": job.get("instanceId", ""),
-            "stepId": job.get("stepId", ""),
-            "stepExecutionId": job.get("stepExecutionId", ""),
-            "retriesRemaining": job.get("retriesRemaining", 0),
-            "variables": job.get("variables") or {},
-        }
-
-        start = time.monotonic()
+        lease: Lease | None = None
         try:
-            result = self._safe_call(handler, ctx)
-            logger.info("runner: job completed job_id=%s", job_id)
-        except NonRetryableError as exc:
-            self._metrics.handler_latency.labels(job_type=job_type).observe(
-                time.monotonic() - start
-            )
-            self._metrics.jobs_completed.labels(job_type=job_type, outcome="failure").inc()
-            logger.warning("runner: job failed (non-retryable) job_id=%s: %s", job_id, exc)
-            self._safe_fail(job_id, str(exc), retryable=False)
-            return
+            if self._heartbeat:
+                if not isinstance(self._client, LeaseExtender):
+                    raise HeartbeatUnsupportedError("heartbeat requires extend_job_lease")
+                lease = Lease(self._client, job, self._worker_id, self._lease_seconds,
+                              self._heartbeat_interval, self._stop_event, self._metrics, self._fatal)
+                with self._state_lock:
+                    self._leases.add(lease)
+                lease.start()
+            cancel = lease.cancel_event if lease else self._stop_event
+            if cancel.is_set():
+                return
+            outcome = execute(self._registry, job, self._metrics, cancel)
+            if cancel.is_set() or lease is not None and not lease.valid():
+                return
+            deliver(self._client, self._worker_id, job["id"], outcome,
+                    cancel, self._metrics, "polling", deadline,
+                    retry=deadline is not None, renewed_deadline=lease.deadline if lease else None)
         except Exception as exc:
-            self._metrics.handler_latency.labels(job_type=job_type).observe(
-                time.monotonic() - start
-            )
-            self._metrics.jobs_completed.labels(job_type=job_type, outcome="failure").inc()
-            self._metrics.retries_total.labels(job_type=job_type).inc()
-            logger.exception("runner: job failed (retryable) job_id=%s: %s", job_id, exc)
-            self._safe_fail(job_id, str(exc), retryable=True)
-            return
+            if self._heartbeat and isinstance(exc, (HeartbeatUnsupportedError, ValueError)):
+                self._fatal(exc)
+            logger.warning("runner: unacknowledged job_id=%s: %s", job["id"], exc)
+        finally:
+            if lease:
+                lease.close()
+                with self._state_lock:
+                    self._leases.discard(lease)
 
-        self._metrics.handler_latency.labels(job_type=job_type).observe(
-            time.monotonic() - start
-        )
-        self._metrics.jobs_completed.labels(job_type=job_type, outcome="success").inc()
-
-        variables = result if isinstance(result, dict) else {}
-        try:
-            self._client.complete_job(job_id, self._worker_id, variables)
-        except Exception as exc:
-            logger.error("runner: complete_job failed job_id=%s — %s", job_id, exc)
-
-    @staticmethod
-    def _safe_call(
-        handler: Any,
-        ctx: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Execute handler, converting panics (unhandled exceptions) to NonRetryableError."""
-        try:
-            return handler(ctx)
-        except NonRetryableError:
-            raise
-        except Exception:
-            raise
-
-    def _safe_fail(self, job_id: str, error_message: str, retryable: bool) -> None:
-        try:
-            self._client.fail_job(job_id, self._worker_id, error_message, retryable)
-        except Exception as exc:
-            logger.error("runner: fail_job error job_id=%s — %s", job_id, exc)
+    def _fatal(self, error: Exception) -> None:
+        with self._state_lock:
+            if self._fatal_error is None:
+                self._fatal_error = error
+        self._stop_event.set()
 
     @staticmethod
     def _install_signal_handlers(stop_event: threading.Event) -> None:

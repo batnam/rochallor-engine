@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"time"
 
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/db"
 	"github.com/batnam/rochallor-engine/workflow-engine/internal/dispatch"
@@ -12,6 +13,10 @@ import (
 // transactional methods take a db.Tx; non-transactional reads (PollJobs)
 // do not.
 type JobStore interface {
+	// ExtendJobLease locks instance then job and extends only an active,
+	// unexpired lease owned by workerID. Rejection does not change any state.
+	ExtendJobLease(ctx context.Context, tx db.Tx, jobID, workerID string, seconds int) (expiry time.Time, accepted bool, err error)
+
 	// GetJobForComplete loads the job row with FOR UPDATE for the Complete path.
 	GetJobForComplete(ctx context.Context, tx db.Tx, jobID string) (instanceID, stepExecID string, retriesRemaining int, err error)
 

@@ -15,11 +15,25 @@ else
   COMPOSE_FILE="$SCRIPT_DIR/docker-compose-polling.yml"
 fi
 
-LOGS_DIR="$SCRIPT_DIR/logs"
+IMAGE_OVERRIDE=""
+compose() {
+  # shellcheck disable=SC2086
+  if [ -n "$IMAGE_OVERRIDE" ]; then
+    docker compose -f "$COMPOSE_FILE" -f "$IMAGE_OVERRIDE" $PROFILES "$@"
+  else
+    docker compose -f "$COMPOSE_FILE" $PROFILES "$@"
+  fi
+}
+
+LOGS_DIR="${E2E_LOGS_DIR:-$SCRIPT_DIR/logs}"
+mkdir -p "$LOGS_DIR"
+LOGS_DIR="$(cd "$LOGS_DIR" && pwd)"
+export E2E_AUDIT_LOG_DIR="$LOGS_DIR"
 RUNNER_DIR="$SCRIPT_DIR/runner"
 
 ENGINE_REST_PORT="${ENGINE_REST_PORT:-18080}"
 ENGINE_GRPC_PORT="${ENGINE_GRPC_PORT:-19090}"
+export E2E_ENGINE_HEALTH_PATH="${E2E_ENGINE_HEALTH_PATH:-readyz}"
 SDK="all"
 TRANSPORT="${TRANSPORT:-rest}"
 
@@ -32,6 +46,10 @@ for arg in "$@"; do
       echo "Usage: $0 [--sdk=go|python|node|java|all] [--transport=rest|grpc|all]"
       echo ""
       echo "Environment variables:"
+      echo "  E2E_ENGINE_IMAGE   Use a frozen engine image instead of building"
+      echo "  E2E_WORKER_IMAGE   Use a frozen worker image (--sdk must name one SDK)"
+      echo "  E2E_ENGINE_HEALTH_PATH  Health endpoint (default: readyz; healthz for older engines)"
+      echo "  E2E_LOGS_DIR       Directory for this run logs and image identities"
       echo "  WE_DISPATCH_MODE   Dispatch mode: polling (default) or kafka_outbox"
       echo "  TRANSPORT          Client transport: rest (default), grpc, or all"
       echo "  ENGINE_REST_PORT   Host port for engine REST (default: 18080)"
@@ -48,7 +66,7 @@ if ! command -v go >/dev/null 2>&1; then
 fi
 
 # Map --sdk flag to docker-compose profiles.
-# worker-go has no profile (always starts). python/node/java use named profiles.
+# python/node/java use named profiles; explicit service selection isolates one SDK.
 resolve_profiles() {
   case "$SDK" in
     go)     echo "" ;;
@@ -65,23 +83,69 @@ resolve_profiles() {
 
 PROFILES="$(resolve_profiles)"
 
+if [ -n "$E2E_WORKER_IMAGE" ] && [ "$SDK" = "all" ]; then
+  echo "[e2e] ERROR: E2E_WORKER_IMAGE requires one --sdk" >&2
+  exit 1
+fi
+
+if [ -z "$E2E_WORKER_IMAGE" ]; then
+# Node E2E consumes a previously verified tarball, including on release tags.
+# Never rebuild here: all transport/dispatch combinations must test the same bytes.
+case "$SDK" in
+  node|all)
+    if [ ! -f "$SCRIPT_DIR/../workflow-sdk-node/artifacts/sdk.tgz" ] ||
+       [ ! -f "$SCRIPT_DIR/../workflow-sdk-node/artifacts/SHA256SUMS" ]; then
+      echo "[e2e] ERROR: prepare the Node candidate: cd workflow-sdk-node && npm ci && npm run package:verify" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+case "$SDK" in
+  java|all)
+    if [ ! -f "$SCRIPT_DIR/../workflow-sdk-java/artifacts/candidate/SHA256SUMS" ]; then
+      echo "[e2e] ERROR: prepare Java candidate: cd workflow-sdk-java && python3 scripts/verify-package.py" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+case "$SDK" in
+  python|all)
+    if [ ! -f "$SCRIPT_DIR/../workflow-sdk-python/dist/SHA256SUMS" ]; then
+      echo "[e2e] ERROR: prepare Python candidate: cd workflow-sdk-python && python scripts/verify-package.py" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+fi
+
 # cleanup: collect logs then tear down stack. Always runs via trap.
 cleanup() {
   echo "[e2e] collecting container logs..."
   mkdir -p "$LOGS_DIR"
   # shellcheck disable=SC2086
-  docker compose -f "$COMPOSE_FILE" $PROFILES logs --no-color > "$LOGS_DIR/compose.log" 2>&1 || true
-  for svc in engine worker-go worker-python worker-node worker-java; do
+  compose logs --no-color > "$LOGS_DIR/compose.log" 2>&1 || true
+  for svc in engine worker-go worker-python worker-node worker-java fault-proxy; do
+    service="$svc"
+    if [ "$WE_DISPATCH_MODE" = "kafka_outbox" ] && [ "$svc" != "fault-proxy" ]; then service="e2e-$svc"; fi
     # shellcheck disable=SC2086
-    docker compose -f "$COMPOSE_FILE" $PROFILES logs --no-color "$svc" > "$LOGS_DIR/$svc.log" 2>&1 || true
+    compose logs --no-color "$service" > "$LOGS_DIR/$svc.log" 2>&1 || true
   done
+  containers="$(compose ps -aq)"
+  if [ -n "$containers" ]; then
+    # shellcheck disable=SC2086
+    docker inspect --format '{{.Name}} {{.Image}}' $containers > "$LOGS_DIR/images.txt" || true
+  fi
   echo "[e2e] tearing down stack..."
   # shellcheck disable=SC2086
-  docker compose -f "$COMPOSE_FILE" $PROFILES down -v --remove-orphans > /dev/null 2>&1 || true
+  compose down -v --remove-orphans > /dev/null 2>&1 || true
+  if [ -n "$IMAGE_OVERRIDE" ]; then rm -f "$IMAGE_OVERRIDE"; fi
 }
 
 wait_for_engine() {
-  local url="http://localhost:${ENGINE_REST_PORT}/healthz"
+  local url="http://localhost:${ENGINE_REST_PORT}/${E2E_ENGINE_HEALTH_PATH}"
   local max=60
   local i=0
   echo "[e2e] waiting for engine at $url ..."
@@ -107,11 +171,42 @@ wait_for_engine() {
   return 1
 }
 
-trap cleanup EXIT
+trap 'STATUS=$?; trap - EXIT; cleanup; exit "$STATUS"' EXIT
+
+if [ -n "$E2E_ENGINE_IMAGE" ] || [ -n "$E2E_WORKER_IMAGE" ]; then
+  IMAGE_OVERRIDE="$(mktemp)"
+  echo "services:" > "$IMAGE_OVERRIDE"
+  if [ -n "$E2E_ENGINE_IMAGE" ]; then
+    ENGINE_SERVICE=engine
+    if [ "$WE_DISPATCH_MODE" = "kafka_outbox" ]; then ENGINE_SERVICE=e2e-engine; fi
+    export E2E_ENGINE_IMAGE
+    cat >> "$IMAGE_OVERRIDE" <<EOF
+  $ENGINE_SERVICE:
+    build: !reset null
+    image: \${E2E_ENGINE_IMAGE}
+EOF
+  fi
+  if [ -n "$E2E_WORKER_IMAGE" ]; then
+    WORKER_SERVICE="worker-$SDK"
+    if [ "$WE_DISPATCH_MODE" = "kafka_outbox" ]; then WORKER_SERVICE="e2e-$WORKER_SERVICE"; fi
+    export E2E_WORKER_IMAGE
+    cat >> "$IMAGE_OVERRIDE" <<EOF
+  $WORKER_SERVICE:
+    build: !reset null
+    image: \${E2E_WORKER_IMAGE}
+EOF
+  fi
+fi
 
 echo "[e2e] building and starting stack (sdk=$SDK, transport=$TRANSPORT)..."
+export WORKER_TRANSPORT="$TRANSPORT"
+WORKER_SERVICE=""
+if [ "$SDK" != "all" ]; then
+  WORKER_SERVICE="worker-$SDK"
+  if [ "$WE_DISPATCH_MODE" = "kafka_outbox" ]; then WORKER_SERVICE="e2e-$WORKER_SERVICE"; fi
+fi
 # shellcheck disable=SC2086
-WORKER_TRANSPORT="$TRANSPORT" docker compose -f "$COMPOSE_FILE" $PROFILES up --build -d
+compose up --build -d $WORKER_SERVICE
 
 wait_for_engine
 

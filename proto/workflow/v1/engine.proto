@@ -34,6 +34,9 @@ service WorkflowEngine {
 
   // Jobs (SDK-facing)
   rpc PollJobs(PollJobsRequest) returns (PollJobsResponse);
+  // Extend only the current unexpired polling lease. Rejection is
+  // FAILED_PRECONDITION; old engines return UNIMPLEMENTED.
+  rpc ExtendJobLease(ExtendJobLeaseRequest) returns (ExtendJobLeaseResponse);
   rpc CompleteJob(CompleteJobRequest) returns (CompleteJobResponse);
   rpc FailJob(FailJobRequest) returns (FailJobResponse);
 
@@ -337,11 +340,22 @@ message PollJobsRequest {
   string worker_id = 1;
   repeated string job_types = 2;
   int32 max_jobs = 3;      // default 1 if 0
-  int32 lease_seconds = 4; // default 60 if 0
+  int32 lease_seconds = 4; // 0 = default 30 seconds; otherwise 5–3600 inclusive
 }
 
 message PollJobsResponse {
   repeated Job jobs = 1;
+}
+
+message ExtendJobLeaseRequest {
+  string job_id = 1;
+  string worker_id = 2;
+  int32 lease_seconds = 3; // 0 = default 30 seconds; otherwise 5–3600 inclusive
+}
+
+message ExtendJobLeaseResponse {
+  bool accepted = 1; // true on success; rejection is a gRPC status, never false success
+  google.protobuf.Timestamp lock_expires_at = 2; // DB time; never shortens a live lease
 }
 
 message CompleteJobRequest {

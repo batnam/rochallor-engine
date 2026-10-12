@@ -32,6 +32,7 @@ func NewRouter(
 	instSvc *instance.Service,
 	dispatcher dispatch.Dispatcher,
 	dispatchMode string,
+	readiness *Readiness,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -81,6 +82,7 @@ func NewRouter(
 	}
 	r.Post("/v1/jobs/{id}/complete", jobH.Complete)
 	r.Post("/v1/jobs/{id}/fail", jobH.Fail)
+	r.Post("/v1/jobs/{id}/heartbeat", jobH.Heartbeat)
 
 	// User tasks — completed by stable step id from the workflow definition.
 	r.Post("/v1/instances/{instanceId}/user-tasks/{userTaskId}/complete", utH.CompleteByStableID)
@@ -89,6 +91,7 @@ func NewRouter(
 	r.Post("/v1/instances/{instanceId}/signals/{waitStepId}", sigH.Signal)
 
 	// Health probe
+	r.Get("/readyz", readiness.ServeHTTP)
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})

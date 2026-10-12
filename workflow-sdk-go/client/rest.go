@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 // RestClient implements EngineClient via HTTP/REST.
@@ -27,9 +28,10 @@ func NewRest(baseURL, workerID string) *RestClient {
 // PollJobs implements EngineClient.
 func (c *RestClient) PollJobs(ctx context.Context, req PollJobsRequest) ([]Job, error) {
 	body, _ := json.Marshal(map[string]any{
-		"workerId": req.WorkerID,
-		"jobTypes": req.JobTypes,
-		"maxJobs":  req.MaxJobs,
+		"workerId":     req.WorkerID,
+		"jobTypes":     req.JobTypes,
+		"maxJobs":      req.MaxJobs,
+		"leaseSeconds": req.LeaseSeconds,
 	})
 	resp, err := c.post(ctx, "/v1/jobs/poll", body)
 	if err != nil {
@@ -48,6 +50,35 @@ func (c *RestClient) PollJobs(ctx context.Context, req PollJobsRequest) ([]Job, 
 	return envelope.Jobs, nil
 }
 
+func (c *RestClient) ExtendJobLease(ctx context.Context, jobID, workerID string, leaseSeconds int) (time.Time, error) {
+	body, _ := json.Marshal(map[string]any{"workerId": workerID, "leaseSeconds": leaseSeconds})
+	resp, err := c.post(ctx, "/v1/jobs/"+jobID+"/heartbeat", body)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return time.Time{}, ErrHeartbeatUnsupported
+	case http.StatusConflict:
+		return time.Time{}, ErrLeaseLost
+	case http.StatusOK:
+		var result struct {
+			Accepted      bool      `json:"accepted"`
+			LockExpiresAt time.Time `json:"lockExpiresAt"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return time.Time{}, err
+		}
+		if !result.Accepted || result.LockExpiresAt.IsZero() {
+			return time.Time{}, fmt.Errorf("invalid heartbeat acceptance")
+		}
+		return result.LockExpiresAt, nil
+	default:
+		return time.Time{}, &HTTPError{Operation: "heartbeat", StatusCode: resp.StatusCode}
+	}
+}
+
 // CompleteJob implements EngineClient.
 func (c *RestClient) CompleteJob(ctx context.Context, jobID, workerID string, variablesToSet map[string]any) error {
 	body, _ := json.Marshal(map[string]any{
@@ -60,7 +91,7 @@ func (c *RestClient) CompleteJob(ctx context.Context, jobID, workerID string, va
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("completeJob %q: engine returned %d", jobID, resp.StatusCode)
+		return &HTTPError{Operation: fmt.Sprintf("completeJob %q", jobID), StatusCode: resp.StatusCode}
 	}
 	return nil
 }
@@ -78,7 +109,7 @@ func (c *RestClient) FailJob(ctx context.Context, jobID, workerID, errorMessage 
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failJob %q: engine returned %d", jobID, resp.StatusCode)
+		return &HTTPError{Operation: fmt.Sprintf("failJob %q", jobID), StatusCode: resp.StatusCode}
 	}
 	return nil
 }
