@@ -12,6 +12,38 @@ Each scenario type runs against every combination of **SDK** (go, python, node, 
 
 ## Quick start
 
+Node workers install the verified SDK tarball instead of copying SDK source.
+Before a run with `--sdk=node` or `--sdk=all`, prepare it once (Node 24+ and
+`protoc` required on the host):
+
+```sh
+(cd workflow-sdk-node && npm ci && npm run package:verify)
+```
+
+Keep `workflow-sdk-node/artifacts/sdk.tgz` and `SHA256SUMS` together. Docker
+checks the checksum before installation; `run.sh` never rebuilds the SDK.
+Python and Java workers likewise consume packaged candidates. Prepare their
+wheel or Maven repository before `--sdk=python`, `--sdk=java` or `--sdk=all`:
+
+```sh
+(cd workflow-sdk-python && python -m pip install '.[dev]' && python scripts/verify-package.py)
+(cd workflow-sdk-java && python3 scripts/verify-package.py) # JDK 21
+```
+
+`--sdk=<language>` starts only that SDK's worker and infrastructure, including
+for shared loan scenarios. Run stacks sequentially: they share local ports and
+the `e2e-net` network.
+
+For a Node candidate, run each worker transport explicitly for both modes:
+
+```sh
+for mode in polling kafka_outbox; do
+  for transport in rest grpc; do
+    WE_DISPATCH_MODE="$mode" ./e2e/run.sh --sdk=node --transport="$transport"
+  done
+done
+```
+
 ```sh
 # REST transport, polling dispatch, all SDKs (default)
 ./e2e/run.sh
@@ -66,7 +98,7 @@ The `--transport` flag (or `TRANSPORT` env var) controls the transport used by *
 |-------|-------------|---------|
 | `rest` | **Default.** REST API (`http://localhost:ENGINE_REST_PORT`) | REST (`ENGINE_REST_URL`) |
 | `grpc` | gRPC API (`localhost:ENGINE_GRPC_PORT`) | gRPC (`ENGINE_GRPC_HOST`) |
-| `all` | Runs full suite twice — once per transport | Workers restart between runs with matching transport |
+| `all` | Runs the orchestration suite twice | Legacy mode does not switch worker transport; use separate `rest`/`grpc` runs for SDK verification |
 
 Set via environment variable or `--transport` flag:
 
@@ -74,19 +106,16 @@ Set via environment variable or `--transport` flag:
 # gRPC transport for both runner and workers
 TRANSPORT=grpc ./e2e/run.sh
 
-# Both transports in one run
-TRANSPORT=all ./e2e/run.sh
+# Both worker transports in separate stacks
+for transport in rest grpc; do ./e2e/run.sh --transport="$transport"; done
 
 # Flag form
 ./e2e/run.sh --transport=grpc --sdk=go
 ```
 
-To override the worker transport independently of the runner (advanced use):
-
-```sh
-# REST runner, gRPC workers
-TRANSPORT=rest WORKER_TRANSPORT=grpc ./e2e/run.sh --sdk=go
-```
+`run.sh` sets `WORKER_TRANSPORT` to the selected transport; an externally set
+value is overwritten. For mixed transports, start Compose and the Go runner
+directly.
 
 ## Dispatch mode
 
@@ -104,8 +133,8 @@ WE_DISPATCH_MODE=kafka_outbox ./e2e/run.sh
 # Kafka dispatch + gRPC transport
 WE_DISPATCH_MODE=kafka_outbox TRANSPORT=grpc ./e2e/run.sh
 
-# Kafka dispatch + both transports
-WE_DISPATCH_MODE=kafka_outbox TRANSPORT=all ./e2e/run.sh --sdk=java
+# Kafka dispatch + gRPC worker and runner
+WE_DISPATCH_MODE=kafka_outbox ./e2e/run.sh --sdk=java --transport=grpc
 ```
 
 When running in `kafka_outbox` mode:
@@ -115,6 +144,23 @@ When running in `kafka_outbox` mode:
 4. **Workers** switch from `Runner` to `KafkaRunner`.
 
 ## Callback ordering regressions
+
+Set `E2E_SDK_FAULTS=1` to enable the SDK release gates. Every reusable SDK
+verification workflow enables it for polling/Kafka × REST/gRPC:
+
+```sh
+E2E_SDK_FAULTS=1 WE_DISPATCH_MODE=polling ./e2e/run.sh --sdk=go --transport=rest
+```
+
+The fault proxy runs between workers and the engine. It injects failures before
+callbacks or drops acknowledgements after the engine commits. Tests assert
+persisted workflow outcomes/history, handler counts and retry budgets. Polling
+also checks claimed capacity, real lease expiry, stale callbacks and shutdown.
+Kafka checks actual committed offsets across pending records, crashes,
+rebalance and shutdown. Its final poison case first proves the worker is ready,
+then requires a decoding-error log at the injected offset and no progress past
+that record. Disposable topics/volumes are removed during teardown; offsets are
+never reset to bypass the assertion.
 
 `job-callbacks` exercises completion/failure after completion, cancellation,
 automatic retry and manual retry. It checks that duplicate failure consumes
@@ -175,8 +221,9 @@ go test -race -tags integration ./test/invariants -run '^(TestTimer|TestWorkflow
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WE_DISPATCH_MODE` | `polling` | Worker dispatch: `polling` or `kafka_outbox` |
-| `TRANSPORT` | `rest` | Test runner transport: `rest`, `grpc`, or `all`. Also sets `WORKER_TRANSPORT` unless overridden. |
-| `WORKER_TRANSPORT` | `$TRANSPORT` | SDK worker transport: `rest` or `grpc`. Set automatically by `run.sh`; override only for mixed-mode testing. |
+| `TRANSPORT` | `rest` | Select explicit `rest` or `grpc` for matched worker and runner gates. |
+| `WORKER_TRANSPORT` | `$TRANSPORT` | Set automatically by `run.sh`; external values are overwritten. |
+| `E2E_SDK_FAULTS` | `0` | Set `1` for SDK callback, polling and Kafka recovery gates. |
 | `ENGINE_REST_PORT` | `18080` | Host port mapped to engine REST (`:8080`) |
 | `ENGINE_GRPC_PORT` | `19090` | Host port mapped to engine gRPC (`:9090`) |
 | `ENGINE_METRICS_PORT` | `19091` | Host port mapped to engine metrics (`:9091`) |
@@ -284,3 +331,53 @@ Both clients implement the same `EngineClient` interface (`PollJobs`, `CompleteJ
 4. Add the scenario to the `suite` slice in `runner/main.go`'s `runSDKSuite`.
 
 The scenario runs automatically against all enabled transports with no further changes.
+
+`E2E_ENGINE_IMAGE=<local-image>` runs an already built engine candidate (Compose
+build is disabled for that service). This pins one image across the 16 SDK
+combinations. Health checks use `/readyz` by default; set
+`E2E_ENGINE_HEALTH_PATH=healthz` when deliberately testing an older engine.
+`E2E_WORKER_IMAGE=<local-image>` similarly pins an existing worker for one named
+SDK and skips package preparation/build. Without that override, workers consume
+the verified SDK package artifacts. `E2E_LOGS_DIR` selects a directory for each
+run's container/audit logs and `images.txt` records the running image identities.
+
+## Optional heartbeat and compatibility gates
+
+Set `E2E_HEARTBEAT=1` for the polling heartbeat suite. It uses a separate registry
+so the existing heartbeat-off fault scenarios remain unchanged. The suite checks
+a real 90-second handler with a 30-second lease, completion/failure callbacks
+pending through renewals, worker death, stale callbacks, cancellation and an
+interrupting timer. It asserts workflow outcome, handler count, attempt count,
+retry budget and accepted/requested heartbeats. Both REST and gRPC are required.
+
+```sh
+E2E_SDK_FAULTS=1 E2E_HEARTBEAT=1 ./e2e/run.sh --sdk=go --transport=rest
+```
+
+`E2E_SCENARIOS` selects comma-separated scenario names for a focused compatibility
+probe. Unknown names fail. Leave it unset for the full release suite. After
+preparing the verified worker and an engine v1.1.2 image, test both configurations:
+
+```sh
+export E2E_ENGINE_IMAGE=heartbeat-engine-baseline E2E_ENGINE_HEALTH_PATH=healthz
+export E2E_WORKER_IMAGE=verified-go-worker WE_DISPATCH_MODE=polling
+E2E_HEARTBEAT=0 E2E_SCENARIOS=linear,retry-fail,transformation \
+  E2E_LOGS_DIR=e2e/logs/old-engine-off ./e2e/run.sh --sdk=go --transport=rest
+E2E_HEARTBEAT=1 E2E_HEARTBEAT_UNSUPPORTED=1 E2E_SCENARIOS=sdk-heartbeat-unsupported \
+  E2E_LOGS_DIR=e2e/logs/old-engine-on ./e2e/run.sh --sdk=go --transport=rest
+```
+
+The explicit unsupported probe requires the worker to report a fatal unsupported
+heartbeat error before running the handler, with exactly one rejected renewal
+and no business callback. SDK verification workflows run these probes for each
+polling transport, then measure renewal cost with `perf/heartbeat.py` using the
+same worker bytes. None of these focused probes substitutes for the full matrix.
+
+`python3 e2e/mixed-engine.py --baseline=/path/to/engine-v1.1.2 --engine=/path/to/candidate`
+starts both native engine binaries against one disposable PostgreSQL database.
+It verifies REST claim/callback across replicas in both directions, then sends
+renewals for one job to each version: the new replica accepts, the old returns
+404 without mutating the job. This gate demonstrates why heartbeat must stay
+off until every replica supports it. The separate SDK probes cover unsupported
+behavior over both REST and gRPC. Omit `--engine` to build the current engine;
+`--output` selects the saved binary identities, results and process/DB logs.

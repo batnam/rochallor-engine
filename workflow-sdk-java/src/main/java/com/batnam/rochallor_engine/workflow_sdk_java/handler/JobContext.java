@@ -3,15 +3,25 @@ package com.batnam.rochallor_engine.workflow_sdk_java.handler;
 import com.batnam.rochallor_engine.workflow_sdk_java.client.Job;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 
 /** Gives handler implementations typed access to a Job's fields and variables. */
 public class JobContext {
 
     private final Job job;
+    private final BooleanSupplier cancelled;
 
     public JobContext(Job job) {
-        this.job = job;
+        this(job, () -> false);
     }
+
+    public JobContext(Job job, BooleanSupplier cancelled) {
+        this.job = job;
+        this.cancelled = cancelled;
+    }
+
+    /** Cooperative cancellation; ignoring interruption does not release the runner's slot. */
+    public boolean isCancelled() { return cancelled.getAsBoolean() || Thread.currentThread().isInterrupted(); }
 
     public String jobId()             { return job.id; }
     public String instanceId()        { return job.instanceId; }

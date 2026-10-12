@@ -23,6 +23,9 @@ public class Job {
     @JsonProperty("retriesRemaining")
     public int retriesRemaining;
 
+    @JsonProperty("lockExpiresAt")
+    public java.time.Instant lockExpiresAt;
+
     @JsonProperty("variables")
     public Map<String, Object> variables;
 }

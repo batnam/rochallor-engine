@@ -35,14 +35,14 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/${ENGINE_HEALTH_PATH:-readyz} || exit 1"]
       interval: 3s
       timeout: 5s
       retries: 20
 
-  # 8 worker replicas, no-op handlers for go-step-a/b/c (defined in
-  # e2e/workers/go/main.go). Workers are intentionally over-provisioned
-  # so the engine, not the worker pool, is the bottleneck.
+  # Reuses the E2E no-op handlers for go-step-a/b/c. Each polling worker
+  # has two slots and a 500ms poll interval. Replica count is part of the
+  # workload; this pool can limit throughput before the engine does.
   worker-go:
     build:
       context: ..
@@ -58,8 +58,8 @@ services:
       engine:
         condition: service_healthy
     deploy:
-      replicas: 10
+      replicas: ${PERF_WORKER_REPLICAS:-10}
 
 networks:
   default:
-    name: perf-net
+    name: ${COMPOSE_PROJECT_NAME:-perf}-net

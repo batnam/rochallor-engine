@@ -11,8 +11,15 @@ permissions:
   id-token: write
 
 jobs:
+  verify:
+    name: Verify engine source, contracts and all sixteen SDK combinations
+    uses: ./.github/workflows/engine-e2e.yml
+    permissions:
+      contents: read
+
   publish-engine:
     name: Publish Docker image → GHCR
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

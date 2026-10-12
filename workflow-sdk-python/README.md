@@ -160,7 +160,7 @@ def main() -> None:
             parallelism=16,
             poll_interval=0.25,
         )
-        # Blocks until SIGINT/SIGTERM; drains in-flight jobs before returning
+        # Blocks until SIGINT/SIGTERM; gives in-flight jobs a bounded drain period
         runner.run()
 
 
@@ -327,5 +327,79 @@ Plaintext brokers should be restricted to local dev (`docker compose`) — never
 | `client` | `EngineClient` | *(required)* | REST client. |
 | `registry` | `HandlerRegistry` | *(required)* | Maps job types to handlers. |
 | `worker_id` | str | *(required)* | Unique identifier for this worker process. |
-| `parallelism` | int | `64` | `ThreadPoolExecutor` max workers — concurrent jobs. |
+| `parallelism` | int | `64` | Maximum claimed jobs, including running handlers and pending callbacks. |
 | `poll_interval` | float | `0.5` | Seconds between poll rounds when the queue is empty. |
+
+## Polling callback recovery (R06)
+
+Polls request only free capacity after pruning completed futures. A claimed job holds its slot through handler execution and callback acknowledgement; the executor does not queue additional leased jobs. The handler result or failure reason/retryability is snapshotted and retried independently of the handler. Completion transport errors never become business failures.
+
+REST and gRPC preserve `lockExpiresAt`. Retry backoff starts at 100 ms with ±20% jitter and a 30-second cap, bounded by the existing lease and shutdown event. Built-in transports use at most 5-second I/O timeouts (or the remaining lease, if shorter); HTTP timeouts apply per I/O phase. There is no heartbeat. Expired/invalid lease metadata prevents dispatch; absent metadata from a legacy custom client permits one callback attempt. Client method signatures are unchanged; custom implementations must provide bounded I/O themselves.
+
+Shutdown stops claiming/retrying and bounds drain by `shutdown_timeout`; it raises if threads remain. Python cannot forcibly cancel arbitrary handler side effects: a handler still running after expiry retains its slot until it returns, then sends no stale callback. Keep external side effects idempotent and normally finish within the baseline 30-second lease.
+
+Monitor `workflow_sdk_callback_pending`, `workflow_sdk_callback_retries_total`, `workflow_sdk_callback_oldest_pending_seconds`, and `workflow_sdk_callback_rejected_total`, using finite `dispatch` and `callback` labels. Job IDs are logged. Rising pending age calls for checking transport/engine health and authorization; permanent HTTP 4xx (except 408/429) and permanent gRPC statuses stop callback delivery and leave recovery to the lease. Canary a drained worker group and inspect actual workflow outcomes. Rollback pins the previous build and may restore polling callback/claim defects.
+
+R06/R07 address polling and Kafka callback recovery. Heartbeat for long handlers remains a later release.
+
+Package verification: `python -m pytest`, then `python scripts/verify-package.py`. It builds wheel and sdist, checks fresh external consumers, and rejects a deliberately broken distribution. E2E installs the checksummed wheel; publishing downloads those same verified bytes and never rebuilds.
+
+## Kafka delivery and recovery (R07)
+
+Auto-commit and auto-offset-store are disabled, including when caller overrides request them. Each partition pauses with one outstanding record; a consumer thread continues polling for membership while a separate handler thread retains the result and retries its callback. Offsets commit synchronously and explicitly as record offset + 1 only after acknowledgement. A failure at N cannot be hidden by a later commit at N+1. Dedup records are written after acknowledgement; pending delivery does not expire with dedup TTL.
+
+Revocation/loss cancels the old owner's callback; completion from an old future cannot commit. Shutdown stops claims and callbacks, leaves the group, and drains handler threads. Arbitrary Python handler side effects cannot be forcibly cancelled. Lost acknowledgement/crash can cause redelivery, so use stable business idempotency keys.
+
+Malformed protobuf/empty job IDs and permanent callback rejection stop the runner with the record uncommitted. Valid job IDs with invalid payloads or missing handlers produce a non-retryable failure callback, which must itself be acknowledged. `KafkaRunner.run()` propagates consumer errors to the caller; restart after fixing the payload, credentials or infrastructure. Do not reset offsets to bypass pending work. Extra Kafka configuration remains available for TLS/SASL, but auto-offset/commit policy and per-job consumer group are reserved.
+
+`KafkaRunner(..., metrics=Metrics(registry=...))` exposes the same callback pending/retry/oldest/rejected metrics with `dispatch="kafka"`, plus `workflow_sdk_kafka_record_errors_total`. Logs include job/dedup/topic/partition/offset. Canary a drained group and compare pending age, lag and actual workflow outcomes. Rollback pins the previous wheel/worker and may restore A1. No engine or DB changes are required. Native poll, synchronous commit and assignment handling follow the [Confluent Python API](https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html).
+
+## Optional polling heartbeat (1.1.0)
+
+Heartbeat is off by default. Enable only after every engine replica supports
+`ExtendJobLease` (engine candidate v1.2.0 / R15):
+
+```python
+runner = Runner(client, registry, "worker-1", parallelism=16,
+                heartbeat=True, lease_seconds=30, heartbeat_interval=10,
+                shutdown_timeout=5)
+```
+
+The first renewal must be accepted before the handler starts. Renewal continues
+while the handler executes and while its immutable completion/failure callback
+awaits acknowledgement. Each renewal has a transport timeout of at most 5 seconds,
+limited by the current lease; transient failures back off within that lease.
+A terminal/expired/wrong-worker attempt raises `LeaseLostError`; the runner sends
+no failure callback for ownership loss. Unsupported engines/clients raise
+`HeartbeatUnsupportedError` through `Runner.run()` and stop intake.
+
+`EngineClient` keeps its original method signatures. `LeaseExtender` is a separate
+optional protocol. Built-in clients additionally accept `poll_jobs(...,
+lease_seconds=60)`; 0 means the 30-second engine default, otherwise 5–3600 seconds.
+The runner communicates this optional setting through `request_lease()` in
+`workflow_sdk.client.deadline`, leaving legacy custom clients unchanged. Custom
+clients implementing heartbeat should honor `current_timeout()` and, if they
+support custom polling leases, `current_lease_seconds()`.
+
+Handlers may observe `ctx["cancel_event"]`, a `threading.Event`, to stop external
+work on lease loss/shutdown. Cancellation is a request, not proof that a thread has
+stopped: the runner keeps its capacity slot until the handler returns. `run()`
+stops intake and waits at most `shutdown_timeout` after a bounded poll returns;
+it raises if handlers remain and rejects another run on the same runner until
+they finish. Python cannot force-kill those threads, and they can keep the process
+alive. A process supervisor must enforce the final process shutdown deadline.
+
+Renewal uses a separate thread outside the handler executor. Pure Python CPU work
+allows thread switching (covered by a regression test). Native code holding the
+GIL, a suspended process, or OS starvation can still prevent renewal; isolate that
+work in another process or use a verified longer lease. Side effects require
+idempotency even with heartbeat.
+
+Monitor `workflow_sdk_heartbeat_total{result="accepted|retry|lease_lost|rejected"}`,
+callback pending/retry metrics and replacement attempts. Canary with heartbeat
+off, then enable on a small worker group while measuring DB writes and latency.
+To roll back, stop intake for tasks dependent on renewal, drain them, then disable
+heartbeat and pin the prior SDK. Disable/drain heartbeat workers before rolling
+back the engine. Generate checked-in stubs with Python 3.12 and
+`pip install grpcio-tools==1.60.0 setuptools==80.9.0`, then run
+`python scripts/generate-proto.py` from the SDK directory.

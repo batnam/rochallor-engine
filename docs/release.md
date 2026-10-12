@@ -6,7 +6,7 @@ This repo is a monorepo with **nine independently releasable components**, each 
 
 | Component | Tag pattern | Workflow file | Where it lands |
 |-----------|-------------|---------------|----------------|
-| Engine (Docker image) | `engine-v<x.y.z>` | `.github/workflows/publish-engine.yml` | `ghcr.io/<owner>/rochallor-engine:<x.y.z>` (+ `:latest`) |
+| Engine (Docker image) | `engine-v<x.y.z>` | `.github/workflows/publish-engine.yml` | `ghcr.io/<owner>/rochallor-engine:v<x.y.z>` (+ `:latest`) |
 | Modeller (Docker image) | `modeller-v<x.y.z>` | `.github/workflows/publish-modeller.yml` | `ghcr.io/<owner>/rochallor-modeller:<x.y.z>` (+ `:latest`) |
 | Monitor Frontend (Docker image) | `monitor-frontend-v<x.y.z>` | `.github/workflows/publish-monitor-frontend.yml` | `ghcr.io/<owner>/rochallor-monitor-frontend:v<x.y.z>` (+ `:latest`) |
 | Monitor BFF (Docker image) | `monitor-bff-v<x.y.z>` | `.github/workflows/publish-monitor-bff.yml` | `ghcr.io/<owner>/rochallor-monitor-bff:v<x.y.z>` (+ `:latest`) |
@@ -103,11 +103,33 @@ visibility to **Public** in the GitHub package settings.
 
 ## Idempotency and re-runs
 
-If a workflow fails partway, push the same tag again (delete and recreate locally, then `git push --force origin <tag>`) **only if no artifact reached the registry yet**. Once an artifact is published, do not reuse that version — bump and tag a new one. The individual workflows have these guards built in:
+Re-run a failed workflow on the same source tag in Actions. If source or artifact bytes change, use a new version. The SDK workflows have these guards:
 
-- `publish-sdk-node` skips if the version already exists on npm.
-- `publish-sdk-go` skips if the `workflow-sdk-go/v…` Go-module tag already exists.
-- Docker / Helm / PyPI / Maven Central reject overwrites at the registry side.
+- `publish-sdk-node` accepts an existing version only if npm integrity matches the verified tarball; different bytes fail.
+- `publish-sdk-go` accepts an existing `workflow-sdk-go/v…` tag only if it points to the verified source commit.
+- Python and Java do not skip existing versions. Inspect a partial publication before rerunning; never replace published bytes.
+
+## SDK verification before publication
+
+Each SDK tag first calls its `verify-sdk-<language>.yml` workflow. Unit/build and
+external consumer checks run before all four polling/Kafka × REST/gRPC gates,
+including callback, ownership and recovery faults. Failure blocks publication.
+PR CI calls the same workflows for all four SDKs on SDK, engine, proto or E2E
+changes. CI uses explicit Bash `pipefail` when recording verification logs.
+
+| SDK | Candidate used by E2E and publication |
+|---|---|
+| Node | Version set before build; `artifacts/sdk.tgz`, SHA-256 and source metadata. Publish downloads the tested tarball. |
+| Go | Exact source checkout, race/vet and external module consumer; nested module tag points at the verified commit. |
+| Python | Version set before wheel/sdist build; fresh consumers verify both. E2E installs the wheel; PyPI receives those same distribution files. |
+| Java | Version set before JAR/POM build; external Maven consumer and E2E resolve the candidate repository. Publish restores verified JAR/POM/module bytes and signs them without regenerating them. |
+
+For local reproduction and package preparation, see [E2E instructions](https://github.com/batnam/rochallor-engine/blob/main/e2e/README.md).
+Local planning and review evidence is kept under `docs/enhancements/`,
+`testresults/` and `perf/reports/` in the review workspace. These gitignored
+files are not included in the repository or this documentation site.
+Checksums identify a local candidate; the tag workflow rebuilds and verifies a
+candidate on the final committed source before publishing its verified bytes.
 
 ## Legacy `v<x.y.z>` tags
 
@@ -119,6 +141,25 @@ The repo previously used a single `v<x.y.z>` tag that triggered all seven publis
 - **Required secrets:** each workflow uses different secrets; check repo Settings → Secrets:
   - GHCR (Docker images, Helm OCI): `GITHUB_TOKEN` (provided automatically).
   - PyPI: trusted publishing via OIDC (`environment: pypi`).
-  - npm: `NPM_TOKEN`.
+  - npm: trusted publishing via OIDC, configured for `publish-sdk-node.yml` in the npm package settings.
   - Maven Central: `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`.
 - **Re-run a single workflow** without re-tagging: in the Actions UI, open the failed run and click "Re-run jobs". The git tag stays as is.
+
+### Engine and chart operational capabilities
+
+The next engine minor candidate is `engine-v1.2.0` (previous tag: `engine-v1.1.2`).
+It adds readiness, migration CLI and the lease/heartbeat API work tracked in
+`docs/enhancements`. Until all assigned gates pass this remains a local candidate.
+Engine publication depends on the engine unit/race/vet, invariant, operational,
+contract and sixteen SDK combination workflow on the same source ref.
+For the lease/heartbeat candidate, also review the matching G-LOAD evidence
+before creating its tag. The tag workflow does not run the isolated baseline
+comparisons or the two M3 60-minute soaks; a green publication verification
+workflow alone does not replace those gates.
+
+Chart `helm-v0.2.0` pins engine `v1.2.0` independently; chart publication must
+follow availability of that tested engine. Its publish workflow verifies the
+packaged chart against the pinned released image, then publishes the same `.tgz`
+with its checksum. It no longer derives an engine tag from the Helm tag. The
+local candidate tests use a separately recorded local engine image/digest and
+do not count as a remote release or a hosted-CI run.

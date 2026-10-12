@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # Performance load test entry point for the rochallor-engine.
 # See specs/003-performance-load-testing/quickstart.md for full usage.
 # Run from the repository root: ./perf/run.sh
@@ -9,14 +9,14 @@
 # Phase 5: adds --compare-to regression detection (T027-T031)
 # Phase 6: adds --smoke, --containerized-k6, --engine-image, --note (T033-T040)
 
-set -e
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 
 # --- Pinned tool versions (T009) ---
-PERF_K6_VERSION_PIN="1.7"   # expects k6 v0.50.x on the host
+PERF_K6_VERSION_PIN="1.7"
 
 # --- Default run configuration ---
 PERF_ENGINE_REST_PORT="${PERF_ENGINE_REST_PORT:-18080}"
@@ -36,6 +36,10 @@ PERF_GRPC=false
 PERF_WORKER_TRANSPORT=rest
 PERF_DISPATCH_MODE=polling
 PERF_SCENARIO="thousand-concurrent"
+PERF_DEFINITION_ID=""
+HOST_STATS_PID=""
+K6_PROC_PID=""
+PERF_WORKER_REPLICAS="${PERF_WORKER_REPLICAS:-10}"
 
 # --- Flag parsing ---
 while [ $# -gt 0 ]; do
@@ -90,6 +94,18 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+case "$PERF_SCENARIO" in thousand-concurrent|loan-chain-full) ;; *)
+  echo "[perf] ERROR: unsupported scenario '$PERF_SCENARIO'" >&2; exit 1;; esac
+if [ "$PERF_SCENARIO" = "loan-chain-full" ] && [ "${PERF_SENIOR_COMPLETER_VUS:-1}" != "1" ]; then
+  echo "[perf] ERROR: loan-chain-full requires one senior-task completer; user tasks have no claim API to coordinate multiple completers" >&2
+  exit 1
+fi
+if [ -n "$PERF_COMPARE_TO" ] && [ "$PERF_COMPARE_TO_LATEST" = "true" ]; then
+  echo "[perf] ERROR: choose one comparison baseline" >&2; exit 1
+fi
+command -v node >/dev/null
+command -v python3 >/dev/null
+
 
 # Apply smoke-mode overrides
 if [ "$PERF_SMOKE" = "true" ]; then
@@ -110,7 +126,7 @@ PERF_ENGINE_BASE_URL="http://localhost:${PERF_ENGINE_REST_PORT}"
 
 # --- Run-id generation ---
 ENGINE_SHA="$(cd "$REPO_ROOT/workflow-engine" && git rev-parse --short=7 HEAD 2>/dev/null || echo "unknown")"
-RUN_ID="$(date -u '+%Y%m%d-%H%M%S')-${ENGINE_SHA}"
+RUN_ID="$(date -u '+%Y%m%d-%H%M%S')-${ENGINE_SHA}-$$"
 REPORTS_DIR="$SCRIPT_DIR/reports/$RUN_ID"
 mkdir -p "$REPORTS_DIR"
 
@@ -122,6 +138,13 @@ export PERF_NOTE PERF_COMPARE_TO PERF_COMPARE_TO_LATEST
 export PERF_THRESHOLD_OVERRIDES
 export PERF_WORKER_TRANSPORT
 export PERF_DISPATCH_MODE
+export PERF_WORKER_REPLICAS
+export COMPOSE_PROJECT_NAME="perf-${RUN_ID}"
+export PERF_K6_CONTAINER=""
+export PERF_CONTAINERIZED_K6
+PERF_HARNESS_SHA="$(python3 "$SCRIPT_DIR/lib/source-hash.py" "$SCRIPT_DIR")"
+PERF_ENGINE_SOURCE_SHA="$(python3 "$SCRIPT_DIR/lib/source-hash.py" "$REPO_ROOT/workflow-engine")"
+export PERF_HARNESS_SHA PERF_ENGINE_SOURCE_SHA
 
 echo "[perf] runId=${RUN_ID}"
 echo "[perf] engine build=${ENGINE_SHA} (workflow-engine)"
@@ -174,30 +197,60 @@ fi
 # --- Cleanup: always tear down the stack (runs on EXIT) ---
 cleanup() {
   EXIT_CODE=$?
+  trap - EXIT
+  CLEANUP_FAILED=0
   # Kill k6 / host-stats if still running (e.g., interrupted mid-run)
   [ -n "$K6_PROC_PID" ]    && kill "$K6_PROC_PID"    2>/dev/null || true
   [ -n "$HOST_STATS_PID" ] && kill "$HOST_STATS_PID" 2>/dev/null || true
+  if [ -n "$PERF_K6_CONTAINER" ] && docker inspect "$PERF_K6_CONTAINER" >/dev/null 2>&1; then
+    docker rm -f "$PERF_K6_CONTAINER" >/dev/null || {
+      CLEANUP_FAILED=1
+      [ "$EXIT_CODE" -ne 0 ] || EXIT_CODE=1
+    }
+  fi
   echo "[perf] tearing down compose stack..."
-  PERF_ENGINE_IMAGE="${PERF_ENGINE_IMAGE:-}" \
-    docker compose ${COMPOSE_ARGS:--f "$COMPOSE_FILE"} down -v --remove-orphans > /dev/null 2>&1 || true
-  exit "${PERF_K6_EXIT:-$EXIT_CODE}"
+  docker compose $COMPOSE_ARGS logs --no-color > "$REPORTS_DIR/compose.log" 2>&1 || {
+    CLEANUP_FAILED=1
+    [ "$EXIT_CODE" -ne 0 ] || EXIT_CODE=1
+  }
+  if ! docker compose $COMPOSE_ARGS down -v --remove-orphans >> "$REPORTS_DIR/cleanup.log" 2>&1; then
+    CLEANUP_FAILED=1
+    [ "$EXIT_CODE" -ne 0 ] || EXIT_CODE=1
+  fi
+  if [ "$CLEANUP_FAILED" -ne 0 ] && [ -f "$REPORTS_DIR/summary.json" ]; then
+    python3 - "$REPORTS_DIR/summary.json" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+summary = json.loads(path.read_text())
+summary['result'] = 'fail'
+summary.setdefault('gateFailures', []).append('cleanup or log collection failed')
+path.write_text(json.dumps(summary, indent=2) + '\n')
+PY
+    python3 "$SCRIPT_DIR/lib/render-report-md.py" "$REPORTS_DIR" || true
+  fi
+  exit "$EXIT_CODE"
 }
-#trap cleanup EXIT
 
 # --- Boot the compose stack ---
 # T036: if --engine-image was provided, use the override file that replaces the build.
 COMPOSE_ARGS="-f $COMPOSE_FILE"
 if [ -n "$PERF_ENGINE_IMAGE" ]; then
   COMPOSE_ARGS="$COMPOSE_ARGS -f $SCRIPT_DIR/docker-compose.image.yml"
+  # The checkout is not proof of a pre-built image's source identity.
+  PERF_ENGINE_SOURCE_SHA=""
   echo "[perf] using engine image: $PERF_ENGINE_IMAGE"
 fi
 if [ "$PERF_DISPATCH_MODE" = "kafka_outbox" ]; then
   COMPOSE_ARGS="$COMPOSE_ARGS -f $SCRIPT_DIR/docker-compose.kafka.yml"
   echo "[perf] dispatch mode: kafka_outbox (Kafka overlay active)"
 fi
+export PERF_ENGINE_IMAGE
+trap cleanup EXIT
 echo "[perf] booting compose stack..."
 PERF_ENGINE_IMAGE="$PERF_ENGINE_IMAGE" \
   docker compose $COMPOSE_ARGS up --build -d
+
+docker compose $COMPOSE_ARGS images --format json > "$REPORTS_DIR/container-images.json"
 
 # --- Wait for engine health (≤60 s) ---
 wait_for_engine() {
@@ -299,8 +352,8 @@ surface_drift_check() {
       exit 1
     fi
     echo "[perf]   uploaded definition: id=${DEFINITION_ID}"
-    export PERF_DEFINITION_ID="$DEFINITION_ID"
   fi
+  export PERF_DEFINITION_ID="$DEFINITION_ID"
 
   # (b) Canary workflow start (POST /v1/instances)
   # For the loan-chain scenario, pass straight-through variables so the
@@ -353,8 +406,8 @@ HOST_STATS_PID=""
 K6_PROC_PID=""
 
 if [ ! -f "$SCENARIO" ]; then
-  echo "[perf] WARNING: scenario not found at ${SCENARIO}" >&2
-  PERF_K6_EXIT=0
+  echo "[perf] ERROR: scenario not found at ${SCENARIO}" >&2
+  exit 1
 else
   SCENARIO_RELPATH="perf/scenarios/$(basename "$SCENARIO")"
   SCENARIO_SHA="$(cd "$REPO_ROOT" && git log -1 --format='%H' -- "$SCENARIO_RELPATH" 2>/dev/null || echo 'unknown')"
@@ -403,8 +456,11 @@ else
       DOCKER_GRPC_ARGS="-v ${REPO_ROOT}/proto:/proto:ro -e PERF_ENGINE_GRPC_URL=engine:9090 -e PERF_PROTO_ROOT=/proto"
     fi
     # shellcheck disable=SC2086
-    docker run --rm \
-      --network perf-net \
+    PERF_K6_CONTAINER="${COMPOSE_PROJECT_NAME}-k6"
+    export PERF_K6_CONTAINER
+    docker run --rm --name "$PERF_K6_CONTAINER" \
+      --user "$(id -u):$(id -g)" \
+      --network "${COMPOSE_PROJECT_NAME}-net" \
       -v "${SCRIPT_DIR}/scenarios:/scenarios:ro" \
       -v "${SCRIPT_DIR}/lib:/lib:ro" \
       -v "${REPORTS_DIR}:/reports" \
@@ -416,6 +472,7 @@ else
       -e "PERF_STEADY=${PERF_STEADY}" \
       -e "PERF_RAMP_DOWN=${PERF_RAMP_DOWN}" \
       -e "PERF_TARGET_VUS=${PERF_TARGET_VUS}" \
+      -e "PERF_SENIOR_COMPLETER_VUS=${PERF_SENIOR_COMPLETER_VUS:-1}" \
       ${PERF_LOAN_APP_DEFINITION_ID:+-e "PERF_LOAN_APP_DEFINITION_ID=${PERF_LOAN_APP_DEFINITION_ID}"} \
       ${PERF_LOAN_DISB_DEFINITION_ID:+-e "PERF_LOAN_DISB_DEFINITION_ID=${PERF_LOAN_DISB_DEFINITION_ID}"} \
       ${PERF_THRESHOLD_OVERRIDES_JSON:+-e "PERF_THRESHOLD_OVERRIDES_JSON=${PERF_THRESHOLD_OVERRIDES_JSON}"} \
@@ -425,6 +482,8 @@ else
       "/scenarios/${K6_SCENARIO_BASENAME}" &
     K6_PROC_PID=$!
   else
+    # Pass gRPC env to host k6 as well as the containerized invocation.
+    export PERF_ENGINE_GRPC_URL PERF_PROTO_ROOT
     k6 run \
       --out "json=${REPORTS_DIR}/k6-output.json" \
       --summary-export "${REPORTS_DIR}/k6-summary-export.json" \
@@ -444,17 +503,18 @@ else
 
   # Start host-stats sampler in background (T020 / research R6).
   # Samples docker container CPU/mem + k6 process every 5 s.
-  sh "$SCRIPT_DIR/lib/host-stats.sh" "$REPORTS_DIR" "$K6_PROC_PID" 5 &
+  python3 "$SCRIPT_DIR/lib/host-stats.py" "$REPORTS_DIR" "$K6_PROC_PID" 2 &
   HOST_STATS_PID=$!
 
   # Wait for k6 to finish
   wait "$K6_PROC_PID"
   PERF_K6_EXIT=$?
+  K6_PROC_PID=""
   set -e
 
   # Stop the host-stats sampler; let it write its closing summary block (T020).
   kill "$HOST_STATS_PID" 2>/dev/null || true
-  wait "$HOST_STATS_PID" 2>/dev/null || true
+  wait "$HOST_STATS_PID"
   HOST_STATS_PID=""
 fi
 
@@ -467,8 +527,15 @@ if curl -sf "http://localhost:${PERF_ENGINE_METRICS_PORT}/metrics" \
        -o "$METRICS_SNAPSHOT" 2>/dev/null; then
   echo "[perf] engine metrics snapshot saved ($(wc -l < "$METRICS_SNAPSHOT") lines)"
 else
-  echo "[perf] WARNING: could not snapshot engine /metrics (engine may have exited early)"
+  echo "[perf] ERROR: could not snapshot engine /metrics" >&2
+  exit 1
 fi
+
+# The stack is private and recreated for this run. Verify every workflow,
+# including the canary and chained children, against the business outcome.
+docker compose $COMPOSE_ARGS exec -T postgres psql -U workflow -d workflow -At \
+  -v ON_ERROR_STOP=1 -c "SELECT json_build_object('instances', COALESCE((SELECT json_agg(json_build_object('id',id,'status',status)) FROM workflow_instance),'[]'::json), 'pendingChains', (SELECT count(*) FROM workflow_chain WHERE child_instance_id IS NULL));" \
+  > "$REPORTS_DIR/workflow-outcomes.json"
 
 # --- T014: derive pass/fail from k6 exit code ---
 if [ "${PERF_K6_EXIT:-0}" -eq 0 ]; then
@@ -489,21 +556,18 @@ write_full_report() {
   if [ -n "$PERF_COMPARE_TO" ]; then
     baseline_arg="$SCRIPT_DIR/reports/${PERF_COMPARE_TO}/summary.json"
   elif [ "$PERF_COMPARE_TO_LATEST" = "true" ]; then
-    baseline_arg="$(find "$SCRIPT_DIR/reports" -name 'summary.json' \
-      -exec grep -l '"result":"pass"' {} \; 2>/dev/null | \
-      sort | tail -1)"
-  fi
-
-  REPORT_PATCH="{}"
-  if command -v node >/dev/null 2>&1; then
-    REPORT_PATCH="$(node "$SCRIPT_DIR/lib/report.js" "$REPORTS_DIR" "$baseline_arg" 2>/dev/null || echo '{}')"
+    baseline_arg="$(python3 "$SCRIPT_DIR/lib/latest-baseline.py" "$SCRIPT_DIR/reports" "$REPORTS_DIR")"
   fi
 
   HOST_OS="$(uname -sr 2>/dev/null || echo 'unknown')"
   HOST_CPU_CORES="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo '0')"
-  HOST_MEM_MB="$(awk '/MemTotal/{printf "%d",$2/1024}' /proc/meminfo 2>/dev/null || echo '0')"
+  HOST_MEM_MB="$(python3 -c 'import os,subprocess; print(int(subprocess.check_output(["sysctl","-n","hw.memsize"]))//1048576 if os.uname().sysname=="Darwin" else os.sysconf("SC_PAGE_SIZE")*os.sysconf("SC_PHYS_PAGES")//1048576)')"
   HOST_DOCKER_VER="$(docker version --format '{{.Client.Version}}' 2>/dev/null || echo 'unknown')"
-  HOST_K6_VER="$(k6 version 2>/dev/null | head -1 || echo 'unknown')"
+  if [ "$PERF_CONTAINERIZED_K6" = "true" ]; then
+    HOST_K6_VER="grafana/k6:${PERF_K6_VERSION_PIN}.0"
+  else
+    HOST_K6_VER="$(k6 version)"
+  fi
 
   export PERF_STARTED_AT="$STARTED_AT"
   export PERF_ENDED_AT="$ENDED_AT"
@@ -516,10 +580,10 @@ write_full_report() {
   export PERF_HOST_MEM_MB="$HOST_MEM_MB"
   export PERF_HOST_DOCKER_VER="$HOST_DOCKER_VER"
   export PERF_HOST_K6_VER="$HOST_K6_VER"
-  export PERF_REPORT_PATCH="$REPORT_PATCH"
+  export PERF_THRESHOLD_OVERRIDES_JSON
 
   python3 "$SCRIPT_DIR/lib/generate-summary-json.py" "$REPORTS_DIR"
-  python3 "$SCRIPT_DIR/lib/render-report-md.py" "$REPORTS_DIR"
+  sh "$SCRIPT_DIR/lib/finish-report.sh" "$REPORTS_DIR" "$baseline_arg" "$PERF_K6_EXIT"
 }
 
 write_full_report
@@ -532,4 +596,4 @@ if [ "$PERF_RESULT" = "fail" ]; then
 fi
 
 # cleanup trap fires on exit → docker compose down -v
-# PERF_K6_EXIT is passed through to the process exit code.
+exit "$PERF_K6_EXIT"

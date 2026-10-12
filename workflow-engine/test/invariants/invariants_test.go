@@ -44,6 +44,10 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	os.Exit(runInvariants(m))
+}
+
+func runInvariants(m *testing.M) int {
 	ctx := context.Background()
 
 	pg, err := tcpostgres.Run(ctx, "postgres:16-alpine",
@@ -54,25 +58,25 @@ func TestMain(m *testing.M) {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "start postgres: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer func() { _ = pg.Terminate(ctx) }()
 
 	dsn, err := pg.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "postgres DSN: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	gPool, err = pgxpool.New(ctx, dsn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pgxpool: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer gPool.Close()
 
 	if err := pgstore.Migrate(gPool); err != nil {
 		fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	gDefRepo = pgstore.NewDefinitionStore(gPool)
@@ -82,7 +86,7 @@ func TestMain(m *testing.M) {
 	instStore := pgstore.NewInstanceStore(gPool)
 	gInstSvc = instance.NewService(ctx, gDbConn, instStore, gDefRepo, rt.Dispatcher())
 
-	os.Exit(m.Run())
+	return m.Run()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

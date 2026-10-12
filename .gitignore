@@ -33,6 +33,7 @@ node_modules/
 workflow-sdk-node/node_modules/
 workflow-sdk-node/dist/
 workflow-sdk-node/coverage/
+workflow-sdk-node/artifacts/
 workflow-modeller/.vite/
 
 # Java / Gradle
@@ -75,3 +76,9 @@ workflow-modeller/playwright-report/
 workflow-monitor/playwright-report/
 workflow-monitor/test-results/
 site/
+
+# Verified Python SDK candidates
+workflow-sdk-python/artifacts/
+
+# Verified Maven candidates
+workflow-sdk-java/artifacts/

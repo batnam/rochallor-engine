@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	workflowv1 "github.com/batnam/rochallor-engine/workflow-sdk-go/internal/gen/workflow/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -40,14 +43,32 @@ func (c *GrpcClient) Close() error { return c.conn.Close() }
 func (c *GrpcClient) PollJobs(ctx context.Context, req PollJobsRequest) ([]Job, error) {
 	stub := workflowv1.NewWorkflowEngineClient(c.conn)
 	resp, err := stub.PollJobs(ctx, &workflowv1.PollJobsRequest{
-		WorkerId: req.WorkerID,
-		JobTypes: req.JobTypes,
-		MaxJobs:  int32(req.MaxJobs),
+		WorkerId:     req.WorkerID,
+		JobTypes:     req.JobTypes,
+		MaxJobs:      int32(req.MaxJobs),
+		LeaseSeconds: int32(req.LeaseSeconds),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("grpc PollJobs: %w", err)
 	}
 	return protoJobsToSDK(resp.Jobs), nil
+}
+
+func (c *GrpcClient) ExtendJobLease(ctx context.Context, jobID, workerID string, leaseSeconds int) (time.Time, error) {
+	response, err := workflowv1.NewWorkflowEngineClient(c.conn).ExtendJobLease(ctx, &workflowv1.ExtendJobLeaseRequest{JobId: jobID, WorkerId: workerID, LeaseSeconds: int32(leaseSeconds)})
+	if status.Code(err) == codes.Unimplemented {
+		return time.Time{}, ErrHeartbeatUnsupported
+	}
+	if status.Code(err) == codes.FailedPrecondition {
+		return time.Time{}, ErrLeaseLost
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	if !response.Accepted || response.LockExpiresAt == nil || response.LockExpiresAt.CheckValid() != nil {
+		return time.Time{}, fmt.Errorf("invalid heartbeat acceptance")
+	}
+	return response.LockExpiresAt.AsTime(), nil
 }
 
 // CompleteJob implements EngineClient via the WorkflowEngine.CompleteJob RPC.

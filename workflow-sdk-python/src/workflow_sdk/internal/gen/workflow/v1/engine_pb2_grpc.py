@@ -1,10 +1,8 @@
-# Generated gRPC service stubs for workflow/v1/engine.proto
-# Only includes the three RPCs used by the worker (PollJobs, CompleteJob, FailJob).
-import grpc
-from workflow_sdk.internal.gen.workflow.v1 import engine_pb2 as engine_pb2
+# Generated worker RPC bindings by scripts/generate-proto.py.
+from workflow_sdk.internal.gen.workflow.v1 import engine_pb2
 
 
-class WorkflowEngineStub(object):
+class WorkflowEngineStub:
     def __init__(self, channel):
         self.PollJobs = channel.unary_unary(
             '/workflow.v1.WorkflowEngine/PollJobs',
@@ -20,4 +18,9 @@ class WorkflowEngineStub(object):
             '/workflow.v1.WorkflowEngine/FailJob',
             request_serializer=engine_pb2.FailJobRequest.SerializeToString,
             response_deserializer=engine_pb2.FailJobResponse.FromString,
+        )
+        self.ExtendJobLease = channel.unary_unary(
+            '/workflow.v1.WorkflowEngine/ExtendJobLease',
+            request_serializer=engine_pb2.ExtendJobLeaseRequest.SerializeToString,
+            response_deserializer=engine_pb2.ExtendJobLeaseResponse.FromString,
         )

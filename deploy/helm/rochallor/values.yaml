@@ -8,7 +8,8 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/batnam/rochallor-engine
-  # Defaults to Chart.appVersion when empty.
+  # Defaults to Chart.appVersion when empty. Requires engine >= v1.2.0
+  # for /readyz and -migrate-only; chart and engine versions are independent.
   tag: ""
   pullPolicy: IfNotPresent
 
@@ -86,6 +87,8 @@ kafka:
 # promoted before any new pod starts serving traffic.
 migrations:
   enabled: false
+  # Existing DB Secrets must already exist before upgrade. For chart-managed
+  # DSNs, a pre-upgrade Secret carries the incoming value to the Job.
   # Extra annotations (e.g. ArgoCD sync-wave, Flux reconcile annotations).
   annotations: {}
   # Job timeout in seconds.

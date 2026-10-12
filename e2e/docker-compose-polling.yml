@@ -1,4 +1,22 @@
 services:
+  fault-proxy:
+    build:
+      context: ..
+      dockerfile: e2e/fault-proxy.Dockerfile
+    environment:
+      ENGINE_REST_URL: http://engine:8080
+      ENGINE_GRPC_HOST: engine:9090
+    ports:
+      - "${SDK_FAULT_PROXY_PORT:-19095}:8081"
+    depends_on:
+      engine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/healthz || exit 1"]
+      interval: 1s
+      timeout: 3s
+      retries: 20
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -31,7 +49,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/${E2E_ENGINE_HEALTH_PATH:-readyz} || exit 1"]
       interval: 3s
       timeout: 5s
       retries: 20
@@ -42,14 +60,15 @@ services:
       dockerfile: e2e/workers/go/Dockerfile
     restart: unless-stopped
     environment:
-      ENGINE_REST_URL: http://engine:8080
-      ENGINE_GRPC_HOST: engine:9090
+      ENGINE_REST_URL: http://fault-proxy:8081
+      ENGINE_GRPC_HOST: fault-proxy:9093
       WORKER_ID: worker-go-1
       WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
+      E2E_HEARTBEAT: "${E2E_HEARTBEAT:-0}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_LOG_LEVEL: info
     depends_on:
-      engine:
+      fault-proxy:
         condition: service_healthy
 
   worker-python:
@@ -59,14 +78,15 @@ services:
       dockerfile: e2e/workers/python/Dockerfile
     restart: unless-stopped
     environment:
-      ENGINE_REST_URL: http://engine:8080
-      ENGINE_GRPC_HOST: engine:9090
+      ENGINE_REST_URL: http://fault-proxy:8081
+      ENGINE_GRPC_HOST: fault-proxy:9093
       WORKER_ID: worker-python-1
       WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
+      E2E_HEARTBEAT: "${E2E_HEARTBEAT:-0}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_LOG_LEVEL: info
     depends_on:
-      engine:
+      fault-proxy:
         condition: service_healthy
 
   worker-node:
@@ -76,14 +96,15 @@ services:
       dockerfile: e2e/workers/node/Dockerfile
     restart: unless-stopped
     environment:
-      ENGINE_REST_URL: http://engine:8080
-      ENGINE_GRPC_HOST: engine:9090
+      ENGINE_REST_URL: http://fault-proxy:8081
+      ENGINE_GRPC_HOST: fault-proxy:9093
       WORKER_ID: worker-node-1
       WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
+      E2E_HEARTBEAT: "${E2E_HEARTBEAT:-0}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_LOG_LEVEL: info
     depends_on:
-      engine:
+      fault-proxy:
         condition: service_healthy
 
   worker-java:
@@ -93,14 +114,15 @@ services:
       dockerfile: e2e/workers/java/Dockerfile
     restart: unless-stopped
     environment:
-      ENGINE_REST_URL: http://engine:8080
-      ENGINE_GRPC_HOST: engine:9090
+      ENGINE_REST_URL: http://fault-proxy:8081
+      ENGINE_GRPC_HOST: fault-proxy:9093
       WORKER_ID: worker-java-1
       WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
+      E2E_HEARTBEAT: "${E2E_HEARTBEAT:-0}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
       WE_LOG_LEVEL: info
     depends_on:
-      engine:
+      fault-proxy:
         condition: service_healthy
 
 networks:

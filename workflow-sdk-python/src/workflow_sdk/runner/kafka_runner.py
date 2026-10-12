@@ -1,157 +1,167 @@
+"""Kafka delivery: poll membership while retaining one unacknowledged record per partition."""
+from __future__ import annotations
+
 import json
 import logging
-import threading
 import signal
-from typing import List, Optional, Dict, Any
-from confluent_kafka import Consumer, KafkaError, KafkaException
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
+from queue import SimpleQueue
+from typing import Any
+
+from confluent_kafka import Consumer, KafkaError, KafkaException, TopicPartition
+from prometheus_client import CollectorRegistry
 
 from workflow_sdk.client.interface import EngineClient
 from workflow_sdk.handler.registry import HandlerRegistry
+from workflow_sdk.internal.gen.workflow.v1 import engine_pb2
+from workflow_sdk.metrics.metrics import Metrics
+from workflow_sdk.runner.callback import Outcome, deliver, execute
 from workflow_sdk.runner.deduplication_cache import DeduplicationCache
-from workflow_sdk.errors import NonRetryableError
-
-# Try to import generated proto, fallback to a dummy if not found during implementation
-try:
-    from workflow_sdk.internal.gen import engine_pb2
-except ImportError:
-    # Dummy class to avoid immediate crash if stubs aren't generated yet
-    class engine_pb2:
-        class JobDispatchEvent:
-            @staticmethod
-            def IsDefined(): return False
 
 log = logging.getLogger(__name__)
 
+
 class KafkaRunner:
-    def __init__(
-        self,
-        worker_id: str,
-        brokers: str,
-        client: EngineClient,
-        registry: HandlerRegistry,
-        dedup_window_seconds: float = 600.0,
-        extra_kafka_config: Optional[Dict[str, Any]] = None
-    ):
-        self.worker_id = worker_id
-        self.brokers = brokers
-        self.client = client
-        self.registry = registry
+    def __init__(self, worker_id: str, brokers: str, client: EngineClient,
+                 registry: HandlerRegistry, dedup_window_seconds: float = 600.0,
+                 extra_kafka_config: dict[str, Any] | None = None,
+                 metrics: Metrics | None = None) -> None:
+        self.worker_id, self.brokers = worker_id, brokers
+        self.client, self.registry = client, registry
         self.dedup_cache = DeduplicationCache(dedup_window_seconds)
+        self.metrics = metrics or Metrics(registry=CollectorRegistry())
         self.running = False
-        self.consumers: List[Consumer] = []
-        
+        self.consumers: list[Consumer] = []
+        self._errors: SimpleQueue[Exception] = SimpleQueue()
         self.kafka_config = {
-            'bootstrap.servers': brokers,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
+            'bootstrap.servers': brokers, 'auto.offset.reset': 'earliest',
             'partition.assignment.strategy': 'cooperative-sticky',
+            'socket.timeout.ms': 5000,
+            **(extra_kafka_config or {}),
+            # Ownership and offset policy cannot be overridden by caller config.
+            'enable.auto.commit': False, 'enable.auto.offset.store': False,
         }
-        if extra_kafka_config:
-            self.kafka_config.update(extra_kafka_config)
 
-    def run(self):
+    def run(self) -> None:
         self.running = True
-        job_types = self.registry.job_types()
-        log.info("KafkaRunner starting: workerId=%s jobTypes=%s", self.worker_id, job_types)
-
-        threads = []
-        for job_type in job_types:
-            t = threading.Thread(target=self._consume_loop, args=(job_type,), name=f"kafka-consumer-{job_type}")
-            t.start()
-            threads.append(t)
-
-        # Handle termination signals
-        def handle_sig(sig, frame):
-            log.info("Signal received, stopping...")
-            self.stop()
-
-        signal.signal(signal.SIGINT, handle_sig)
-        signal.signal(signal.SIGTERM, handle_sig)
-
-        for t in threads:
-            t.join()
-        
+        threads = [threading.Thread(target=self._consume_loop, args=(kind,),
+                                    name=f"kafka-consumer-{kind}") for kind in self.registry.job_types()]
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, lambda *_: self.stop())
+            signal.signal(signal.SIGTERM, lambda *_: self.stop())
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
         self.dedup_cache.close()
+        if not self._errors.empty():
+            raise self._errors.get()
 
-    def stop(self):
+    def stop(self) -> None:
         self.running = False
 
-    def _consume_loop(self, job_type: str):
+    def _consume_loop(self, job_type: str) -> None:
         topic = f"workflow.jobs.{job_type}"
-        group = f"workflow.workers.{job_type}"
-        
-        conf = self.kafka_config.copy()
-        conf['group.id'] = group
-        
-        consumer = Consumer(conf)
-        self.consumers.append(consumer)
-        
+        owners: dict[tuple[str, int], threading.Event] = {}
+        pending: dict[tuple[str, int], tuple[Any, Future[None], threading.Event]] = {}
+        consumer = None
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"handler-{job_type}")
+
+        def assigned(_consumer: Any, partitions: list[TopicPartition]) -> None:
+            for part in partitions:
+                owners.setdefault((part.topic, part.partition), threading.Event())
+            retained = [part for part in partitions if (part.topic, part.partition) in pending]
+            if retained:
+                _consumer.pause(retained)
+
+        def revoked(_consumer: Any, partitions: list[TopicPartition]) -> None:
+            for part in partitions:
+                key = (part.topic, part.partition)
+                owner = owners.pop(key, None)
+                if owner is not None:
+                    owner.set()
+                old = pending.pop(key, None)
+                if old is not None:
+                    old[1].cancel()
+
         try:
-            consumer.subscribe([topic])
-            
+            consumer = Consumer({**self.kafka_config, 'group.id': f"workflow.workers.{job_type}"})
+            self.consumers.append(consumer)
+            consumer.subscribe([topic], on_assign=assigned, on_revoke=revoked, on_lost=revoked)
             while self.running:
-                msg = consumer.poll(timeout=0.5)
-                if msg is None:
+                for key, (message, future, owner) in list(pending.items()):
+                    if not future.done():
+                        continue
+                    if owner.is_set() or owners.get(key) is not owner:
+                        del pending[key]
+                        continue
+                    future.result()  # Failure stops the consumer with offset uncommitted.
+                    offsets = consumer.commit(offsets=[TopicPartition(key[0], key[1], message.offset() + 1)], asynchronous=False)
+                    for offset in offsets:
+                        if offset.error is not None:
+                            raise KafkaException(offset.error)
+                    del pending[key]
+                    consumer.resume([TopicPartition(*key)])
+                message = consumer.poll(timeout=0.1)
+                if message is None:
                     continue
-                
-                if msg.error():
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
+                error = message.error()
+                if error is not None:
+                    if error.code() == KafkaError._PARTITION_EOF:
                         continue
-                    else:
-                        log.error("Kafka error: %s", msg.error())
-                        continue
-
-                try:
-                    self._dispatch(msg.value())
-                    consumer.commit(msg)
-                except Exception as e:
-                    log.exception("Error dispatching Kafka record from %s: %s", topic, e)
+                    raise KafkaException(error)
+                record_topic, partition = message.topic(), message.partition()
+                assert record_topic is not None and partition is not None
+                key = (record_topic, partition)
+                current_owner = owners.get(key)
+                if current_owner is None or current_owner.is_set() or key in pending:
+                    raise RuntimeError(f"Kafka record has no available owner: {key}")
+                consumer.pause([TopicPartition(*key)])
+                log.info("kafkarunner: topic=%s partition=%s offset=%s", *key, message.offset())
+                pending[key] = (message, executor.submit(self._dispatch, message.value(), current_owner), current_owner)
+        except Exception as exc:
+            log.exception("Kafka consumer stopped with unacknowledged work topic=%s", topic)
+            self._errors.put(exc)
+            self.stop()
         finally:
-            consumer.close()
+            for owner in owners.values():
+                owner.set()
+            for _, future, _ in pending.values():
+                future.cancel()
+            if consumer is not None:
+                consumer.close()
+            # An arbitrary handler thread cannot be forcibly terminated.
+            executor.shutdown(wait=True, cancel_futures=True)
 
-    def _dispatch(self, data: bytes):
-        if not hasattr(engine_pb2, 'JobDispatchEvent'):
-            log.error("JobDispatchEvent proto not found. Cannot decode Kafka message.")
-            return
-
-        event = engine_pb2.JobDispatchEvent()
-        event.ParseFromString(data)
-        
-        if event.dedup_id and self.dedup_cache.seen_recently(event.dedup_id):
-            log.debug("kafkarunner: skipping duplicate job_id=%s dedup_id=%s", event.job_id, event.dedup_id)
-            return
-
-        log.info("kafkarunner: dispatching job_id=%s job_type=%s", event.job_id, event.job_type)
-
-        handler = self.registry.get(event.job_type)
-        if not handler:
-            log.warning("kafkarunner: no handler for jobType=%s jobId=%s", event.job_type, event.job_id)
-            self.client.fail_job(event.job_id, self.worker_id, f"no handler registered for {event.job_type}", False)
-            return
-
-        variables = {}
-        if event.job_payload:
-            try:
-                variables = json.loads(event.job_payload.decode('utf-8'))
-            except Exception as e:
-                log.error("kafkarunner: failed to parse job payload for %s: %s", event.job_id, e)
-
-        ctx = {
-            "id": event.job_id,
-            "jobType": event.job_type,
-            "instanceId": event.instance_id,
-            "stepExecutionId": event.step_execution_id,
-            "retriesRemaining": event.retries_remaining,
-            "variables": variables,
-        }
-
+    def _dispatch(self, data: bytes | None, owner: threading.Event | None = None) -> None:
+        owner = owner if owner is not None else threading.Event()
+        if owner.is_set():
+            raise RuntimeError("partition ownership ended")
         try:
-            result = handler(ctx)
-            log.info("kafkarunner: job completed job_id=%s", event.job_id)
-            self.client.complete_job(event.job_id, self.worker_id, result or {})
-        except NonRetryableError as e:
-            log.warning("kafkarunner: job failed (non-retryable) job_id=%s: %s", event.job_id, e)
-            self.client.fail_job(event.job_id, self.worker_id, str(e), False)
-        except Exception as e:
-            log.exception("kafkarunner: job failed (retryable) job_id=%s: %s", event.job_id, e)
-            self.client.fail_job(event.job_id, self.worker_id, str(e), True)
+            if not data:
+                raise ValueError("Kafka record has no job ID")
+            event = engine_pb2.JobDispatchEvent()
+            event.ParseFromString(data)
+            if not event.job_id:
+                raise ValueError("Kafka record has no job ID")
+        except Exception:
+            self.metrics.kafka_record_errors.inc()
+            raise
+        if event.dedup_id and self.dedup_cache.contains(event.dedup_id):
+            return
+        log.info("kafkarunner: job_id=%s dedup_id=%s", event.job_id, event.dedup_id)
+        invalid = None
+        variables = {}
+        try:
+            if event.job_payload:
+                variables = json.loads(event.job_payload)
+                if not isinstance(variables, dict):
+                    raise ValueError("payload must be an object")
+        except (ValueError, UnicodeError):
+            invalid = Outcome("fail", "invalid job payload")
+        job = {"id": event.job_id, "jobType": event.job_type, "instanceId": event.instance_id,
+               "stepExecutionId": event.step_execution_id, "retriesRemaining": event.retries_remaining, "variables": variables}
+        outcome = invalid or execute(self.registry, job, self.metrics)
+        deliver(self.client, self.worker_id, event.job_id, outcome, owner, self.metrics, "kafka")
+        self.dedup_cache.mark(event.dedup_id)

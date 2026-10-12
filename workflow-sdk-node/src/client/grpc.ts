@@ -1,9 +1,10 @@
 import * as grpc from '@grpc/grpc-js'
-import type { EngineClient, Job, PollJobsRequest } from './types.js'
+import { HeartbeatUnsupportedError, LeaseLostError, type CallOptions, type EngineClient, type Job, type LeaseExtender, type PollJobsRequest } from './types.js'
 import {
   WorkflowEngineClient as GrpcStub,
   type WorkflowEngineClient as IWorkflowEngineClient,
   type PollJobsResponse,
+  type ExtendJobLeaseResponse,
 } from '../generated/workflow/v1/engine.js'
 
 /**
@@ -14,32 +15,48 @@ import {
  *
  * Uses insecure (plaintext) credentials — suitable for internal/development use.
  */
-export class GrpcEngineClient implements EngineClient {
+export class GrpcEngineClient implements EngineClient, LeaseExtender {
   private readonly stub: IWorkflowEngineClient
 
   constructor(target: string, credentials?: grpc.ChannelCredentials) {
     this.stub = new GrpcStub(target, credentials ?? grpc.credentials.createInsecure())
   }
 
-  async pollJobs(req: PollJobsRequest): Promise<Job[]> {
+  async pollJobs(req: PollJobsRequest, options?: CallOptions): Promise<Job[]> {
     const resp = await callUnary<PollJobsResponse>((cb) =>
       this.stub.pollJobs(
         {
           workerId: req.workerId,
           jobTypes: req.jobTypes,
           maxJobs: req.maxJobs,
-          leaseSeconds: 0,
+          leaseSeconds: req.leaseSeconds ?? 0,
         },
         cb,
       ),
+      options?.signal,
     )
     return (resp.jobs ?? []).map(protoJobToSDK)
+  }
+
+  async extendJobLease(jobId: string, workerId: string, leaseSeconds = 0, options?: CallOptions): Promise<string> {
+    try {
+      const result = await callUnary<ExtendJobLeaseResponse>(cb => this.stub.extendJobLease({ jobId, workerId, leaseSeconds }, cb), options?.signal)
+      if (!result.accepted || !result.lockExpiresAt || !Number.isFinite(result.lockExpiresAt.getTime())) throw new Error('invalid heartbeat response')
+      return result.lockExpiresAt.toISOString()
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error) {
+        if (error.code === grpc.status.UNIMPLEMENTED) throw new HeartbeatUnsupportedError()
+        if (error.code === grpc.status.FAILED_PRECONDITION) throw new LeaseLostError()
+      }
+      throw error
+    }
   }
 
   async completeJob(
     jobId: string,
     workerId: string,
     variables?: Record<string, unknown>,
+    options?: CallOptions,
   ): Promise<void> {
     await callUnary((cb) =>
       this.stub.completeJob(
@@ -50,6 +67,7 @@ export class GrpcEngineClient implements EngineClient {
         },
         cb,
       ),
+      options?.signal,
     )
   }
 
@@ -58,6 +76,7 @@ export class GrpcEngineClient implements EngineClient {
     workerId: string,
     errorMessage: string,
     retryable: boolean,
+    options?: CallOptions,
   ): Promise<void> {
     await callUnary((cb) =>
       this.stub.failJob(
@@ -69,6 +88,7 @@ export class GrpcEngineClient implements EngineClient {
         },
         cb,
       ),
+      options?.signal,
     )
   }
 
@@ -84,13 +104,25 @@ export class GrpcEngineClient implements EngineClient {
  * Wraps a gRPC unary callback call in a Promise.
  */
 function callUnary<T>(
-  fn: (cb: (err: grpc.ServiceError | null, res: T) => void) => void,
+  fn: (cb: (err: grpc.ServiceError | null, res: T) => void) => grpc.ClientUnaryCall,
+  signal?: AbortSignal,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    fn((err, res) => {
-      if (err) reject(err)
-      else resolve(res)
-    })
+    if (signal?.aborted) { reject(signal.reason); return }
+    let call: grpc.ClientUnaryCall | undefined
+    const abort = () => { call?.cancel(); reject(signal?.reason) }
+    signal?.addEventListener('abort', abort, { once: true })
+    try {
+      call = fn((err, res) => {
+        signal?.removeEventListener('abort', abort)
+        if (err) reject(err)
+        else resolve(res)
+      })
+      if (signal?.aborted) call.cancel()
+    } catch (err) {
+      signal?.removeEventListener('abort', abort)
+      reject(err)
+    }
   })
 }
 
@@ -105,6 +137,7 @@ function protoJobToSDK(proto: {
   stepExecutionId: string
   retriesRemaining: number
   variables?: Record<string, unknown>
+  lockExpiresAt?: Date
 }): Job {
   return {
     id: proto.id,
@@ -113,5 +146,6 @@ function protoJobToSDK(proto: {
     stepExecutionId: proto.stepExecutionId,
     retriesRemaining: proto.retriesRemaining,
     variables: proto.variables,
+    lockExpiresAt: proto.lockExpiresAt?.toISOString(),
   }
 }

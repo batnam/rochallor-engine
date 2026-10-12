@@ -4,8 +4,8 @@ description: >-
   Lightweight, language-agnostic workflow engine backed by PostgreSQL.
   Supports short-polling (default) and Kafka + Transactional Outbox dispatch modes.
 type: application
-version: 0.1.0
-appVersion: "v1.0.0"
+version: 0.2.0
+appVersion: "v1.2.0"
 home: https://github.com/batnam/rochallor-engine
 icon: https://raw.githubusercontent.com/batnam/rochallor-engine/main/images/Workflow-Modeller.png
 sources:

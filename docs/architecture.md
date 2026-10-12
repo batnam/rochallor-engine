@@ -215,7 +215,9 @@ CREATE INDEX idx_job_lock_expires
 
 ### Lease expiry
 
-Each lock carries a 30-second expiry (`lock_expires_at = now() + 30s`). For active/waiting instances, the sweeper retires an expired job as `CANCELLED` and creates a new `UNLOCKED` job for the same step execution, without spending a business retry. The replacement has a new `jobId`, even if the same worker claims it. Callbacks for an expired lease or a retired job are acknowledged without changing state. There is no lease-renewal API in this change: polling work that consistently exceeds 30 seconds will be redelivered instead of applying its late result.
+Polling leases default to 30 seconds; an explicit `leaseSeconds` selects 5–3600 seconds. PostgreSQL computes expiry with `clock_timestamp()` at claim time, after connection/row waits. For active/waiting instances, the sweeper retires an expired job as `CANCELLED` and creates a new `UNLOCKED` job for the same step execution, without spending a business retry. The replacement has a new `jobId`, even if the same worker claims it. Callbacks for an expired lease or a retired job are acknowledged without changing state.
+
+Optional SDK heartbeat calls `POST /v1/jobs/{id}/heartbeat` or gRPC `ExtendJobLease` while the handler or its callback is pending. Renewal requires the current active attempt, its owning worker and an unexpired lease; it never shortens the existing expiry or consumes a retry. Heartbeat is off by default and must remain off until every engine replica supports it. Lease loss cancels the attempt cooperatively and fences stale callbacks; external side effects still require idempotency. See [lease and heartbeat configuration](development.md#polling-lease-and-heartbeat-contract-engine-v120-candidate).
 
 ### Callback ordering and delivery identity
 
@@ -225,9 +227,9 @@ Completion and failure lock the instance before the job. They change state only 
 
 Kafka callbacks use the job ID already present in `JobDispatchEvent`; they do not acquire polling leases. An engine retry creates a new job and outbox event in one transaction. Broker redelivery of the same event is still the same attempt: the first accepted result wins, and later results are no-ops. The engine does not observe consumer ownership changes or prevent duplicate external side effects.
 
-REST/gRPC request fields, Kafka event fields and SDK method signatures are unchanged. No authentication, authorization or token mechanism is added; API security remains the responsibility of the surrounding system.
+The delivery-identity changes preserve Kafka event fields and existing callback methods. Lease duration and heartbeat add optional REST/gRPC capabilities and SDK runner configuration. No authentication, authorization or token mechanism is added; API security remains the responsibility of the surrounding system.
 
-**Upgrade impact:** workers that deduplicate external operations across retries must use a stable business operation key from variables (for example, an invoice/payment ID), not `jobId`. `stepExecutionId` remains stable across automatic retries and lease recovery, but changes on manual retry. Existing SDK clients need no wire changes. Coordinate the engine rollout: old replicas still reuse job IDs and do not enforce these ordering rules, so the guarantees apply only once all engine replicas run the new code. The delivery-identity change itself needs no schema migration.
+**Upgrade impact:** workers that deduplicate external operations across retries must use a stable business operation key from variables (for example, an invoice/payment ID), not `jobId`. `stepExecutionId` remains stable across automatic retries and lease recovery, but changes on manual retry. Existing SDK clients need no wire changes. When upgrading from a release that still reuses job IDs, the ordering guarantees apply only after all engine replicas have been upgraded. Engine v1.1.2 already has delivery-identity fencing but does not support heartbeat. Neither delivery-identity fencing nor the lease/heartbeat enhancement requires a new schema migration.
 
 ### Durable boundary timers
 
@@ -373,7 +375,8 @@ When you call `runner.start()` (Java) or `runner.Run(ctx)` (Go), the runner ente
 │  ticker fires (500 ms default)                          │
 │       │                                                 │
 │       ▼                                                 │
-│  PollJobs(workerID, jobTypes, maxJobs)                  │
+│  count free slots; skip polling when capacity is full   │
+│  PollJobs(workerID, jobTypes, maxJobs = free slots)      │
 │       │                                                 │
 │       ├── empty response → sleep, next tick             │
 │       │                                                 │
@@ -400,11 +403,14 @@ When you call `runner.start()` (Java) or `runner.Run(ctx)` (Go), the runner ente
 │           │                   └── no  → FailJob         │
 │           │                            retryable=true   │
 │           │                                             │
-│     release semaphore slot                              │
+│     retry the frozen callback while ownership is valid  │
+│     release slot after handler and delivery finish      │
 └─────────────────────────────────────────────────────────┘
 ```
 
 `registry.register(jobType, handler)` does nothing more than insert a function reference into a map. The runner reads that map when it needs to dispatch a received job.
+
+Completion transport errors do not become business failures. The runner retains the handler outcome and retries the same callback within the lease. Pending callbacks and handlers that ignore cancellation continue to consume capacity. With heartbeat enabled, renewal continues until acknowledgement or lease loss; the first renewal is accepted before the handler starts. Kafka runners separately retain partition ownership and commit offsets only after callback acknowledgement.
 
 ### Retry flow
 
@@ -488,7 +494,7 @@ Every retry creates a new `step_execution` row with `attempt_number` one greater
 When the runner receives a shutdown signal (SIGINT/SIGTERM or context cancellation), it:
 
 1. Stops accepting new jobs from the poll loop.
-2. Waits for all in-flight handlers to finish (drain).
-3. Exits only after the drain completes.
+2. Stops renewal/retries and requests cancellation of active polling attempts.
+3. Waits for handlers within the SDK's configured drain timeout, then returns or reports unfinished work according to that SDK's API.
 
-Jobs that were in-flight but not yet completed will have their lock expire (30 s) and be reclaimed by the lease sweeper — another worker will pick them up.
+Polling jobs without an acknowledged result become recoverable when their last accepted lease expires. Cancellation cannot undo external side effects or force every handler to stop; an uncooperative handler can outlive the drain timeout and may keep a Python process alive. Kafka shutdown leaves unacknowledged records uncommitted for redelivery. See the language-specific [SDK guides](sdk/) for cancellation and supervision requirements.

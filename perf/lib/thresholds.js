@@ -13,6 +13,7 @@ const _overridesJson = (typeof __ENV !== 'undefined' && __ENV.PERF_THRESHOLD_OVE
 const _overrides = _overridesJson ? JSON.parse(_overridesJson) : {};
 
 const _defaults = {
+  'checks': ['rate==1'],
   // Error rate < 0.1% per operation (rate<0.001 = fraction)
   'http_req_failed{operation:workflow.start}':    ['rate<0.001'],
   'http_req_failed{operation:workflow.poll}':     ['rate<0.001'],
@@ -27,16 +28,6 @@ const _defaults = {
 
   // Zero workflows still non-terminal 10 s after steady-state ends
   'workflows_unfinished_after_steady_state': ['count==0'],
-
-  // Error rate < 0.1% for new operations
-  'http_req_failed{operation:workflow.cancel}':        ['rate<0.001'],
-  'http_req_failed{operation:workflow.signal}':         ['rate<0.001'],
-  'http_req_failed{operation:workflow.task_complete}':  ['rate<0.001'],
-
-  // p95 latency for new operations (500 ms)
-  'http_req_duration{operation:workflow.cancel}':        ['p(95)<500'],
-  'http_req_duration{operation:workflow.signal}':        ['p(95)<500'],
-  'http_req_duration{operation:workflow.task_complete}': ['p(95)<500'],
 
 };
 
@@ -74,7 +65,8 @@ export const THRESHOLDS_VERSION = '1.0';
 
 // gRPC thresholds — used by scenarios/thousand-concurrent-grpc.js.
 // Same latency bars as REST; error rate uses custom Rate metric (no built-in grpc_req_failed).
-export const GRPC_THRESHOLDS = {
+export const GRPC_THRESHOLDS = Object.assign({
+  'checks': ['rate==1'],
   'grpc_req_duration{operation:workflow.start}':   ['p(95)<1000'],
   'grpc_req_duration{operation:workflow.poll}':    ['p(95)<500'],
   'grpc_req_duration{operation:workflow.history}': ['p(95)<500'],
@@ -84,4 +76,4 @@ export const GRPC_THRESHOLDS = {
   'grpc_error_rate{operation:workflow.history}':   ['rate<0.001'],
   'grpc_error_rate{operation:workflow.list}':      ['rate<0.001'],
   'workflows_unfinished_after_steady_state':       ['count==0'],
-};
+}, _overrides);

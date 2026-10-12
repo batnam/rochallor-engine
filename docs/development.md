@@ -283,7 +283,16 @@ Available integration test suites:
 
 ### Contract tests
 
-Validates the running engine against the REST OpenAPI spec. Requires the engine to be up.
+Validates real REST requests, response status and OpenAPI 3.1 schemas. The isolated command builds the current engine and creates/removes its own PostgreSQL/Kafka test containers:
+
+```bash
+python3 -m venv /tmp/engine-contract
+/tmp/engine-contract/bin/pip install -r workflow-engine/test/contract/requirements.txt
+/tmp/engine-contract/bin/python -m unittest discover -s workflow-engine/test/contract -p 'test_*.py' -v
+/tmp/engine-contract/bin/python workflow-engine/test/contract/run.py --output=testresults/contract
+```
+
+The replay writes definitions and deliberately COMPLETED/FAILED instances. For an existing **test** engine, install the same requirements in the active Python environment and use:
 
 ```bash
 # Terminal 1: start the engine
@@ -294,6 +303,8 @@ cd workflow-engine && make run
 cd workflow-engine
 WE_REST_PORT=8080 make contract-replay
 ```
+
+See [coverage and baseline contract decisions](https://github.com/batnam/rochallor-engine/blob/main/workflow-engine/test/contract/README.md). Wrong status/schema/business outcome or missing evidence makes the command fail; schema replay does not imply untested API behaviors conform.
 
 ---
 
@@ -514,7 +525,7 @@ testcontainers-go needs the Docker daemon running. Check with `docker ps`.
 
 **`make migrate` fails with "relation already exists"**
 
-The migration was partially applied. Connect to PostgreSQL and manually check `schema_migrations`, then roll back with `make migrate-down` before re-running.
+Inspect `schema_migrations` and the failed migration before repairing it. `make migrate-down` removes **all** migrated schema; use it only on a disposable development database. Production recovery needs a reviewed forward repair or database restore.
 
 **Worker polls but never picks up jobs**
 
@@ -542,3 +553,53 @@ Quick run command (requires Docker):
 ```bash
 ./e2e/run.sh --sdk=go
 ```
+
+### Engine readiness and migration commands
+
+`/healthz` is process liveness. `/readyz` returns JSON `status: ready` (200) only
+when startup completed and a DB ping succeeds within 500 ms. It returns
+`status: not_ready` (503) during shutdown or DB failure. An initialized Kafka
+outbox engine stays ready during a broker outage: watch outbox backlog/age,
+relay errors and eventual drain as well as readiness.
+
+`/engine -migrate-only` applies pending migrations, closes its DB connection and
+exits. Only `WE_POSTGRES_DSN` is required; it starts no HTTP, gRPC, metrics server,
+Kafka consumer or sweeper. Errors return nonzero. `-migrate-down` removes **all**
+migrated schema and is for disposable test databases, never application rollback.
+Unknown flags, positional arguments and mutually exclusive migration flags fail.
+
+```sh
+python3 workflow-engine/test/operations/run.py --output=testresults/operations
+```
+
+This command creates its own disposable DB/broker and native engine, tests DB and
+broker outages plus migration success/failure, and cleans only its own resources.
+
+### Polling lease and heartbeat contract (engine v1.2.0 candidate)
+
+REST `leaseSeconds` and protobuf `lease_seconds` default to 30 seconds when
+omitted/zero; explicit durations must be 5–3600. Invalid values return HTTP 400 /
+gRPC INVALID_ARGUMENT. PostgreSQL time at the claim determines expiry, including
+after connection-pool waits. No schema migration is required.
+
+`POST /v1/jobs/{id}/heartbeat` accepts `workerId` and optional `leaseSeconds`.
+`ExtendJobLease` is the equivalent RPC. A successful response is `accepted: true`
+and `lockExpiresAt`; expiry is the greater of the old expiry and DB-now plus the
+requested duration. Heartbeat never shortens a live lease. Wrong owner, missing/
+stale/expired/terminal attempts return HTTP 409 (`error: lease-lost`) or gRPC
+FAILED_PRECONDITION. Old engines return HTTP 404 / gRPC UNIMPLEMENTED; transport
+errors do not prove acceptance. Only LOCKED polling jobs can be renewed.
+
+Heartbeat uses the same instance→job lock order as callbacks, cancel and timer
+interruption. It does not create an attempt, change workflow state or spend a
+business retry. An expired lease is never revived; recovery creates a new job ID.
+SDKs must stop the old attempt on lease loss and retain capacity until its handler
+actually stops. Business side effects still need an idempotency key independent
+of the delivery attempt ID.
+
+Upgrade **every** engine replica before enabling optional SDK heartbeat. During
+mixed-version rollout keep it off. Monitor `engine_job_heartbeat_total` by result,
+`engine_db_transaction_duration_seconds{tx_type="job.heartbeat"}` and
+`engine_job_timeout_total`; investigate repeated lease loss, DB timeouts and
+callback backlog. Before engine rollback, disable heartbeat, stop intake of long
+tasks and drain them or choose a separately verified explicit lease duration.

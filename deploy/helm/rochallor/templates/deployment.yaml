@@ -85,11 +85,11 @@ spec:
             failureThreshold: 30
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: rest
-            periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
           livenessProbe:
             httpGet:
               path: /healthz

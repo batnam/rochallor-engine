@@ -12,12 +12,13 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
 
 /**
  * REST transport implementation of {@link EngineClient}.
  * Uses {@code java.net.http.HttpClient} (JDK 11+) — no third-party HTTP library.
  */
-public class RestEngineClient implements EngineClient {
+public class RestEngineClient implements EngineClient, LeaseExtender {
 
     private final String baseUrl;
     private final HttpClient http;
@@ -26,15 +27,21 @@ public class RestEngineClient implements EngineClient {
     public RestEngineClient(String baseUrl) {
         this.baseUrl = baseUrl.replaceAll("/$", "");
         this.http = HttpClient.newHttpClient();
-        this.mapper = new ObjectMapper();
+        this.mapper = new ObjectMapper().findAndRegisterModules();
     }
 
     @Override
     public List<Job> pollJobs(String workerId, List<String> jobTypes, int maxJobs) throws Exception {
+        return pollJobs(workerId, jobTypes, maxJobs, 0);
+    }
+
+    @Override
+    public List<Job> pollJobs(String workerId, List<String> jobTypes, int maxJobs, int leaseSeconds) throws Exception {
         Map<String, Object> body = new HashMap<>();
         body.put("workerId", workerId);
         body.put("jobTypes", jobTypes);
         body.put("maxJobs", maxJobs);
+        body.put("leaseSeconds", leaseSeconds);
 
         HttpResponse<String> resp = post("/v1/jobs/poll", mapper.writeValueAsString(body));
         if (resp.statusCode() != 200) {
@@ -49,6 +56,18 @@ public class RestEngineClient implements EngineClient {
     }
 
     @Override
+    public Instant extendJobLease(String jobId, String workerId, int leaseSeconds) throws Exception {
+        var response = post("/v1/jobs/" + jobId + "/heartbeat", mapper.writeValueAsString(Map.of("workerId", workerId, "leaseSeconds", leaseSeconds)));
+        int status = response.statusCode();
+        if (status == 404 || status == 405 || status == 501) throw new HeartbeatUnsupportedException();
+        if (status == 409) throw new LeaseLostException();
+        if (status != 200) throw new HttpError("heartbeat failed: HTTP " + status, status);
+        var body = mapper.readTree(response.body());
+        if (!body.path("accepted").asBoolean() || !body.path("lockExpiresAt").isTextual()) throw new IllegalArgumentException("invalid heartbeat response");
+        return Instant.parse(body.get("lockExpiresAt").asText());
+    }
+
+    @Override
     public void completeJob(String jobId, String workerId, Map<String, Object> variables) throws Exception {
         Map<String, Object> body = new HashMap<>();
         body.put("workerId", workerId);
@@ -56,7 +75,7 @@ public class RestEngineClient implements EngineClient {
 
         HttpResponse<String> resp = post("/v1/jobs/" + jobId + "/complete", mapper.writeValueAsString(body));
         if (resp.statusCode() != 204 && resp.statusCode() != 200) {
-            throw new RuntimeException("completeJob " + jobId + " failed: HTTP " + resp.statusCode());
+            throw new HttpError("completeJob " + jobId + " failed: HTTP " + resp.statusCode(), resp.statusCode());
         }
     }
 
@@ -69,13 +88,14 @@ public class RestEngineClient implements EngineClient {
 
         HttpResponse<String> resp = post("/v1/jobs/" + jobId + "/fail", mapper.writeValueAsString(body));
         if (resp.statusCode() != 204 && resp.statusCode() != 200) {
-            throw new RuntimeException("failJob " + jobId + " failed: HTTP " + resp.statusCode());
+            throw new HttpError("failJob " + jobId + " failed: HTTP " + resp.statusCode(), resp.statusCode());
         }
     }
 
     private HttpResponse<String> post(String path, String json) throws Exception {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
+                .timeout(CallDeadline.timeout())
                 .header("Content-Type", "application/json")
                 .POST(BodyPublishers.ofString(json))
                 .build();

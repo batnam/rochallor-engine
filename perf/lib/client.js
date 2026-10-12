@@ -1,7 +1,7 @@
 // k6 REST client for the rochallor-engine perf load test.
 //
-// Each helper sets the `operation` tag so per-operation thresholds and
-// per-operation breakdowns work in the report.
+// Each helper sets the `operation` tag for thresholds and reports, and a stable
+// `name` so workflow IDs and query strings cannot create unbounded time series.
 //
 // Engine surface contracted in:
 //   specs/003-performance-load-testing/contracts/engine-endpoints.md
@@ -37,7 +37,7 @@ export function uploadDefinition(baseUrl, definition) {
     JSON.stringify(definition),
     {
       headers: jsonHeaders(),
-      tags: { operation: 'definition.upload' },
+      tags: { operation: 'definition.upload', name: 'definition.upload' },
     },
   );
 }
@@ -54,7 +54,7 @@ export function startWorkflow(baseUrl, definitionId, businessKey, variables) {
     JSON.stringify(body),
     {
       headers: jsonHeaders(),
-      tags: { operation: 'workflow.start' },
+      tags: { operation: 'workflow.start', name: 'workflow.start' },
     },
   );
 }
@@ -65,7 +65,7 @@ export function pollInstance(baseUrl, instanceId) {
     `${baseUrl}/v1/instances/${instanceId}`,
     {
       headers: { 'Accept': 'application/json' },
-      tags: { operation: 'workflow.poll' },
+      tags: { operation: 'workflow.poll', name: 'workflow.poll' },
     },
   );
 }
@@ -76,7 +76,7 @@ export function getHistory(baseUrl, instanceId) {
     `${baseUrl}/v1/instances/${instanceId}/history`,
     {
       headers: { 'Accept': 'application/json' },
-      tags: { operation: 'workflow.history' },
+      tags: { operation: 'workflow.history', name: 'workflow.history' },
     },
   );
 }
@@ -93,7 +93,7 @@ export function listInstances(baseUrl, opts) {
     `${baseUrl}/v1/instances${query}`,
     {
       headers: { 'Accept': 'application/json' },
-      tags: { operation: 'workflow.list' },
+      tags: { operation: 'workflow.list', name: 'workflow.list' },
     },
   );
 }
@@ -104,7 +104,7 @@ export function cancelInstance(baseUrl, instanceId, reason) {
   return http.post(
     `${baseUrl}/v1/instances/${instanceId}/cancel`,
     body,
-    { headers: jsonHeaders(), tags: { operation: 'workflow.cancel' } },
+    { headers: jsonHeaders(), tags: { operation: 'workflow.cancel', name: 'workflow.cancel' } },
   );
 }
 
@@ -113,7 +113,7 @@ export function signalWaitStep(baseUrl, instanceId, waitStepId, vars) {
   return http.post(
     `${baseUrl}/v1/instances/${instanceId}/signals/${waitStepId}`,
     vars ? JSON.stringify(vars) : '{}',
-    { headers: jsonHeaders(), tags: { operation: 'workflow.signal' } },
+    { headers: jsonHeaders(), tags: { operation: 'workflow.signal', name: 'workflow.signal' } },
   );
 }
 
@@ -123,7 +123,7 @@ export function completeUserTask(baseUrl, instanceId, userTaskStepId, variables)
   return http.post(
     `${baseUrl}/v1/instances/${instanceId}/user-tasks/${userTaskStepId}/complete`,
     JSON.stringify(body),
-    { headers: jsonHeaders(), tags: { operation: 'workflow.task_complete' } },
+    { headers: jsonHeaders(), tags: { operation: 'workflow.task_complete', name: 'workflow.task_complete' } },
   );
 }
 

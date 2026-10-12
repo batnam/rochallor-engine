@@ -1,4 +1,22 @@
 services:
+  fault-proxy:
+    build:
+      context: ..
+      dockerfile: e2e/fault-proxy.Dockerfile
+    environment:
+      ENGINE_REST_URL: http://e2e-engine:8080
+      ENGINE_GRPC_HOST: e2e-engine:9090
+    ports:
+      - "${SDK_FAULT_PROXY_PORT:-19095}:8081"
+    depends_on:
+      e2e-engine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/healthz || exit 1"]
+      interval: 1s
+      timeout: 3s
+      retries: 20
+
   e2e-postgress:
     image: postgres:16-alpine
     container_name: e2e-postgress
@@ -52,7 +70,7 @@ services:
       bash -c "
         cub kafka-ready -b e2e-kafka:29092 1 30 &&
         echo 'Start creating topics in parallel...' &&
-        TOPICS='workflow.jobs.go-callback-probe workflow.jobs.python-callback-probe workflow.jobs.node-callback-probe workflow.jobs.java-callback-probe workflow.jobs.go-slow-task workflow.jobs.go-timeout-handler workflow.jobs.go-transform-init workflow.jobs.go-always-fail workflow.jobs.go-prepare-no-match workflow.jobs.go-put-svc-branch workflow.jobs.go-step-a workflow.jobs.go-step-b workflow.jobs.go-step-c workflow.jobs.go-prepare workflow.jobs.go-handle-approved workflow.jobs.go-handle-rejected workflow.jobs.go-branch-left workflow.jobs.go-branch-right workflow.jobs.go-merge-done workflow.jobs.go-before-review workflow.jobs.go-after-review workflow.jobs.go-before-wait workflow.jobs.go-timer-fired workflow.jobs.go-flaky workflow.jobs.go-signalwaitstep-completeusertask-start workflow.jobs.go-signalwaitstep-completeusertask-end workflow.jobs.go-chain-start workflow.jobs.go-chain-finalize workflow.jobs.java-step-a workflow.jobs.java-step-b workflow.jobs.java-step-c workflow.jobs.java-prepare workflow.jobs.java-handle-approved workflow.jobs.java-handle-rejected workflow.jobs.java-branch-left workflow.jobs.java-branch-right workflow.jobs.java-merge-done workflow.jobs.java-before-review workflow.jobs.java-after-review workflow.jobs.java-before-wait workflow.jobs.java-timer-fired workflow.jobs.java-flaky workflow.jobs.java-signalwaitstep-completeusertask-start workflow.jobs.java-signalwaitstep-completeusertask-end workflow.jobs.java-chain-start workflow.jobs.java-chain-finalize workflow.jobs.java-transform-init workflow.jobs.java-always-fail workflow.jobs.java-prepare-no-match workflow.jobs.java-put-svc-branch workflow.jobs.java-slow-task workflow.jobs.java-timeout-handler workflow.jobs.node-step-a workflow.jobs.node-step-b workflow.jobs.node-step-c workflow.jobs.node-prepare workflow.jobs.node-handle-approved workflow.jobs.node-handle-rejected workflow.jobs.node-branch-left workflow.jobs.node-branch-right workflow.jobs.node-merge-done workflow.jobs.node-before-review workflow.jobs.node-after-review workflow.jobs.node-before-wait workflow.jobs.node-timer-fired workflow.jobs.node-flaky workflow.jobs.node-signalwaitstep-completeusertask-start workflow.jobs.node-signalwaitstep-completeusertask-end workflow.jobs.node-chain-start workflow.jobs.node-chain-finalize workflow.jobs.node-transform-init workflow.jobs.node-always-fail workflow.jobs.node-prepare-no-match workflow.jobs.node-put-svc-branch workflow.jobs.node-slow-task workflow.jobs.node-timeout-handler workflow.jobs.validate-application workflow.jobs.credit-score workflow.jobs.fraud-screen workflow.jobs.escalate-review workflow.jobs.approve-loan workflow.jobs.notify-approval-overdue workflow.jobs.prepare-disbursement workflow.jobs.transfer-funds workflow.jobs.notify-disbursement workflow.jobs.python-step-a workflow.jobs.python-step-b workflow.jobs.python-step-c workflow.jobs.python-prepare workflow.jobs.python-handle-approved workflow.jobs.python-handle-rejected workflow.jobs.python-branch-left workflow.jobs.python-branch-right workflow.jobs.python-merge-done workflow.jobs.python-before-review workflow.jobs.python-after-review workflow.jobs.python-before-wait workflow.jobs.python-timer-fired workflow.jobs.python-flaky workflow.jobs.python-signalwaitstep-completeusertask-start workflow.jobs.python-signalwaitstep-completeusertask-end workflow.jobs.python-chain-start workflow.jobs.python-chain-finalize workflow.jobs.python-transform-init workflow.jobs.python-always-fail workflow.jobs.python-prepare-no-match workflow.jobs.python-put-svc-branch workflow.jobs.python-slow-task workflow.jobs.python-timeout-handler workflow.jobs.go-manual-retry workflow.jobs.go-needs-fix workflow.jobs.java-manual-retry workflow.jobs.java-needs-fix workflow.jobs.python-manual-retry workflow.jobs.python-needs-fix workflow.jobs.node-manual-retry workflow.jobs.node-needs-fix workflow.jobs.python-fast-noop workflow.jobs.python-should-not-fire' &&
+        TOPICS='workflow.jobs.java-sdk-recovery workflow.jobs.java-sdk-failure workflow.jobs.python-sdk-recovery workflow.jobs.python-sdk-failure workflow.jobs.node-sdk-recovery workflow.jobs.node-sdk-failure workflow.jobs.go-sdk-recovery workflow.jobs.go-sdk-failure workflow.jobs.go-callback-probe workflow.jobs.python-callback-probe workflow.jobs.node-callback-probe workflow.jobs.java-callback-probe workflow.jobs.go-slow-task workflow.jobs.go-timeout-handler workflow.jobs.go-transform-init workflow.jobs.go-always-fail workflow.jobs.go-prepare-no-match workflow.jobs.go-put-svc-branch workflow.jobs.go-step-a workflow.jobs.go-step-b workflow.jobs.go-step-c workflow.jobs.go-prepare workflow.jobs.go-handle-approved workflow.jobs.go-handle-rejected workflow.jobs.go-branch-left workflow.jobs.go-branch-right workflow.jobs.go-merge-done workflow.jobs.go-before-review workflow.jobs.go-after-review workflow.jobs.go-before-wait workflow.jobs.go-timer-fired workflow.jobs.go-flaky workflow.jobs.go-signalwaitstep-completeusertask-start workflow.jobs.go-signalwaitstep-completeusertask-end workflow.jobs.go-chain-start workflow.jobs.go-chain-finalize workflow.jobs.java-step-a workflow.jobs.java-step-b workflow.jobs.java-step-c workflow.jobs.java-prepare workflow.jobs.java-handle-approved workflow.jobs.java-handle-rejected workflow.jobs.java-branch-left workflow.jobs.java-branch-right workflow.jobs.java-merge-done workflow.jobs.java-before-review workflow.jobs.java-after-review workflow.jobs.java-before-wait workflow.jobs.java-timer-fired workflow.jobs.java-flaky workflow.jobs.java-signalwaitstep-completeusertask-start workflow.jobs.java-signalwaitstep-completeusertask-end workflow.jobs.java-chain-start workflow.jobs.java-chain-finalize workflow.jobs.java-transform-init workflow.jobs.java-always-fail workflow.jobs.java-prepare-no-match workflow.jobs.java-put-svc-branch workflow.jobs.java-slow-task workflow.jobs.java-timeout-handler workflow.jobs.node-step-a workflow.jobs.node-step-b workflow.jobs.node-step-c workflow.jobs.node-prepare workflow.jobs.node-handle-approved workflow.jobs.node-handle-rejected workflow.jobs.node-branch-left workflow.jobs.node-branch-right workflow.jobs.node-merge-done workflow.jobs.node-before-review workflow.jobs.node-after-review workflow.jobs.node-before-wait workflow.jobs.node-timer-fired workflow.jobs.node-flaky workflow.jobs.node-signalwaitstep-completeusertask-start workflow.jobs.node-signalwaitstep-completeusertask-end workflow.jobs.node-chain-start workflow.jobs.node-chain-finalize workflow.jobs.node-transform-init workflow.jobs.node-always-fail workflow.jobs.node-prepare-no-match workflow.jobs.node-put-svc-branch workflow.jobs.node-slow-task workflow.jobs.node-timeout-handler workflow.jobs.validate-application workflow.jobs.credit-score workflow.jobs.fraud-screen workflow.jobs.escalate-review workflow.jobs.approve-loan workflow.jobs.notify-approval-overdue workflow.jobs.prepare-disbursement workflow.jobs.transfer-funds workflow.jobs.notify-disbursement workflow.jobs.python-step-a workflow.jobs.python-step-b workflow.jobs.python-step-c workflow.jobs.python-prepare workflow.jobs.python-handle-approved workflow.jobs.python-handle-rejected workflow.jobs.python-branch-left workflow.jobs.python-branch-right workflow.jobs.python-merge-done workflow.jobs.python-before-review workflow.jobs.python-after-review workflow.jobs.python-before-wait workflow.jobs.python-timer-fired workflow.jobs.python-flaky workflow.jobs.python-signalwaitstep-completeusertask-start workflow.jobs.python-signalwaitstep-completeusertask-end workflow.jobs.python-chain-start workflow.jobs.python-chain-finalize workflow.jobs.python-transform-init workflow.jobs.python-always-fail workflow.jobs.python-prepare-no-match workflow.jobs.python-put-svc-branch workflow.jobs.python-slow-task workflow.jobs.python-timeout-handler workflow.jobs.go-manual-retry workflow.jobs.go-needs-fix workflow.jobs.java-manual-retry workflow.jobs.java-needs-fix workflow.jobs.python-manual-retry workflow.jobs.python-needs-fix workflow.jobs.node-manual-retry workflow.jobs.node-needs-fix workflow.jobs.python-fast-noop workflow.jobs.python-should-not-fire' &&
         for topic in $$TOPICS; do
           kafka-topics --create --if-not-exists --bootstrap-server e2e-kafka:29092 --partitions 1 --replication-factor 1 --topic $$topic &
         done && wait &&
@@ -83,7 +101,7 @@ services:
       e2e-kafka-setup:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/${E2E_ENGINE_HEALTH_PATH:-readyz} || exit 1"]
       interval: 3s
       timeout: 5s
       retries: 40
@@ -95,8 +113,8 @@ services:
     container_name: e2e-worker-go
     restart: unless-stopped
     environment:
-      ENGINE_REST_URL: http://e2e-engine:8080
-      ENGINE_GRPC_HOST: e2e-engine:9090
+      ENGINE_REST_URL: http://fault-proxy:8081
+      ENGINE_GRPC_HOST: fault-proxy:9093
       WORKER_ID: worker-go-1
       WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
@@ -104,7 +122,7 @@ services:
       WE_KAFKA_TRANSPORT: plaintext
       WE_LOG_LEVEL: info
     depends_on:
-      e2e-engine:
+      fault-proxy:
         condition: service_healthy
       e2e-kafka-setup:
         condition: service_completed_successfully
@@ -117,8 +135,8 @@ services:
     container_name: e2e-worker-python
     restart: unless-stopped
     environment:
-      ENGINE_REST_URL: http://e2e-engine:8080
-      ENGINE_GRPC_HOST: e2e-engine:9090
+      ENGINE_REST_URL: http://fault-proxy:8081
+      ENGINE_GRPC_HOST: fault-proxy:9093
       WORKER_ID: worker-python-1
       WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
@@ -126,7 +144,7 @@ services:
       WE_KAFKA_TRANSPORT: plaintext
       WE_LOG_LEVEL: info
     depends_on:
-      e2e-engine:
+      fault-proxy:
         condition: service_healthy
       e2e-kafka-setup:
         condition: service_completed_successfully
@@ -139,8 +157,8 @@ services:
     container_name: e2e-worker-node
     restart: unless-stopped
     environment:
-      ENGINE_REST_URL: http://e2e-engine:8080
-      ENGINE_GRPC_HOST: e2e-engine:9090
+      ENGINE_REST_URL: http://fault-proxy:8081
+      ENGINE_GRPC_HOST: fault-proxy:9093
       WORKER_ID: worker-node-1
       WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
@@ -148,7 +166,7 @@ services:
       WE_KAFKA_TRANSPORT: plaintext
       WE_LOG_LEVEL: info
     depends_on:
-      e2e-engine:
+      fault-proxy:
         condition: service_healthy
       e2e-kafka-setup:
         condition: service_completed_successfully
@@ -161,8 +179,8 @@ services:
     container_name: e2e-worker-java
     restart: unless-stopped
     environment:
-      ENGINE_REST_URL: http://e2e-engine:8080
-      ENGINE_GRPC_HOST: e2e-engine:9090
+      ENGINE_REST_URL: http://fault-proxy:8081
+      ENGINE_GRPC_HOST: fault-proxy:9093
       WORKER_ID: worker-java-1
       WORKER_TRANSPORT: "${WORKER_TRANSPORT:-rest}"
       WE_DISPATCH_MODE: "${WE_DISPATCH_MODE:-polling}"
@@ -170,7 +188,7 @@ services:
       WE_KAFKA_TRANSPORT: plaintext
       WE_LOG_LEVEL: info
     depends_on:
-      e2e-engine:
+      fault-proxy:
         condition: service_healthy
       e2e-kafka-setup:
         condition: service_completed_successfully

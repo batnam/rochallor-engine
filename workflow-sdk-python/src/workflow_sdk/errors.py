@@ -7,6 +7,14 @@ class WorkflowSDKError(Exception):
     """Base exception for all workflow SDK errors."""
 
 
+class HeartbeatUnsupportedError(WorkflowSDKError):
+    """Heartbeat requires an engine/client with extend_job_lease support."""
+
+
+class LeaseLostError(WorkflowSDKError):
+    """The worker no longer owns this attempt; do not send a failure callback."""
+
+
 class NonRetryableError(WorkflowSDKError):
     """Raised by a handler to signal the job must not be retried.
 

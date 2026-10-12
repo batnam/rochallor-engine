@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "io.github.batnam"
-version = "1.0.1"
+version = providers.gradleProperty("version").getOrElse("1.1.0")
 
 java {
     toolchain {
@@ -59,6 +59,7 @@ repositories {
 
 dependencies {
     // gRPC
+    api("io.grpc:grpc-api:$grpcVersion")
     implementation("io.grpc:grpc-netty-shaded:$grpcVersion")
     implementation("io.grpc:grpc-protobuf:$grpcVersion")
     implementation("io.grpc:grpc-stub:$grpcVersion")
@@ -74,7 +75,7 @@ dependencies {
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:$jacksonVersion")
 
     // Metrics
-    implementation("io.micrometer:micrometer-core:$micrometerVersion")
+    api("io.micrometer:micrometer-core:$micrometerVersion")
 
     // Test
     testImplementation(platform("org.junit:junit-bom:$junitVersion"))
@@ -123,8 +124,11 @@ sourceSets {
 
 // Avoid duplicate-entry errors in sourcesJar/javadocJar because the protobuf
 // plugin auto-registers the generated source directories that we also list above
-tasks.withType<Jar>().configureEach {
+tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+    onlyIf { !providers.gradleProperty("verifiedCandidate").isPresent }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -151,7 +155,7 @@ tasks.test {
 // ──────────────────────────────────────────────────────────────────────────────
 mavenPublishing {
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
-    signAllPublications()
+    if (!providers.gradleProperty("unsignedCandidate").isPresent) signAllPublications()
 
     coordinates("io.github.batnam", "workflow-sdk-java", version.toString())
 
@@ -178,4 +182,23 @@ mavenPublishing {
             developerConnection.set("scm:git:ssh://git@github.com/batnam/rochallor-engine.git")
         }
     }
+}
+
+// Local unsigned Maven repository used by external consumer and E2E verification.
+publishing {
+    repositories {
+        maven {
+            name = "Candidate"
+            url = layout.buildDirectory.dir("candidate-repository").get().asFile.toURI()
+        }
+    }
+}
+
+// Publish signs the restored, verified bytes; it does not regenerate their JAR,
+// POM or Gradle module metadata. scripts/verify-package.py --restore checks them.
+tasks.withType<org.gradle.api.publish.maven.tasks.GenerateMavenPom>().configureEach {
+    onlyIf { !providers.gradleProperty("verifiedCandidate").isPresent }
+}
+tasks.withType<org.gradle.api.publish.tasks.GenerateModuleMetadata>().configureEach {
+    onlyIf { !providers.gradleProperty("verifiedCandidate").isPresent }
 }

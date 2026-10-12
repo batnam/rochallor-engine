@@ -1,8 +1,5 @@
-import { RestEngineClient } from '../sdk-src/client/rest'
-import { GrpcEngineClient } from '../sdk-src/client/grpc'
-import { HandlerRegistry } from '../sdk-src/handler/registry'
-import { Runner } from '../sdk-src/runner/runner'
-import { KafkaRunner } from '../sdk-src/runner/kafka_runner'
+import { setTimeout as wait } from 'node:timers/promises'
+import { RestEngineClient, GrpcEngineClient, HandlerRegistry, Runner, KafkaRunner } from 'rochallor-workflow-sdk-node'
 
 const engineUrl = process.env['ENGINE_REST_URL'] ?? 'http://localhost:8080'
 const grpcHost = process.env['ENGINE_GRPC_HOST'] ?? 'localhost:9090'
@@ -13,6 +10,15 @@ const client = workerTransport === 'grpc'
   ? new GrpcEngineClient(grpcHost)
   : new RestEngineClient(engineUrl)
 const registry = new HandlerRegistry()
+const recoveryCalls = new Map<string, number>()
+for (const jobType of ['node-sdk-recovery', 'node-sdk-failure']) {
+  registry.register(jobType, async ctx => {
+    const calls = (recoveryCalls.get(ctx.instanceId) ?? 0) + 1
+    recoveryCalls.set(ctx.instanceId, calls)
+    if (jobType === 'node-sdk-failure' && ctx.retriesRemaining === 2) throw new Error(`sdkRecovery business failure: ${ctx.instanceId}`)
+    return { variablesToSet: { sdkRecovery: true, instanceId: ctx.instanceId, handlerCalls: calls, attemptId: ctx.jobId, remaining: ctx.retriesRemaining } }
+  })
+}
 
 // Linear scenario handlers
 registry.register('node-step-a', async () => ({ variablesToSet: { stepA: 'done' } }))
@@ -118,6 +124,7 @@ async function main() {
     const brokers = (process.env['WE_KAFKA_SEED_BROKERS'] ?? 'localhost:9092').split(',')
     console.info(`worker starting (kafka mode): brokers=${brokers} workerID=${workerId}`)
     const runner = new KafkaRunner({ workerId, brokers }, client, registry)
+    controller.signal.addEventListener('abort', () => { void runner.stop() }, { once: true })
     try {
       await runner.start()
     } catch (err: unknown) {
@@ -126,10 +133,24 @@ async function main() {
     }
   } else {
     console.info(`worker starting (polling mode): engine=${engineUrl} workerID=${workerId}`)
-    const runner = new Runner(client, registry, { workerId })
+    const runner = new Runner(client, registry, { workerId, concurrency: 2 })
     try {
-      await runner.run(controller.signal)
+      const runs = [runner.run(controller.signal)]
+      if (process.env['E2E_HEARTBEAT'] === '1') {
+        const heartbeatRegistry = new HandlerRegistry()
+        heartbeatRegistry.register('node-sdk-heartbeat', async ctx => {
+          const calls = (recoveryCalls.get(ctx.instanceId) ?? 0) + 1
+          recoveryCalls.set(ctx.instanceId, calls)
+          await wait(Number(ctx.variables['durationMs'] ?? 0), undefined, { signal: ctx.signal })
+          if (ctx.variables['failure'] && ctx.retriesRemaining === 2) throw new Error(`sdkRecovery heartbeat business failure: ${ctx.instanceId}`)
+          return { variablesToSet: { sdkRecovery: true, instanceId: ctx.instanceId, handlerCalls: calls, attemptId: ctx.jobId, remaining: ctx.retriesRemaining } }
+        })
+        const heartbeatRunner = new Runner(client, heartbeatRegistry, { workerId: workerId + '-heartbeat', concurrency: 2, heartbeat: process.env['E2E_HEARTBEAT_ENABLED'] !== '0', leaseSeconds: 30 })
+        runs.push(heartbeatRunner.run(controller.signal))
+      }
+      await Promise.all(runs)
     } catch (err: unknown) {
+      controller.abort()
       console.error('[worker-node] Runner fatal error:', err)
       process.exit(1)
     }

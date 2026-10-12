@@ -81,11 +81,12 @@ func (r *relay) drainOnce(ctx context.Context) (int, error) {
 		if err != nil {
 			return fmt.Errorf("claim outbox: %w", err)
 		}
+		// Sample before a potentially slow publish as well as on empty drains;
+		// otherwise a broker outage can leave the visible backlog at zero.
+		if n, err := r.store.BacklogInTx(ctx, tx); err == nil {
+			outboxBacklog.Set(float64(n))
+		}
 		if len(batch) == 0 {
-			// Sample backlog opportunistically while the tx is cheap.
-			if n, err := r.store.BacklogInTx(ctx, tx); err == nil {
-				outboxBacklog.Set(float64(n))
-			}
 			return nil
 		}
 

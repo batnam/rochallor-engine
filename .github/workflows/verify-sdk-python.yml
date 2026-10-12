@@ -1,0 +1,125 @@
+name: Verify Python SDK candidate
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ''
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Set version before build
+        if: inputs.version != ''
+        working-directory: workflow-sdk-python
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, re
+          version = os.environ['RELEASE_VERSION'].removeprefix('sdk-python-v')
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version)
+          path = pathlib.Path('pyproject.toml')
+          path.write_text(re.sub(r'(?m)^version = .*$', f'version = "{version}"', path.read_text()))
+          PY
+      - name: Verify checked-in protobuf stubs
+        working-directory: workflow-sdk-python
+        run: |
+          pip install grpcio-tools==1.60.0 setuptools==80.9.0
+          python scripts/generate-proto.py
+          git diff --exit-code -- src/workflow_sdk/internal/gen/workflow/v1/
+      - name: Install and test
+        working-directory: workflow-sdk-python
+        run: |
+          pip install '.[dev]'
+          mkdir -p artifacts
+          python -m pytest -q 2>&1 | tee artifacts/unit.log
+      - name: Build and verify wheel, sdist and negative consumers
+        working-directory: workflow-sdk-python
+        run: python scripts/verify-package.py 2>&1 | tee artifacts/package.log
+      - uses: actions/upload-artifact@v6
+        with:
+          name: python-sdk-candidate
+          path: |
+            workflow-sdk-python/dist/
+            workflow-sdk-python/artifacts/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: python-sdk-failure
+          path: workflow-sdk-python/artifacts/
+
+  e2e:
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        dispatch: [polling, kafka_outbox]
+        transport: [rest, grpc]
+    env:
+      WE_DISPATCH_MODE: ${{ matrix.dispatch }}
+      E2E_SDK_FAULTS: '1'
+      E2E_HEARTBEAT: '1'
+      COMPOSE_PROJECT_NAME: verify-sdk-python
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: e2e/runner/go.mod
+          cache-dependency-path: e2e/runner/go.sum
+      - uses: actions/download-artifact@v7
+        with:
+          name: python-sdk-candidate
+          path: workflow-sdk-python/
+      - name: Run packaged SDK E2E
+        run: ./e2e/run.sh --sdk=python --transport=${{ matrix.transport }}
+      - name: Verify heartbeat off and explicit unsupported error on engine v1.1.2
+        if: matrix.dispatch == 'polling'
+        run: |
+          git fetch --depth=1 origin tag engine-v1.1.2
+          mkdir -p "$RUNNER_TEMP/heartbeat-engine-baseline"
+          git archive engine-v1.1.2 workflow-engine | tar -x -C "$RUNNER_TEMP/heartbeat-engine-baseline"
+          docker build -t heartbeat-engine-baseline "$RUNNER_TEMP/heartbeat-engine-baseline/workflow-engine"
+          export E2E_ENGINE_IMAGE=heartbeat-engine-baseline E2E_ENGINE_HEALTH_PATH=healthz
+          export E2E_WORKER_IMAGE=verify-sdk-python-worker-python
+          E2E_HEARTBEAT=0 E2E_SCENARIOS=linear,retry-fail,transformation \
+            E2E_LOGS_DIR=e2e/logs/old-engine-off ./e2e/run.sh --sdk=python --transport=${{ matrix.transport }}
+          E2E_HEARTBEAT=1 E2E_HEARTBEAT_UNSUPPORTED=1 E2E_SCENARIOS=sdk-heartbeat-unsupported \
+            E2E_LOGS_DIR=e2e/logs/old-engine-on ./e2e/run.sh --sdk=python --transport=${{ matrix.transport }}
+      - name: Measure heartbeat off/on on the verified worker
+        if: matrix.dispatch == 'polling'
+        run: |
+          python3 perf/heartbeat.py --sdk=python --transport=${{ matrix.transport }} \
+            --engine-image=verify-sdk-python-engine --worker-image=verify-sdk-python-worker-python \
+            --output=testresults/heartbeat-cost
+      - name: Save heartbeat cost evidence
+        if: always() && matrix.dispatch == 'polling'
+        uses: actions/upload-artifact@v6
+        with:
+          name: python-heartbeat-cost-${{ matrix.transport }}
+          path: testresults/heartbeat-cost/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: python-e2e-${{ matrix.dispatch }}-${{ matrix.transport }}
+          path: e2e/logs/

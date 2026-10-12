@@ -6,10 +6,12 @@ All 11 operations are implemented against the Rochallor engine's JSON REST API.
 from __future__ import annotations
 
 from typing import Any
+from datetime import datetime
 
 import httpx
 
-from workflow_sdk.errors import EngineClientError, WorkflowSDKError
+from workflow_sdk.client.deadline import current_lease_seconds, current_timeout
+from workflow_sdk.errors import EngineClientError, HeartbeatUnsupportedError, LeaseLostError, WorkflowSDKError
 
 
 class RestEngineClient:
@@ -46,7 +48,11 @@ class RestEngineClient:
 
     def _post(self, path: str, body: dict[str, Any]) -> httpx.Response:
         try:
-            resp = self._client.post(self._base + path, json=body)
+            timeout = current_timeout()
+            if timeout is None:
+                resp = self._client.post(self._base + path, json=body)
+            else:
+                resp = self._client.post(self._base + path, json=body, timeout=timeout)
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
             raise WorkflowSDKError(f"connection error: {exc}") from exc
         return resp
@@ -155,12 +161,14 @@ class RestEngineClient:
         worker_id: str,
         job_types: list[str],
         max_jobs: int = 1,
+        lease_seconds: int | None = None,
     ) -> list[dict[str, Any]]:
         """POST /v1/jobs/poll — returns list of locked jobs (may be empty)."""
         body = {
             "workerId": worker_id,
             "jobTypes": job_types,
             "maxJobs": max_jobs,
+            "leaseSeconds": current_lease_seconds() if lease_seconds is None else lease_seconds,
         }
         resp = self._post("/v1/jobs/poll", body)
         self._raise_for_status(resp)
@@ -169,6 +177,24 @@ class RestEngineClient:
         if isinstance(data, dict) and "jobs" in data:
             return data["jobs"]  # type: ignore[no-any-return]
         return data  # type: ignore[return-value]  # fallback for direct array
+
+    def extend_job_lease(self, job_id: str, worker_id: str, lease_seconds: int = 0) -> str:
+        response = self._post(f"/v1/jobs/{job_id}/heartbeat", {"workerId": worker_id, "leaseSeconds": lease_seconds})
+        if response.status_code in (404, 405, 501):
+            raise HeartbeatUnsupportedError("engine does not support heartbeat (extend_job_lease)")
+        if response.status_code == 409:
+            raise LeaseLostError("job lease lost")
+        self._raise_for_status(response)
+        body = response.json()
+        value = body.get("lockExpiresAt")
+        if body.get("accepted") is not True or not isinstance(value, str):
+            raise WorkflowSDKError("invalid heartbeat response")
+        try:
+            if datetime.fromisoformat(value.replace("Z", "+00:00")).tzinfo is None:
+                raise ValueError("timezone missing")
+        except ValueError as error:
+            raise WorkflowSDKError("invalid heartbeat deadline") from error
+        return value
 
     def complete_job(
         self,

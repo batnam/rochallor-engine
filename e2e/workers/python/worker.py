@@ -42,6 +42,18 @@ def main() -> None:
         client = RestEngineClient(engine_url)
         logger.info(f"worker starting (rest): engine={engine_url} workerID={worker_id}")
     registry = HandlerRegistry()
+    import threading
+    recovery_lock = threading.Lock()
+    recovery_calls = {}
+    def sdk_recovery(ctx):
+        with recovery_lock:
+            count = recovery_calls.get(ctx["instanceId"], 0) + 1
+            recovery_calls[ctx["instanceId"]] = count
+        if ctx["jobType"] == "python-sdk-failure" and ctx["retriesRemaining"] == 2:
+            raise RuntimeError("sdkRecovery business failure: " + ctx["instanceId"])
+        return {"sdkRecovery": True, "instanceId": ctx["instanceId"], "handlerCalls": count, "attemptId": ctx["id"], "remaining": ctx["retriesRemaining"]}
+    registry.register("python-sdk-recovery", sdk_recovery)
+    registry.register("python-sdk-failure", sdk_recovery)
 
     # Linear scenario handlers
     registry.register("python-step-a", _make_step_handler("stepA"))
@@ -161,8 +173,43 @@ def main() -> None:
         runner = KafkaRunner(worker_id=worker_id, brokers=brokers, client=client, registry=registry)
         runner.run()
     else:
-        runner = Runner(client, registry, worker_id=worker_id)
-        runner.run()
+        stop = threading.Event()
+        heartbeat_thread = None
+        heartbeat_errors = []
+        if os.environ.get("E2E_HEARTBEAT") == "1":
+            heartbeat_registry = HandlerRegistry()
+            heartbeat_calls = {}
+            def heartbeat_handler(ctx):
+                instance = ctx["instanceId"]
+                with _manual_retry_lock:
+                    heartbeat_calls[instance] = heartbeat_calls.get(instance, 0) + 1
+                    calls = heartbeat_calls[instance]
+                if ctx["cancel_event"].wait(float(ctx["variables"].get("durationMs", 0)) / 1000):
+                    raise RuntimeError("heartbeat handler cancelled")
+                if ctx["variables"].get("failure") and ctx["retriesRemaining"] == 2:
+                    raise RuntimeError(f"sdkRecovery heartbeat business failure: {instance}")
+                return {"sdkRecovery": True, "instanceId": instance, "handlerCalls": calls,
+                        "attemptId": ctx["id"], "remaining": ctx["retriesRemaining"]}
+            heartbeat_registry.register("python-sdk-heartbeat", heartbeat_handler)
+            heartbeat_runner = Runner(client, heartbeat_registry, worker_id=worker_id + "-heartbeat",
+                                      parallelism=2, heartbeat=os.environ.get("E2E_HEARTBEAT_ENABLED", "1") == "1", lease_seconds=30)
+            def run_heartbeat():
+                try: heartbeat_runner.run(stop)
+                except Exception as error:
+                    logger.exception("heartbeat runner failed")
+                    heartbeat_errors.append(error)
+                    stop.set()
+            heartbeat_thread = threading.Thread(target=run_heartbeat)
+            heartbeat_thread.start()
+        runner = Runner(client, registry, worker_id=worker_id, parallelism=2)
+        try:
+            runner.run(stop)
+        finally:
+            stop.set()
+            if heartbeat_thread:
+                heartbeat_thread.join(6)
+        if heartbeat_errors:
+            raise heartbeat_errors[0]
     
     logger.info("worker stopped")
 

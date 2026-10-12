@@ -7,6 +7,8 @@ export interface JobContext {
   jobType: string
   retriesRemaining: number
   variables: Record<string, unknown>
+  /** Polling ownership/shutdown cancellation. A handler must opt in to observing it. */
+  signal?: AbortSignal
 }
 
 /** Result returned by a handler on success. */
@@ -48,13 +50,14 @@ export class HandlerRegistry {
   }
 
   /** Build a JobContext from an engine Job. */
-  static contextFrom(job: Job): JobContext {
+  static contextFrom(job: Job, signal?: AbortSignal): JobContext {
     return {
       jobId: job.id,
       instanceId: job.instanceId,
       jobType: job.jobType,
       retriesRemaining: job.retriesRemaining,
       variables: (job.variables as Record<string, unknown>) ?? {},
+      signal,
     }
   }
 }
